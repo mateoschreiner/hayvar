@@ -1,0 +1,14 @@
+# Configuración de Render. Con este archivo en el repo, Render arma el
+# servicio solo: no hay que completar nada a mano en el panel.
+services:
+  - type: web
+    name: hayvar
+    runtime: python
+    plan: free
+    # No hay dependencias: el servidor usa sólo la biblioteca estándar.
+    buildCommand: "echo sin dependencias"
+    startCommand: "python3 server.py"
+    healthCheckPath: /api/ligas
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"

@@ -1,0 +1,2154 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+HAYVAR — servidor local para la Liga Profesional Argentina.
+
+Qué hace:
+  1. Sirve index.html y los estáticos de esta carpeta.
+  2. Proxea la API pública de 365scores (esquiva el bloqueo CORS que aparece
+     al abrir el HTML con file://).
+  3. Arma el modelo de datos: partidos, tablas de las dos zonas, tabla anual,
+     promedios y goleadores.
+
+Dos fuentes, cada una en lo que es mejor:
+
+  · AFA / DataFactory — fixture de las 16 fechas (con árbitro y horario),
+    posiciones de las dos zonas, acumulada, promedios y goleadores. Es el
+    dato oficial y se lee de tablas HTML estáticas.
+  · 365scores — el minuto a minuto, los escudos y el detalle del partido.
+
+Por qué esta división: 365scores sólo publica el Grupo A del Clausura, e
+ignora los parámetros de fecha (devuelve siempre la misma ventana de ~45
+partidos, las fechas 4, 5 y 6). AFA, a cambio, no tiene datos en vivo.
+
+Sobre las tablas oficiales se suman los goles de los partidos en curso, así
+que las posiciones se mueven mientras se juega.
+
+Uso:
+    python3 server.py            # http://localhost:8010
+    python3 server.py 9000       # otro puerto
+
+Sólo biblioteca estándar.
+"""
+
+import datetime as dt
+import json
+import os
+import re
+import sys
+import time
+import threading
+import unicodedata
+from html.parser import HTMLParser
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs, urlencode
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+
+import almacen
+import apifootball
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+UPSTREAM = "https://webws.365scores.com/web"
+COMPETITION = 72          # Liga Profesional Argentina
+LANG = 29                 # español
+TZ = "America/Argentina/Buenos_Aires"
+STAGE = "clausura"        # etapa que nos interesa
+SEASON_START = dt.date(2026, 7, 20)
+FECHAS = 16               # el Clausura tiene 16 fechas
+# 15 por fecha: 7 de Zona A, 7 de Zona B y 1 interzonal entre los dos equipos
+# que de otro modo quedarían libres.
+GAMES_POR_FECHA = 15
+
+# ── Cupos a copas desde la Tabla Anual ────────────────────────────────────
+# Argentina tiene 12 plazas internacionales. La Anual reparte 9: las tres
+# primeras van a Libertadores y de la 4ª a la 9ª a Sudamericana. Los otros
+# tres boletos a Libertadores son para los campeones del Apertura, del
+# Clausura y de la Copa Argentina.
+#
+# Un campeón que además entra entre los nueve mejores libera su lugar y
+# corre a todos los de abajo. Belgrano ya está adentro por el Apertura.
+CUPOS_LIBERTADORES = 3
+CUPOS_SUDAMERICANA = 6
+YA_CLASIFICADOS = {
+    "Belgrano": "Campeón del Apertura 2026 · Libertadores + Supercopa Internacional",
+}
+# Descienden dos: el último de la tabla de promedios y el último de la anual.
+DESCIENDEN = 1            # por promedios
+DESCIENDE_ANUAL = 1       # por la tabla anual
+UA = "HAYVAR/1.0 (proyecto personal de resultados de futbol argentino)"
+
+# Clave de API-Football. Se lee del entorno o de un archivo local; nunca se
+# escribe dentro del código, así no termina publicada en el repositorio.
+def _leer_clave():
+    k = os.environ.get("APIFOOTBALL_KEY", "").strip()
+    if k:
+        return k
+    try:
+        with open(os.path.join(HERE, "clave.txt"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+APIFOOTBALL_KEY = _leer_clave()
+
+# ─────────────────────────────────────────────────────────────────────────
+# Zonas del Clausura 2026 (sorteo AFA, fijas todo el torneo)
+# ─────────────────────────────────────────────────────────────────────────
+ZONA_A = [
+    "Boca Juniors", "Central Córdoba (SdE)", "Defensa y Justicia",
+    "Deportivo Riestra", "Estudiantes (LP)", "Gimnasia y Esgrima (M)",
+    "Independiente", "Instituto", "Lanús", "Newell's Old Boys", "Platense",
+    "San Lorenzo", "Talleres (C)", "Unión", "Vélez Sarsfield",
+]
+ZONA_B = [
+    "Aldosivi", "Argentinos Juniors", "Atlético Tucumán", "Banfield",
+    "Barracas Central", "Belgrano", "Estudiantes (RC)",
+    "Gimnasia y Esgrima (LP)", "Huracán", "Independiente Rivadavia", "Racing",
+    "River Plate", "Rosario Central", "Sarmiento (J)", "Tigre",
+]
+
+# ─────────────────────────────────────────────────────────────────────────
+# Base de promedios
+#
+#   promedio = (base_pts + pts_clausura) / (base_pj + pj_clausura)
+#
+# `base` es la foto al cierre del Apertura 2026 (2024 + 2025 + Apertura).
+# Los puntos por año quedan a la vista para poder auditarlos.
+# Fuente: AFA, vía la tabla de descenso 2026 de Wikipedia.
+# ─────────────────────────────────────────────────────────────────────────
+BASE_PROMEDIOS = [
+    # nombre                    2024  2025  Apertura26  base_pts  base_pj
+    ("Boca Juniors",              67,   62,   27,          156,     88),
+    ("River Plate",               70,   53,   29,          152,     88),
+    ("Racing",                    70,   53,   20,          143,     88),
+    ("Vélez Sarsfield",           76,   40,   27,          143,     88),
+    ("Argentinos Juniors",        56,   57,   29,          142,     88),
+    ("Rosario Central",           47,   66,   27,          140,     88),
+    ("Estudiantes (LP)",          63,   42,   28,          133,     88),
+    ("Lanús",                     59,   50,   23,          132,     88),
+    ("Independiente",             63,   47,   21,          131,     88),
+    ("Talleres (C)",              72,   34,   25,          131,     88),
+    ("Huracán",                   62,   47,   21,          130,     88),
+    ("Independiente Rivadavia",   46,   43,   33,          122,     88),
+    ("Barracas Central",          49,   49,   21,          119,     88),
+    ("Unión",                     60,   39,   20,          119,     88),
+    ("San Lorenzo",               45,   51,   22,          118,     88),
+    ("Defensa y Justicia",        58,   38,   19,          115,     88),
+    ("Deportivo Riestra",         48,   52,   10,          110,     88),
+    ("Belgrano",                  49,   37,   23,          109,     88),
+    ("Gimnasia y Esgrima (LP)",   48,   38,   23,          109,     88),
+    ("Platense",                  57,   35,   16,          108,     88),
+    ("Tigre",                     39,   49,   19,          107,     88),
+    ("Instituto",                 53,   34,   18,          105,     88),
+    ("Central Córdoba (SdE)",     42,   42,   16,          100,     88),
+    ("Newell's Old Boys",         49,   33,   14,           96,     88),
+    ("Atlético Tucumán",          50,   34,   11,           95,     88),
+    ("Gimnasia y Esgrima (M)",  None, None,   16,           16,     15),
+    ("Banfield",                  41,   35,   15,           91,     88),
+    ("Sarmiento (J)",             35,   35,   19,           89,     88),
+    ("Aldosivi",                None,   33,    7,           40,     47),
+    ("Estudiantes (RC)",        None, None,    5,            5,     15),
+]
+
+# Cómo puede nombrar 365scores a cada club, además del nombre canónico.
+ALIASES = {
+    "boca juniors": ["boca jrs", "boca"],
+    "river plate": ["river"],
+    "racing": ["racing club"],
+    "velez sarsfield": ["velez"],
+    "argentinos juniors": ["argentinos jrs", "argentinos"],
+    "rosario central": ["central"],
+    "estudiantes (lp)": ["estudiantes de la plata", "estudiantes la plata", "estudiantes"],
+    "talleres (c)": ["talleres de cordoba", "talleres cordoba", "talleres"],
+    "independiente rivadavia": ["independiente riv", "ind rivadavia"],
+    "barracas central": ["barracas"],
+    "union": ["union de santa fe", "union santa fe"],
+    "san lorenzo": ["san lorenzo de almagro"],
+    "defensa y justicia": ["defensa"],
+    "deportivo riestra": ["riestra"],
+    "belgrano": ["belgrano de cordoba"],
+    "gimnasia y esgrima (lp)": ["gimnasia y esgrima la plata", "gimnasia la plata",
+                                "gimnasia (lp)", "gimnasia"],
+    "instituto": ["instituto de cordoba"],
+    "central cordoba (sde)": ["central cordoba santiago del estero", "central cordoba sde",
+                              "central cordoba"],
+    "newell's old boys": ["newells old boys", "newells", "newell s old boys"],
+    "atletico tucuman": ["atl tucuman", "tucuman"],
+    "gimnasia y esgrima (m)": ["gimnasia y esgrima mendoza", "gimnasia mendoza",
+                               "gimnasia (m)", "gimnasia de mendoza"],
+    "sarmiento (j)": ["sarmiento de junin", "sarmiento junin", "sarmiento"],
+    "estudiantes (rc)": ["estudiantes de rio cuarto", "estudiantes rio cuarto",
+                         "estudiantes rc", "estudiantes (rio cuarto)"],
+}
+
+# Cómo los nombra DataFactory (el dato oficial de AFA). Verificado uno por uno
+# contra las tablas publicadas: son estos 30 exactos.
+ALIASES["independiente rivadavia"] += ["independiente riv (m)", "independiente riv m",
+                                      "indep mza", "indep mza ", "independiente riv"]
+ALIASES["deportivo riestra"] += ["dep riestra"]
+ALIASES["gimnasia y esgrima (m)"] += ["gimnasia (mendoza)"]
+ALIASES["central cordoba (sde)"] += ["central cordoba (se)", "c cordoba (se)", "c cordoba"]
+ALIASES["newell's old boys"] += ["newells"]
+ALIASES["rosario central"] += ["r central"]
+ALIASES["barracas central"] += ["barracas c"]
+ALIASES["atletico tucuman"] += ["atl tucuman"]
+
+
+def norm(s):
+    """minúsculas, sin acentos ni puntuación — para comparar nombres."""
+    s = unicodedata.normalize("NFKD", str(s or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    # DataFactory escribe Newell`s con backtick
+    s = s.lower().replace("'", "").replace("´", "").replace("`", "")
+    s = re.sub(r"[^a-z0-9() ]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+NAME_INDEX = {}                     # nombre normalizado -> canónico
+for _row in BASE_PROMEDIOS:
+    _canon = _row[0]
+    NAME_INDEX[norm(_canon)] = _canon
+    for _a in ALIASES.get(norm(_canon), []):
+        NAME_INDEX.setdefault(norm(_a), _canon)
+
+# Sitio oficial de cada club: se abre al hacer clic en el escudo.
+SITIOS = {
+    "Aldosivi": "https://www.clubaldosivi.com.ar/",
+    "Argentinos Juniors": "https://www.argentinos.com.ar/",
+    "Atlético Tucumán": "https://www.clubatleticotucuman.com.ar/",
+    "Banfield": "https://www.clubatleticobanfield.com/",
+    "Barracas Central": "https://www.clubbarracascentral.com.ar/",
+    "Belgrano": "https://belgrano.com.ar/",
+    "Boca Juniors": "https://www.bocajuniors.com.ar/",
+    "Central Córdoba (SdE)": "https://clubcentralcordoba.com/",
+    "Defensa y Justicia": "https://www.clubdefensayjusticia.com.ar/",
+    "Deportivo Riestra": "https://clubdeportivoriestra.com.ar/",
+    "Estudiantes (LP)": "https://estudiantesdelaplata.com/",
+    "Estudiantes (RC)": "https://www.estudiantesderiocuarto.com.ar/",
+    "Gimnasia y Esgrima (LP)": "https://clubgimnasia.com.ar/",
+    "Gimnasia y Esgrima (M)": "https://gimnasiayesgrima.com.ar/",
+    "Huracán": "https://cahuracan.com/",
+    "Independiente": "https://www.clubaindependiente.com/",
+    "Independiente Rivadavia": "https://www.cirivadavia.com.ar/",
+    "Instituto": "https://institutoacc.com.ar/",
+    "Lanús": "https://www.clublanus.com/",
+    "Newell's Old Boys": "https://www.newellsoldboys.com.ar/",
+    "Platense": "https://www.clubatleticoplatense.com.ar/",
+    "Racing": "https://www.racingclub.com.ar/",
+    "River Plate": "https://www.cariverplate.com.ar/",
+    "Rosario Central": "https://www.rosariocentral.com/",
+    "San Lorenzo": "https://www.sanlorenzo.com.ar/",
+    "Sarmiento (J)": "https://clubsarmiento.com.ar/",
+    "Talleres (C)": "https://www.clubatleticotalleres.com/",
+    "Tigre": "https://www.catigre.com.ar/",
+    "Unión": "https://clubaunion.com.ar/",
+    "Vélez Sarsfield": "https://www.velezsarsfield.com.ar/",
+}
+
+# Primera Nacional. Varios de estos clubes no tienen web propia o la tienen
+# caída, así que se enlaza el Instagram oficial, que es donde realmente
+# publican. La clave es el nombre que usa 365scores.
+SITIOS_B = {
+    "Acassuso": "https://www.instagram.com/clubacassusooficial/",
+    "Agropecuario": "https://www.instagram.com/caagropecuario/",
+    "All Boys": "https://www.instagram.com/clubatleticoallboys/",
+    "Almagro": "https://www.instagram.com/clubalmagrooficial/",
+    "Almirante Brown": "https://www.instagram.com/almirantebrownoficial/",
+    "Atlanta": "https://www.instagram.com/clubatlanta/",
+    "Atlético de Rafaela": "https://www.instagram.com/atleticorafaelaoficial/",
+    "Central Norte": "https://www.instagram.com/centralnorteoficial/",
+    "Chacarita Juniors": "https://www.instagram.com/chacaritajuniors/",
+    "Chaco For Ever": "https://www.instagram.com/clubchacoforever/",
+    "Ciudad de Bolívar": "https://www.instagram.com/clubciudaddebolivar/",
+    "Colegiales": "https://www.instagram.com/clubcolegiales/",
+    "Colón": "https://www.colonoficial.com.ar/",
+    "Defensores de Belgrano": "https://www.instagram.com/cadefensoresdebelgrano/",
+    "Deportivo Madryn": "https://www.instagram.com/cdmadryn/",
+    "Deportivo Maipú": "https://www.instagram.com/cdmaipuoficial/",
+    "Deportivo Morón": "https://www.instagram.com/deportivomoronoficial/",
+    "Estudiantes": "https://www.instagram.com/caestudiantesbb/",
+    "Ferro Carril Oeste": "https://www.ferrocarriloeste.org.ar/",
+    "Gimnasia y Esgrima de Jujuy": "https://www.instagram.com/gimnasiajujuyoficial/",
+    "Gimnasia y Tiro": "https://www.instagram.com/gimnasiaytirooficial/",
+    "Godoy Cruz": "https://www.clubgodoycruz.com.ar/",
+    "Güemes": "https://www.instagram.com/clubatleticoguemes/",
+    "Los Andes": "https://www.instagram.com/clubatleticolosandes/",
+    "Midland": "https://www.instagram.com/clubmidlandoficial/",
+    "Mitre SdE": "https://www.instagram.com/clubatleticomitre/",
+    "Nueva Chicago": "https://www.instagram.com/canuevachicago/",
+    "Patronato": "https://www.instagram.com/clubpatronatooficial/",
+    "Quilmes": "https://www.quilmesac.org.ar/",
+    "Racing de Córdoba": "https://www.instagram.com/racingdecordoba/",
+    "San Martín de San Juan": "https://www.instagram.com/casmoficial/",
+    "San Martín de Tucumán": "https://www.instagram.com/csmoficial/",
+    "San Miguel": "https://www.instagram.com/clubsanmigueloficial/",
+    "San Telmo": "https://www.instagram.com/clubsantelmooficial/",
+    "Temperley": "https://www.instagram.com/clubtemperley/",
+    "Tristán Suárez": "https://www.instagram.com/clubtristansuarez/",
+}
+
+
+def sitio_de(nombre):
+    """Link del club: primero Primera, después la B, y por nombre canónico."""
+    if nombre in SITIOS_B:
+        return SITIOS_B[nombre]
+    canon = match_team(nombre)
+    if canon and canon in SITIOS:
+        return SITIOS[canon]
+    k = emparejar(nombre, {norm(x): x for x in SITIOS_B})
+    if k:
+        return SITIOS_B[{norm(x): x for x in SITIOS_B}[k]]
+    return None
+
+
+ZONE_OF = {}
+for _n in ZONA_A:
+    ZONE_OF[_n] = "A"
+for _n in ZONA_B:
+    ZONE_OF[_n] = "B"
+
+
+def match_team(name):
+    """Nombre canónico de un club, o None si no lo reconocemos."""
+    n = norm(name)
+    if n in NAME_INDEX:
+        return NAME_INDEX[n]
+    bare = re.sub(r"\s*\([^)]*\)\s*$", "", n).strip()
+    if bare in NAME_INDEX:
+        return NAME_INDEX[bare]
+    hits = {v for k, v in NAME_INDEX.items() if k.startswith(n) or n.startswith(k)}
+    if len(hits) == 1:
+        return hits.pop()
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# HTTP con caché corta, para no castigar a 365scores
+# ─────────────────────────────────────────────────────────────────────────
+_cache, _lock = {}, threading.Lock()
+
+
+def fetch(path, params, ttl=15):
+    """
+    Pedido a 365scores, con dos niveles de caché.
+
+    En memoria para el segundo a segundo, y en la base para todo lo demás.
+    La base es la que hace la diferencia: sobrevive a los reinicios y, si la
+    fuente se cae, devuelve lo último bueno en vez de dejar la página vacía.
+    """
+    qs = {"appTypeId": 5, "langId": LANG, "timezoneName": TZ, "userCountryId": 382}
+    qs.update(params)
+    url = "%s/%s/?%s" % (UPSTREAM, path.strip("/"), urlencode(qs))
+
+    with _lock:
+        hit = _cache.get(url)
+        if hit and time.time() - hit[0] < ttl:
+            return hit[1]
+
+    def ir_a_la_fuente():
+        # Sin Referer ni Origin falsos: los pedidos salen identificados como
+        # lo que son. Hacerse pasar por su propio sitio no corresponde.
+        req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+        with urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    data, info = almacen.con_respaldo("sc:" + url, ir_a_la_fuente,
+                                      max_edad=ttl, tag=path)
+    if info.get("origen") == "cache-vieja":
+        ULTIMO_PROBLEMA["365scores"] = info
+
+    with _lock:
+        _cache[url] = (time.time(), data)
+    return data
+
+
+# Lo último que salió mal por fuente, para poder avisarlo en pantalla.
+ULTIMO_PROBLEMA = {}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# DataFactory — el dato oficial de AFA
+#
+# La web de la Liga Profesional embebe tablas de DataFactory. Son HTML
+# estático (no hace falta ejecutar JavaScript) y traen justo lo que la API
+# de 365scores no da: las dos zonas por separado, la acumulada y —sobre
+# todo— la tabla de promedios ya calculada por AFA.
+# ─────────────────────────────────────────────────────────────────────────
+DF_BASE = ("https://datafactory-903663207315-sa-east-1-an.s3.sa-east-1."
+           "amazonaws.com/html/v3/htmlCenter/data/deportes/futbol/primeraa/pages/es/")
+DF_PAGES = {"zonas": "Fase_1", "anual": "Acumulada",
+            "promedios": "descenso", "goleadores": "goleadores",
+            "fixture": "fixture"}
+
+# Otras ligas del mismo proveedor. Cambian el host y el nombre de las páginas,
+# pero el HTML es idéntico, así que sirve el mismo parser.
+NACIONAL_BASE = ("https://info.afa.org.ar/deposito/html/v3/htmlCenter/data/"
+                 "deportes/futbol/nacionalb/pages/es/")
+LIGAS = {
+    "lpf": {
+        "nombre": "Liga Profesional", "torneo": "Clausura 2026",
+        "base": DF_BASE, "pages": DF_PAGES, "propia": True, "sc": 72,
+    },
+    "nacional": {
+        # Las tablas salen de 365scores (competencia 419) porque ahí vienen
+        # las dos zonas juntas, con escudos y en vivo. AFA sirve los
+        # goleadores, que 365scores no discrimina por tipo de gol.
+        "nombre": "Primera Nacional", "torneo": "Temporada 2026",
+        "base": NACIONAL_BASE,
+        "pages": {"zonas": "posiciones", "anual": "descenso",
+                  "goleadores": "goleadores", "fixture": "fixture"},
+        "propia": False, "sc": 419,
+        # Reglamento 2026: 36 equipos en dos zonas de 18, 34 fechas.
+        # Ascienden dos. El primer ascenso se define en una final entre los
+        # ganadores de cada zona; el perdedor cae al Reducido, que juegan del
+        # 2° al 8° de cada zona, por el segundo ascenso.
+        # Descienden cuatro: los dos últimos de cada zona.
+        "zonas_de": {
+            "final": (1, 1),        # 1° de cada zona
+            "reducido": (2, 8),     # del 2° al 8°
+            "desciende": (-2, -1),  # los dos últimos
+        },
+    },
+}
+
+# Colores de cada club para el modo club: (fondo de la barra, color de acento).
+# El acento es el que la camiseta usa como segundo color, así "VAR" y el logo
+# quedan legibles sobre el fondo. Si alguno no convence, se cambia acá.
+COLORES = {
+    "Aldosivi":                ("#0b6b3a", "#f7d417"),  # verde y amarillo
+    "Argentinos Juniors":      ("#b81b22", "#1a4fa0"),  # rojo y blanco
+    "Atlético Tucumán":        ("#1a4fa0", "#111111"),  # celeste y blanco
+    "Banfield":                ("#0d5c34", "#111111"),  # verde y blanco
+    "Barracas Central":        ("#c8102e", "#111111"),  # rojo y blanco
+    "Belgrano":                ("#3a8fd4", "#111111"),  # celeste y blanco
+    "Boca Juniors":            ("#0a2472", "#f2c94c"),  # azul y oro
+    "Central Córdoba (SdE)":   ("#111111", "#f2f2f2"),  # negro y blanco
+    "Defensa y Justicia":      ("#0f8a45", "#f7d417"),  # verde y amarillo
+    "Deportivo Riestra":       ("#111111", "#f2f2f2"),  # negro y blanco
+    "Estudiantes (LP)":        ("#c8102e", "#111111"),  # rojo y blanco
+    "Estudiantes (RC)":        ("#1a4fa0", "#7ec8f2"),  # azul y blanco
+    "Gimnasia y Esgrima (LP)": ("#12539b", "#111111"),  # azul y blanco
+    "Gimnasia y Esgrima (M)":  ("#111111", "#f2f2f2"),  # negro y blanco
+    "Huracán":                 ("#d81e29", "#111111"),  # rojo y blanco
+    "Independiente":           ("#c8102e", "#111111"),  # rojo y blanco
+    "Independiente Rivadavia": ("#1a4fa0", "#111111"),  # azul y blanco
+    "Instituto":               ("#c8102e", "#111111"),  # rojo y blanco
+    "Lanús":                   ("#6d1b34", "#111111"),  # granate y blanco
+    "Newell's Old Boys":       ("#c8102e", "#111111"),  # rojo y negro
+    "Platense":                ("#8c1d2c", "#111111"),  # marrón y blanco
+    "Racing":                  ("#0e4c92", "#8ecdf2"),  # azul y celeste
+    "River Plate":             ("#f2f2f2", "#e2001a"),  # blanco y rojo
+    "Rosario Central":         ("#1a4fa0", "#f2c94c"),  # azul y amarillo
+    "San Lorenzo":             ("#0a2a6b", "#c8102e"),  # azul y rojo
+    "Sarmiento (J)":           ("#0d7a3f", "#111111"),  # verde y blanco
+    "Talleres (C)":            ("#0b1f45", "#111111"),  # azul y blanco
+    "Tigre":                   ("#1a4fa0", "#c8102e"),  # azul y rojo
+    "Unión":                   ("#c8102e", "#111111"),  # rojo y blanco
+    "Vélez Sarsfield":         ("#f2f2f2", "#12376b"),  # blanco y azul
+}
+
+
+def _demojibake(s):
+    """DataFactory a veces manda UTF-8 leído como latin-1 ('Ãrbitro')."""
+    if "Ã" in s or "Â" in s:
+        try:
+            return s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return s
+
+
+class _Fixture(HTMLParser):
+    """
+    Lee el fixture oficial. Cada partido es un <div class="match-inner"> con:
+      .equipo (x2) · .badge (x2, los goles) · .arbitro · .mc-date · .mc-time
+      · .estado
+    y cuelga de un contenedor con data-fecha="nivel1_fechaN".
+    """
+
+    WANT = ("equipo", "badge", "arbitro", "mc-date", "mc-time", "hora", "estado")
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.matches, self._fecha = [], None
+        self._depth_fecha, self._m, self._depth_m = None, None, None
+        self._cls, self._buf, self._d = None, None, 0
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        cls = a.get("class", "")
+        self._d += 1
+        if "data-fecha" in a:
+            mm = re.search(r"fecha(\d+)", a["data-fecha"])
+            self._fecha = int(mm.group(1)) if mm else None
+            self._depth_fecha = self._d
+        if "match-inner" in cls and self._m is None:
+            self._m, self._depth_m = {"fecha": self._fecha, "campos": []}, self._d
+        if self._m is not None:
+            for w in self.WANT:
+                if re.search(r"(^|\s)%s(\s|$)" % re.escape(w), cls):
+                    self._cls, self._buf = w, []
+                    break
+
+    def handle_endtag(self, tag):
+        if self._cls is not None and self._buf is not None:
+            txt = _demojibake(re.sub(r"\s+", " ", "".join(self._buf)).strip())
+            if txt:
+                self._m["campos"].append((self._cls, txt))
+            self._cls, self._buf = None, None
+        if self._m is not None and self._d == self._depth_m:
+            self.matches.append(self._m)
+            self._m, self._depth_m = None, None
+        if self._depth_fecha is not None and self._d == self._depth_fecha:
+            self._fecha, self._depth_fecha = None, None
+        self._d -= 1
+
+    def handle_data(self, d):
+        if self._buf is not None:
+            self._buf.append(d)
+
+
+_MESES = {}
+
+
+def _parse_dt(fecha, hora):
+    """'23-07-2026' + '19:30hs' -> ISO con huso de Buenos Aires."""
+    try:
+        d, m, y = (int(x) for x in fecha.split("-"))
+    except (ValueError, AttributeError):
+        return None
+    hh, mi = 0, 0
+    mm = re.search(r"(\d{1,2}):(\d{2})", hora or "")
+    if mm:
+        hh, mi = int(mm.group(1)), int(mm.group(2))
+    return "%04d-%02d-%02dT%02d:%02d:00-03:00" % (y, m, d, hh, mi)
+
+
+_FINALIZADO = ("finalizado", "final", "entretiempo", "suspendido")
+
+
+def df_fixture(ttl=120):
+    """
+    El fixture completo del Clausura: las 16 fechas, con árbitro y estadio.
+
+    Hace falta porque 365scores ignora los parámetros de fecha y siempre
+    devuelve la misma ventana de ~45 partidos (las fechas 4, 5 y 6). Por eso
+    faltaban las primeras.
+    """
+    url = DF_BASE + "fixture.html"
+    with _lock:
+        hit = _cache.get(url)
+        if hit and time.time() - hit[0] < ttl:
+            return hit[1]
+
+    def ir_a_la_fuente():
+        req = Request(url, headers={"User-Agent": UA, "Accept": "text/html"})
+        with urlopen(req, timeout=25) as r:
+            html = r.read().decode("utf-8", "replace")
+        p = _Fixture()
+        p.feed(html)
+        return p.matches
+
+    matches, info = almacen.con_respaldo("dffx:" + url, ir_a_la_fuente,
+                                         max_edad=ttl, tag="afa/fixture/lpf")
+    if info.get("origen") == "cache-vieja":
+        ULTIMO_PROBLEMA["afa"] = info
+
+    p = type("obj", (), {"matches": matches})()
+    out = []
+    for m in p.matches:
+        campos = m["campos"]
+        eq = [v for k, v in campos if k == "equipo"]
+        goles = [v for k, v in campos if k == "badge"]
+        arb = next((v for k, v in campos if k == "arbitro"), "")
+        fch = next((v for k, v in campos if k == "mc-date"), "")
+        hor = next((v for k, v in campos if k in ("mc-time", "hora")), "")
+        est = next((v for k, v in campos if k == "estado"), "")
+        if len(eq) < 2:
+            continue
+        hc, ac = match_team(eq[0]), match_team(eq[1])
+        if not hc or not ac:
+            continue          # placeholders tipo "A Confirmar" de los playoffs
+        gh = _int(goles[0], None) if len(goles) > 0 else None
+        ga = _int(goles[1], None) if len(goles) > 1 else None
+        jugado = norm(est) in _FINALIZADO or (gh is not None and ga is not None)
+        za, zb = ZONE_OF.get(hc), ZONE_OF.get(ac)
+        out.append({
+            "id": "df-%s-%s-%s" % (m["fecha"], norm(hc)[:6], norm(ac)[:6]),
+            "round": m["fecha"],
+            "zone": za if za == zb else None,      # None = interzonal
+            "interzonal": bool(za and zb and za != zb),
+            "stage": "Clausura",
+            "start": _parse_dt(fch, hor),
+            "status": "FIN" if jugado else "PROG",
+            "statusText": est,
+            "minute": None,
+            "referee": re.sub(r"^\s*Árbitro:\s*", "", arb).strip(),
+            "home": {"id": None, "canon": hc, "name": eq[0], "short": "",
+                     "logo": None, "score": gh},
+            "away": {"id": None, "canon": ac, "name": eq[1], "short": "",
+                     "logo": None, "score": ga},
+            "gh": gh, "ga": ga, "venue": "",
+        })
+    out.sort(key=lambda x: (x["round"] or 0, x["interzonal"], x["start"] or ""))
+    with _lock:
+        _cache[url] = (time.time(), out)
+    return out
+
+
+class _Tables(HTMLParser):
+    """
+    Extrae <table> como listas de filas de texto. Sólo stdlib.
+
+    Descarta las filas hechas sólo de <th>: AFA repite el encabezado en el
+    medio de la tabla (al empezar la Zona B, por ejemplo) y si no se filtra
+    aparece un equipo fantasma llamado "Nº".
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables = []
+        self._t, self._row, self._cell, self._in, self._td = None, None, None, 0, False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self._t = []
+        elif tag == "tr" and self._t is not None:
+            self._row, self._td = [], False
+        elif tag in ("td", "th") and self._row is not None:
+            self._cell, self._in = [], 1
+            if tag == "td":
+                self._td = True
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th") and self._cell is not None:
+            txt = re.sub(r"\s+", " ", "".join(self._cell)).strip()
+            self._row.append(txt)
+            self._cell, self._in = None, 0
+        elif tag == "tr" and self._row is not None:
+            if any(self._row) and self._td:
+                self._t.append(self._row)
+            self._row = None
+        elif tag == "table" and self._t is not None:
+            self.tables.append(self._t)
+            self._t = None
+
+    def handle_data(self, d):
+        if self._in and self._cell is not None:
+            self._cell.append(d)
+
+
+def df_tables(page, ttl=45, liga="lpf"):
+    """Tablas de una página de DataFactory, con respaldo en la base."""
+    cfg = LIGAS.get(liga, LIGAS["lpf"])
+    url = cfg["base"] + cfg["pages"].get(page, page) + ".html"
+    with _lock:
+        hit = _cache.get(url)
+        if hit and time.time() - hit[0] < ttl:
+            return hit[1]
+
+    def ir_a_la_fuente():
+        req = Request(url, headers={"User-Agent": UA, "Accept": "text/html"})
+        with urlopen(req, timeout=20) as r:
+            html = r.read().decode("utf-8", "replace")
+        p = _Tables()
+        p.feed(html)
+        return p.tables
+
+    tablas, info = almacen.con_respaldo("df:" + url, ir_a_la_fuente,
+                                        max_edad=ttl, tag="afa/" + page)
+    if info.get("origen") == "cache-vieja":
+        ULTIMO_PROBLEMA["afa"] = info
+    with _lock:
+        _cache[url] = (time.time(), tablas)
+    return tablas
+
+
+def _cells(row):
+    """Celdas no vacías de una fila."""
+    return [c for c in row if c]
+
+
+def _int(v, default=0):
+    """'12' -> 12 · '-3' -> -3 · '' o basura -> default."""
+    try:
+        return int(str(v).replace("+", "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def df_rows(table):
+    """
+    Normaliza cada fila a (canónico, nombre_original, celdas_posteriores).
+
+    El formato es: Nº | (escudo) | Equipo | ...números...
+
+    Importante: NO se descartan las celdas vacías. Los equipos recién
+    ascendidos no tienen puntos de 2024 ni 2025 y esas celdas vienen en
+    blanco; si se filtran, se corren todas las columnas siguientes y el
+    promedio sale mal.
+    """
+    out = []
+    for row in table:
+        if len(row) < 3:
+            continue
+        idx = next((i for i, x in enumerate(row)
+                    if x and not re.fullmatch(r"-?[\d.,]+", x)), None)
+        if idx is None:
+            continue
+        canon = match_team(row[idx])
+        if canon:
+            out.append((canon, row[idx], row[idx + 1:]))
+    return out
+
+
+def logo(c):
+    """
+    Escudo del club, servido desde nuestro propio servidor.
+
+    Antes el navegador iba directo al CDN de 365scores. Eso consume ancho de
+    banda ajeno y, publicado, se bloquea con sólo mirar el Referer. Ahora la
+    imagen pasa por /img, que la busca una vez y la guarda en memoria.
+    """
+    cid, ver = c.get("id"), c.get("imageVersion", 1)
+    if not cid:
+        return None
+    return "/img/competidor/%s/%s" % (ver, cid)
+
+
+def emblema(comp, ver=1):
+    return "/img/competencia/%s/%s" % (ver, comp)
+
+
+_CDN = "https://imagecache.365scores.com/image/upload/f_png,w_128,h_128,c_limit,q_auto:best,dpr_2"
+_IMG_CACHE = {}
+_IMG_MAX = 400          # los escudos pesan pocos KB: entran todos de sobra
+
+
+def traer_imagen(tipo, ver, ident):
+    """Descarga y cachea un escudo. Devuelve (bytes, content-type)."""
+    clave = (tipo, ver, ident)
+    with _lock:
+        if clave in _IMG_CACHE:
+            return _IMG_CACHE[clave]
+
+    carpeta = {"competidor": "Competitors", "competencia": "Competitions"}.get(tipo)
+    if not carpeta:
+        raise ValueError("tipo de imagen desconocido")
+    url = "%s/v%s/%s/%s" % (_CDN, ver, carpeta, ident)
+    req = Request(url, headers={"User-Agent": UA, "Accept": "image/png,image/*"})
+    with urlopen(req, timeout=15) as r:
+        datos = r.read()
+        ctype = r.headers.get("Content-Type", "image/png")
+
+    with _lock:
+        if len(_IMG_CACHE) >= _IMG_MAX:
+            _IMG_CACHE.clear()
+        _IMG_CACHE[clave] = (datos, ctype)
+    return datos, ctype
+
+
+def status_of(g):
+    """statusGroup: 1/2 programado · 3 en juego · 4 terminado."""
+    sg, txt = g.get("statusGroup"), norm(g.get("statusText"))
+    if any(w in txt for w in ("suspend", "aplaz", "cancel", "posterg")):
+        return "SUSP"
+    if sg == 3:
+        return "LIVE"
+    if sg == 4:
+        return "FIN"
+    return "PROG"
+
+
+def side(c):
+    sc = c.get("score")
+    return {
+        "id": c.get("id"),
+        "name": c.get("name") or "",
+        "canon": match_team(c.get("name")),
+        "short": c.get("symbolicName") or "",
+        "logo": logo(c),
+        "score": None if sc in (None, -1) else int(sc),
+    }
+
+
+def map_game(g):
+    st = status_of(g)
+    h, a = side(g.get("homeCompetitor") or {}), side(g.get("awayCompetitor") or {})
+    gt = g.get("gameTime")
+    live_min = int(gt) if st == "LIVE" and isinstance(gt, (int, float)) and gt > 0 else None
+    za, zb = ZONE_OF.get(h["canon"]), ZONE_OF.get(a["canon"])
+    return {
+        "id": g.get("id"),
+        "zone": za if za == zb else None,
+        "interzonal": bool(za and zb and za != zb),
+        "referee": "",
+        "round": g.get("roundNum"),
+        "stage": g.get("stageName") or "",
+        "start": g.get("startTime"),
+        "status": st,
+        "statusText": g.get("statusText") or "",
+        "minute": live_min,
+        "home": h, "away": a,
+        "gh": h["score"], "ga": a["score"],
+        "venue": (g.get("venue") or {}).get("name") or "",
+    }
+
+
+def live_games(ttl=15):
+    """La ventana que devuelve 365scores: lo que se juega ahora y alrededor."""
+    raw, seen, out = [], set(), []
+    for ep in ("games/current", "games/results", "games/fixtures"):
+        try:
+            raw.extend(fetch(ep, {"competitions": COMPETITION}, ttl=ttl).get("games", []))
+        except Exception:
+            pass
+    for g in raw:
+        if g.get("id") in seen:
+            continue
+        seen.add(g.get("id"))
+        m = map_game(g)
+        if STAGE in norm(m["stage"]):
+            out.append(m)
+    return out
+
+
+def all_games(ttl=25):
+    """
+    Todo el Clausura: las 16 fechas.
+
+    La base es el fixture oficial de AFA. 365scores no sirve para esto: ignora
+    los parámetros startDate/endDate y siempre devuelve la misma ventana de
+    ~45 partidos (las fechas 4, 5 y 6) — de ahí que faltaran las primeras.
+
+    Sobre esa base se pega lo que aporta 365scores y AFA no tiene: el minuto
+    de los partidos en curso, los escudos y el id para abrir el detalle.
+    """
+    try:
+        base = [dict(m) for m in df_fixture()]
+    except Exception:
+        base = []
+
+    if not base:                      # plan B: sólo lo que haya en 365scores
+        return sorted(live_games(ttl), key=lambda x: (x["start"] or "", str(x["id"])))
+
+    idx = {}
+    for m in base:
+        idx[(m["round"], m["home"]["canon"], m["away"]["canon"])] = m
+        idx[(None, m["home"]["canon"], m["away"]["canon"])] = m
+
+    for lv in live_games(ttl):
+        hc, ac = lv["home"]["canon"], lv["away"]["canon"]
+        m = idx.get((lv["round"], hc, ac)) or idx.get((None, hc, ac))
+        if not m:
+            continue
+        for side_key in ("home", "away"):
+            m[side_key]["id"] = lv[side_key]["id"]
+            m[side_key]["logo"] = lv[side_key]["logo"]
+            m[side_key]["short"] = lv[side_key]["short"]
+        m["liveId"] = lv["id"]        # id de 365scores, para el detalle
+        m["venue"] = lv["venue"] or m["venue"]
+        if lv["status"] == "LIVE" or (lv["status"] == "FIN" and m["gh"] is None):
+            m["status"] = lv["status"]
+            m["statusText"] = lv["statusText"] or m["statusText"]
+            m["minute"] = lv["minute"]
+            if lv["gh"] is not None:
+                m["gh"], m["ga"] = lv["gh"], lv["ga"]
+                m["home"]["score"], m["away"]["score"] = lv["gh"], lv["ga"]
+
+    base.sort(key=lambda x: (x["round"] or 0, x["interzonal"], x["start"] or ""))
+    return base
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Tablas calculadas desde los partidos
+# ─────────────────────────────────────────────────────────────────────────
+def build_tables(games):
+    """Acumula puntos por equipo. Cuenta partidos terminados y en juego."""
+    acc = {}
+
+    def slot(canon, meta):
+        if canon not in acc:
+            acc[canon] = {"canon": canon, "zone": ZONE_OF.get(canon),
+                          "team": {"name": canon, "short": meta.get("short") or "",
+                                   "logo": meta.get("logo"), "id": meta.get("id")},
+                          "pj": 0, "g": 0, "e": 0, "p": 0, "gf": 0, "gc": 0,
+                          "pts": 0, "form": [], "_live": 0}
+        elif meta.get("logo") and not acc[canon]["team"]["logo"]:
+            acc[canon]["team"]["logo"] = meta["logo"]
+        return acc[canon]
+
+    for m in games:
+        hc, ac = m["home"]["canon"], m["away"]["canon"]
+        if not hc or not ac:
+            continue
+        H, A = slot(hc, m["home"]), slot(ac, m["away"])
+        if m["status"] not in ("FIN", "LIVE") or m["gh"] is None or m["ga"] is None:
+            continue
+        gh, ga = m["gh"], m["ga"]
+        for me, rival, mine, theirs in ((H, A, gh, ga), (A, H, ga, gh)):
+            me["pj"] += 1
+            me["gf"] += mine
+            me["gc"] += theirs
+            if mine > theirs:
+                me["g"] += 1
+                me["pts"] += 3
+                r = "G"
+            elif mine == theirs:
+                me["e"] += 1
+                me["pts"] += 1
+                r = "E"
+            else:
+                me["p"] += 1
+                r = "P"
+            if m["status"] == "LIVE":
+                me["_live"] += 1
+            else:
+                me["form"].append((m["start"] or "", r))
+
+    for r in acc.values():
+        r["dif"] = r["gf"] - r["gc"]
+        r["form"] = [x[1] for x in sorted(r["form"])][-5:]
+        r["live"] = r.pop("_live") > 0
+
+    # equipos que todavía no jugaron aparecen igual, en cero
+    for canon in list(ZONE_OF):
+        if canon not in acc:
+            acc[canon] = {"canon": canon, "zone": ZONE_OF[canon],
+                          "team": {"name": canon, "short": "", "logo": None, "id": None},
+                          "pj": 0, "g": 0, "e": 0, "p": 0, "gf": 0, "gc": 0,
+                          "pts": 0, "dif": 0, "form": [], "live": False}
+    return acc
+
+
+def sort_rows(rows):
+    rows = sorted(rows, key=lambda r: (-r["pts"], -r["dif"], -r["gf"], norm(r["canon"])))
+    for i, r in enumerate(rows, 1):
+        r["pos"] = i
+    return rows
+
+
+def zones_from(games):
+    acc = build_tables(games)
+    za = sort_rows([r for r in acc.values() if r["zone"] == "A"])
+    zb = sort_rows([r for r in acc.values() if r["zone"] == "B"])
+    return za, zb, acc
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Endpoints
+# ─────────────────────────────────────────────────────────────────────────
+def api_games(q):
+    """Partidos. ?date=YYYY-MM-DD filtra por día; ?round=N por fecha."""
+    games = all_games()
+    date = (q.get("date") or [None])[0]
+    rnd = (q.get("round") or [None])[0]
+    if date:
+        games = [g for g in games if (g["start"] or "")[:10] == date]
+    if rnd:
+        games = [g for g in games if str(g["round"]) == str(rnd)]
+    logos = _logos()
+    for g in games:                      # el sitio del club, para el escudo
+        for s in ("home", "away"):
+            g[s]["site"] = SITIOS.get(g[s]["canon"])
+            if not g[s].get("logo"):
+                g[s]["logo"] = logos.get(g[s]["canon"], {}).get("logo")
+    rounds = sorted({g["round"] for g in games if g["round"]})
+    return {"games": games, "count": len(games), "rounds": rounds,
+            "live": sum(1 for g in games if g["status"] == "LIVE"),
+            "interzonal": sum(1 for g in games if g["interzonal"])}
+
+
+def api_rounds(q):
+    """Qué fechas existen y cuál es la que se está jugando."""
+    games = all_games(ttl=90)
+    by = {}
+    for g in games:
+        by.setdefault(g["round"], []).append(g)
+    out = []
+    for r in sorted(k for k in by if k):
+        gs = by[r]
+        done = sum(1 for g in gs if g["status"] == "FIN")
+        out.append({"round": r, "games": len(gs), "finished": done,
+                    "live": sum(1 for g in gs if g["status"] == "LIVE"),
+                    # si faltan partidos, la fecha está incompleta y las
+                    # tablas van a salir mal: mejor avisarlo
+                    "incompleta": len(gs) < GAMES_POR_FECHA,
+                    "from": min(g["start"] or "" for g in gs),
+                    "to": max(g["start"] or "" for g in gs)})
+    # misma regla que en las demás ligas: por calendario, no por estado
+    current = fecha_actual([r["round"] for r in out], by)
+    faltan = [r["round"] for r in out if r["incompleta"]]
+    return {"rounds": out, "current": current, "incompletas": faltan,
+            "total_partidos": len(games)}
+
+
+def _logos(comp=None):
+    """
+    Escudo y sitio oficial de cada club.
+
+    Sale del array `competitors` que 365scores adjunta a cualquier respuesta
+    de partidos: ahí vienen los 30 equipos del torneo, jueguen o no esa fecha.
+    Antes se sacaba de los partidos ya cruzados con el fixture de AFA, y por eso
+    faltaban escudos en las fechas viejas, en la anual y en los goleadores.
+    """
+    comp = comp or COMPETITION
+    out = {}
+    for ep in ("games/results", "games/fixtures", "games/current"):
+        try:
+            data = fetch(ep, {"competitions": comp}, ttl=600)
+        except Exception:
+            continue
+        for c in (data.get("competitors") or []):
+            canon = match_team(c.get("name"))
+            if not canon or canon in out:
+                continue
+            out[canon] = {"name": canon, "short": c.get("symbolicName") or "",
+                          "logo": logo(c), "site": SITIOS.get(canon)}
+    # el standings suma los que no aparecieron en ningún partido reciente
+    try:
+        data = fetch("standings", {"competitions": comp, "live": "true"}, ttl=600)
+        for b in (data.get("standings") or []):
+            for r in b.get("rows", []):
+                c = r.get("competitor") or {}
+                canon = match_team(c.get("name"))
+                if canon and canon not in out:
+                    out[canon] = {"name": canon, "short": c.get("symbolicName") or "",
+                                  "logo": logo(c), "site": SITIOS.get(canon)}
+    except Exception:
+        pass
+
+    for canon in ZONE_OF:
+        out.setdefault(canon, {"name": canon, "short": "", "logo": None,
+                               "site": SITIOS.get(canon)})
+    return out
+
+
+def restantes_por_equipo():
+    """Cuántos partidos del Clausura le quedan a cada equipo."""
+    faltan = {c: 0 for c in ZONE_OF}
+    for m in all_games(ttl=120):
+        if m["status"] in ("FIN",):
+            continue
+        for s in ("home", "away"):
+            c = m[s]["canon"]
+            if c in faltan:
+                faltan[c] += 1
+    return faltan
+
+
+def _live_deltas():
+    """Lo que están sumando ahora mismo los partidos en juego."""
+    d = {}
+    for m in all_games(ttl=15):
+        if m["status"] != "LIVE" or m["gh"] is None or m["ga"] is None:
+            continue
+        for me, rival, mine, theirs in ((m["home"], m["away"], m["gh"], m["ga"]),
+                                        (m["away"], m["home"], m["ga"], m["gh"])):
+            if not me["canon"]:
+                continue
+            x = d.setdefault(me["canon"], {"pj": 0, "g": 0, "e": 0, "p": 0,
+                                           "gf": 0, "gc": 0, "pts": 0})
+            x["pj"] += 1
+            x["gf"] += mine
+            x["gc"] += theirs
+            if mine > theirs:
+                x["g"] += 1
+                x["pts"] += 3
+            elif mine == theirs:
+                x["e"] += 1
+                x["pts"] += 1
+            else:
+                x["p"] += 1
+    return d
+
+
+def _tabla(table, logos, deltas, con_vivo):
+    """Convierte una tabla de DataFactory (Pts Pj Pg Pe Pp Gf Gc Df) al modelo."""
+    rows = []
+    for canon, raw_name, nums in df_rows(table):
+        pts, pj, g, e, p, gf, gc = (_int(nums[i]) for i in range(7))
+        dl = deltas.get(canon) if con_vivo else None
+        if dl:
+            pts, pj, g, e, p = pts + dl["pts"], pj + dl["pj"], g + dl["g"], e + dl["e"], p + dl["p"]
+            gf, gc = gf + dl["gf"], gc + dl["gc"]
+        rows.append({"canon": canon, "zone": ZONE_OF.get(canon),
+                     "team": logos.get(canon, {"name": canon, "short": "", "logo": None}),
+                     "pts": pts, "pj": pj, "g": g, "e": e, "p": p,
+                     "gf": gf, "gc": gc, "dif": gf - gc,
+                     "form": [], "live": bool(dl)})
+    return sort_rows(rows)
+
+
+def api_standings(q):
+    """
+    Zona A y Zona B. La base es la tabla oficial de AFA (DataFactory) y,
+    encima, se suman los goles de los partidos que se están jugando ahora
+    para que las posiciones se muevan en tiempo real.
+    """
+    con_vivo = (q.get("live") or ["1"])[0] != "0"
+    fuente, nota = "AFA / DataFactory", ""
+    try:
+        tablas = df_tables("zonas")
+        if len(tablas) < 2:
+            raise ValueError("DataFactory devolvió %d tabla(s), esperaba 2" % len(tablas))
+        logos, deltas = _logos(), (_live_deltas() if con_vivo else {})
+        za = _tabla(tablas[0], logos, deltas, con_vivo)
+        zb = _tabla(tablas[1], logos, deltas, con_vivo)
+        if len(za) != 15 or len(zb) != 15:
+            nota = "Ojo: %d y %d equipos por zona (deberían ser 15)" % (len(za), len(zb))
+        # form (últimos 5) sale de los partidos, que DataFactory no da
+        _, _, acc = zones_from(all_games())
+        for r in za + zb:
+            r["form"] = acc.get(r["canon"], {}).get("form", [])
+    except Exception as e:
+        # si AFA no responde, caemos a la tabla calculada desde los partidos
+        za, zb, _ = zones_from(all_games())
+        fuente, nota = "calculada desde los partidos", "DataFactory no respondió: %s" % e
+
+    return {"zones": [{"name": "Zona A", "rows": za}, {"name": "Zona B", "rows": zb}],
+            "fuente": fuente, "nota": nota, "envivo": con_vivo}
+
+
+def api_annual(q):
+    """Tabla anual 2026 (acumulada oficial de AFA), con los partidos en curso."""
+    con_vivo = (q.get("live") or ["1"])[0] != "0"
+    logos, deltas = _logos(), (_live_deltas() if con_vivo else {})
+    rows = []
+    try:
+        tabla = df_tables("anual")[0]
+        for canon, _raw, nums in df_rows(tabla):
+            pts, pj, g, e, p, gf, gc = (_int(nums[i]) for i in range(7))
+            dl = deltas.get(canon)
+            if dl:
+                pts, pj, gf, gc = pts + dl["pts"], pj + dl["pj"], gf + dl["gf"], gc + dl["gc"]
+            rows.append({"team": logos.get(canon, {"name": canon, "short": "", "logo": None}),
+                         "zone": ZONE_OF.get(canon), "pts": pts, "pj": pj,
+                         "gf": gf, "gc": gc, "dif": gf - gc, "live": bool(dl)})
+        fuente = "AFA / DataFactory"
+    except Exception as e:
+        return {"rows": [], "error": str(e), "fuente": "—"}
+
+    rows.sort(key=lambda r: (-r["pts"], -r["dif"], norm(r["team"]["name"])))
+
+    # Reparto de cupos. Los que ya están clasificados por haber salido
+    # campeones no ocupan lugar: liberan el suyo y corren a todos los de abajo.
+    libre = 0
+    total = len(rows)
+    for i, r in enumerate(rows, 1):
+        r["pos"] = i
+        # además del último de promedios, desciende el último de la anual
+        r["desciende"] = i > total - DESCIENDE_ANUAL
+        name = r["team"]["name"]
+        if r["desciende"]:
+            r["copa"], r["copaTexto"] = "desciende", "Desciende por la tabla anual"
+            continue
+        if name in YA_CLASIFICADOS:
+            r["copa"] = "campeon"
+            r["copaTexto"] = YA_CLASIFICADOS[name]
+            libre += 1
+            continue
+        efectiva = i - libre
+        if efectiva <= CUPOS_LIBERTADORES:
+            r["copa"], r["copaTexto"] = "libertadores", "Copa Libertadores 2027"
+        elif efectiva <= CUPOS_LIBERTADORES + CUPOS_SUDAMERICANA:
+            r["copa"], r["copaTexto"] = "sudamericana", "Copa Sudamericana 2027"
+        else:
+            r["copa"], r["copaTexto"] = "", ""
+
+    return {"rows": rows, "fuente": fuente,
+            "cupos": {"libertadores": CUPOS_LIBERTADORES,
+                      "sudamericana": CUPOS_SUDAMERICANA,
+                      "yaClasificados": YA_CLASIFICADOS},
+            "nota": ("La Anual reparte 9 cupos: 1° a 3° a Libertadores y 4° a 9° a "
+                     "Sudamericana. Belgrano ya entró como campeón del Apertura, "
+                     "así que libera un lugar y corre a todos una posición.")}
+
+
+def api_promedios(q):
+    """
+    Tabla de promedios, tal cual la publica AFA: puntos de 2024, 2025 y 2026
+    sobre partidos jugados. Ya no se estima nada — antes se calculaba con una
+    base cargada a mano porque no habíamos encontrado esta fuente.
+    """
+    con_vivo = (q.get("live") or ["1"])[0] != "0"
+    logos, deltas = _logos(), (_live_deltas() if con_vivo else {})
+    rows, saltadas = [], []
+    try:
+        tabla = df_tables("promedios")[0]
+    except Exception as e:
+        return {"rows": [], "error": str(e), "fuente": "—"}
+
+    for canon, raw, nums in df_rows(tabla):
+        # columnas: 2024 | 2025 | 2026 | Total | Pj | Prom.
+        if len(nums) < 5:
+            saltadas.append(raw)
+            continue
+        p24, p25, p26 = (_int(nums[i], None) for i in range(3))
+        pts, pj = _int(nums[3]), _int(nums[4])
+        dl = deltas.get(canon)
+        if dl:
+            pts, pj = pts + dl["pts"], pj + dl["pj"]
+            p26 = (p26 or 0) + dl["pts"]
+        rows.append({"team": logos.get(canon, {"name": canon, "short": "", "logo": None}),
+                     "zone": ZONE_OF.get(canon),
+                     "p2024": p24, "p2025": p25, "p2026": p26,
+                     "pts": pts, "pj": pj,
+                     "prom": round(pts / pj, 4) if pj else 0.0,
+                     "live": bool(dl)})
+
+    rows.sort(key=lambda r: (-r["prom"], norm(r["team"]["name"])))
+    for i, r in enumerate(rows, 1):
+        r["pos"] = i
+
+    # ── Riesgo de descenso ───────────────────────────────────────────────
+    # Para cada equipo: el mejor promedio al que puede llegar (gana todo lo
+    # que le queda) y el peor (pierde todo). Un equipo de arriba sigue en
+    # riesgo mientras su peor promedio sea alcanzable por el mejor promedio
+    # de alguno de los que hoy están descendiendo.
+    faltan = restantes_por_equipo()
+    for r in rows:
+        n = faltan.get(r["team"]["name"], 0)
+        r["restantes"] = n
+        base_pj = r["pj"] + n
+        r["promMax"] = round((r["pts"] + 3 * n) / base_pj, 4) if base_pj else 0.0
+        r["promMin"] = round(r["pts"] / base_pj, 4) if base_pj else 0.0
+
+    en_descenso = rows[-DESCIENDEN:] if rows else []
+    techo = max((r["promMax"] for r in en_descenso), default=0.0)
+    for r in rows:
+        salvado = r["promMin"] > techo
+        r["enRiesgo"] = (not salvado) and r not in en_descenso
+        r["descendiendo"] = r in en_descenso
+        r["salvado"] = salvado
+    riesgo = [r["team"]["name"] for r in rows if r["enRiesgo"]]
+
+    return {"rows": rows, "fuente": "AFA / DataFactory", "saltadas": saltadas,
+            "enRiesgo": riesgo, "desciende": DESCIENDEN,
+            "nota": ("Promedio oficial: puntos de las últimas 3 temporadas sobre "
+                     "partidos jugados. En rojo el que hoy desciende; en amarillo, "
+                     "los que todavía pueden ser alcanzados según los partidos que faltan.")}
+
+
+def api_scorers(q):
+    """Goleadores oficiales, con el desglose por tipo de gol que publica AFA."""
+    logos = _logos()
+    try:
+        tabla = df_tables("goleadores", ttl=120)[0]
+    except Exception as e:
+        return {"rows": [], "error": str(e), "fuente": "—"}
+
+    rows = []
+    for fila in tabla:
+        c = _cells(fila)
+        if len(c) < 3:
+            continue
+        # Jugador | Equipo | Goles | Jugada | Cabeza | T.Libre | Penal
+        jugador, equipo = c[0], c[1]
+        if norm(jugador) in ("jugador", "") or not re.fullmatch(r"\d+", c[2] or ""):
+            continue
+        canon = match_team(equipo)
+        if not canon:
+            continue
+        n = [_int(x) for x in c[2:7]] + [0] * 5
+        rows.append({"name": jugador,
+                     "team": logos.get(canon, {"name": canon, "short": "", "logo": None}),
+                     "goals": n[0], "jugada": n[1], "cabeza": n[2],
+                     "tiroLibre": n[3], "pens": n[4]})
+    rows.sort(key=lambda x: -x["goals"])
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return {"rows": rows, "fuente": "AFA / DataFactory"}
+
+
+def _num(v):
+    try:
+        return float(str(v).replace("%", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def api_match(q):
+    """
+    Detalle de un partido: goles con nombre, tarjetas, cambios, estadísticas
+    y formaciones.
+
+    Ojo con dos cosas de 365scores: los eventos traen `playerId`, no el
+    nombre — hay que cruzarlos contra `members` del propio partido. Y las
+    estadísticas viven en otro endpoint (`game/stats`), no en el del partido.
+    """
+    gid = (q.get("id") or [None])[0]
+    if not gid:
+        return {"error": "falta el parámetro id"}
+
+    data = fetch("game", {"gameId": gid}, ttl=12)
+    g = data.get("game") or (data.get("games") or [{}])[0] or {}
+    if not g.get("id"):
+        return {"error": "partido no encontrado"}
+
+    out = map_game(g)
+    hid = (g.get("homeCompetitor") or {}).get("id")
+
+    # playerId -> nombre y número
+    quien = {}
+    for m in (g.get("members") or []):
+        quien[m.get("id")] = {"name": m.get("name") or m.get("shortName") or "",
+                              "n": m.get("jerseyNumber")}
+
+    TIPOS = {1: "gol", 2: "amarilla", 3: "roja", 1000: "cambio", 12: "palo"}
+    events = []
+    for e in (g.get("events") or []):
+        et = e.get("eventType") or {}
+        tid = et.get("id")
+        nombre = norm(et.get("name"))
+        tipo = TIPOS.get(tid)
+        if not tipo:
+            tipo = ("gol" if "gol" in nombre else
+                    "roja" if "roja" in nombre else
+                    "amarilla" if "amarilla" in nombre else
+                    "cambio" if "sustitu" in nombre or "substitution" in nombre else "otro")
+        p = quien.get(e.get("playerId"), {})
+        extra = [quien.get(x, {}).get("name", "") for x in (e.get("extraPlayers") or [])]
+        mins = e.get("gameTime")
+        events.append({
+            "min": int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None,
+            "added": e.get("addedTime") or 0,
+            "side": "h" if e.get("competitorId") == hid else "a",
+            "type": tipo,
+            "sub": et.get("subTypeName") or "",
+            "player": p.get("name", ""),
+            "extra": ", ".join(x for x in extra if x),
+        })
+    events.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
+
+    # estadísticas: endpoint aparte
+    hs, as_, orden = {}, {}, []
+    try:
+        sj = fetch("game/stats", {"games": gid}, ttl=20)
+        for s in (sj.get("statistics") or []):
+            nombre = s.get("name")
+            if not nombre:
+                continue
+            if nombre not in orden:
+                orden.append(nombre)
+            (hs if s.get("competitorId") == hid else as_)[nombre] = s.get("value")
+    except Exception:
+        pass
+
+    stats = []
+    for k in orden:
+        na, nb = _num(hs.get(k)), _num(as_.get(k))
+        t = (na + nb) or 1
+        stats.append({"label": k, "h": hs.get(k, "0"), "a": as_.get(k, "0"),
+                      "hp": na / t * 100, "ap": nb / t * 100})
+
+    # formaciones: los titulares vienen por id, el nombre está en members
+    # titulares y suplentes; el nombre y el número salen de `members`
+    lineups = {"home": [], "away": []}
+    banco = {"home": [], "away": []}
+    formation = {}
+    TITULAR = ("titular", "starting", "starter")
+    for c_key, key in (("homeCompetitor", "home"), ("awayCompetitor", "away")):
+        lu = (g.get(c_key) or {}).get("lineups") or {}
+        formation[key] = lu.get("formation") or ""
+        for m in (lu.get("members") or []):
+            p = quien.get(m.get("id"), {})
+            ficha = {"n": p.get("n") or m.get("jerseyNumber"),
+                     "name": p.get("name") or "",
+                     "pos": (m.get("position") or {}).get("name") or ""}
+            if not ficha["name"]:
+                continue
+            es_titular = m.get("status") == 1 or norm(m.get("statusText")) in TITULAR
+            (lineups if es_titular else banco)[key].append(ficha)
+
+    ofic = [o.get("name") if isinstance(o, dict) else str(o) for o in (g.get("officials") or [])]
+    venue = g.get("venue") or {}
+    for s in ("home", "away"):
+        out[s]["site"] = SITIOS.get(out[s]["canon"])
+
+    out.update({"events": events, "stats": stats, "lineups": lineups,
+                "banco": banco, "formation": formation,
+                "referee": ofic[0] if ofic else "",
+                "venue": venue.get("name") or out.get("venue") or "",
+                "capacidad": venue.get("capacity")})
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Otras ligas (Primera Nacional). Sin nombres canónicos ni datos en vivo:
+# se muestra tal cual lo publica AFA.
+# ─────────────────────────────────────────────────────────────────────────
+def _limpio(nombre):
+    """Saca marcas del tipo '(*) Partido suspendido' del nombre del equipo."""
+    return re.sub(r"\s*\(\*+\)\s*$", "", nombre).strip()
+
+
+# ── Emparejar nombres entre AFA y 365scores ──────────────────────────────
+# En la Liga Profesional alcanzaba con una lista de alias porque son 30
+# equipos conocidos. En la Primera Nacional son 36 y cada fuente los escribe
+# distinto: AFA pone "Dep. Morón", "Def. de Belgrano", "Racing (Cba)" y
+# 365scores "Deportivo Morón", "Defensores de Belgrano", "Racing de Córdoba".
+# Comparar por prefijo no alcanza, así que se comparan los tokens que
+# importan, después de expandir las abreviaturas.
+ABREV = {
+    "dep": "deportivo", "def": "defensores", "defensa": "defensores",
+    "atl": "atletico", "at": "atletico", "gral": "general", "sp": "sportivo",
+    "gim": "gimnasia", "gyt": "gimnasia", "ind": "independiente", "cent": "central",
+    "cba": "cordoba", "se": "santiago", "sgo": "santiago", "sj": "juan",
+    "sl": "luis", "t": "tucuman", "j": "jujuy", "ba": "aires", "m": "mendoza",
+    "lp": "plata", "rc": "cuarto", "ctes": "corrientes",
+}
+GENERICAS = {"club", "atletico", "deportivo", "de", "del", "la", "el", "los", "y",
+             "esgrima", "social", "cultural", "asociacion", "ca", "cd", "csyd",
+             "sportivo", "san", "general", "carril", "aires", "buenos"}
+
+
+def _tokens(nombre):
+    """
+    Tokens significativos de un nombre, con abreviaturas expandidas.
+
+    Las de una sola letra sólo se expanden si venían entre paréntesis: en
+    "San Martín (T)" la T es Tucumán, pero en "T. Suárez" es apenas la
+    inicial de Tristán. Expandirla ahí inventaba un "tucumán" que no existe
+    y arruinaba el emparejado.
+    """
+    crudo = norm(nombre)
+    entre_parentesis = set()
+    for grupo in re.findall(r"\(([^)]*)\)", crudo):
+        for t in grupo.split():
+            entre_parentesis.add(ABREV.get(t, t))
+
+    out = set(entre_parentesis)
+    for t in re.sub(r"\([^)]*\)", " ", crudo).split():
+        if len(t) > 1:
+            t = ABREV.get(t, t)
+        elif len(t) == 1:
+            continue                 # inicial suelta: no aporta nada
+        if t and t not in GENERICAS and not t.isdigit():
+            out.add(t)
+    return {t for t in out if t not in GENERICAS} or set(crudo.split())
+
+
+def nombre_mas_completo(a, b):
+    """
+    De dos escrituras del mismo club, la que está menos abreviada.
+
+    Cada fuente abrevia distinto y no siempre la misma: AFA pone "Chaco FE"
+    donde 365scores pone "Chaco For Ever", pero también hay casos al revés.
+    Se descarta la que tenga abreviaturas con punto o iniciales sueltas, y
+    entre las que quedan gana la más larga.
+    """
+    def penaliza(x):
+        if not x:
+            return 99
+        p = len(re.findall(r"\b[A-ZÁÉÍÓÚÑ][a-z]{0,2}\.", x))   # "Dep." "Alte."
+        p += len(re.findall(r"\b[A-Z]\b", x))                   # iniciales sueltas
+        p += len(re.findall(r"\([^)]{1,4}\)", x))               # "(SE)" "(Cba)"
+        return p
+
+    pa, pb = penaliza(a), penaliza(b)
+    if pa != pb:
+        return a if pa < pb else b
+    return a if len(a or "") >= len(b or "") else b
+
+
+def emparejar(nombre, candidatos):
+    """
+    Devuelve la clave de `candidatos` que mejor corresponde a `nombre`.
+
+    `candidatos` es {clave_normalizada: cualquier_cosa}. Se elige por
+    coincidencia de tokens; ante empate gana el que tenga la misma cantidad
+    de tokens, para que "Racing" no se lleve por delante a "Racing (Cba)".
+    """
+    n = norm(nombre)
+    if n in candidatos:
+        return n
+    tn = _tokens(nombre)
+    if not tn:
+        return None
+    mejor, puntaje = None, 0.0
+    for k in candidatos:
+        tk = _tokens(k)
+        if not tk:
+            continue
+        comunes = tn & tk
+        if not comunes:
+            continue
+        # proporción de coincidencia sobre el nombre más corto, penalizando
+        # los tokens que sobran de un lado
+        base = min(len(tn), len(tk))
+        p = len(comunes) / base - abs(len(tn) - len(tk)) * 0.08
+        if len(tn) == len(tk) and tn == tk:
+            p += 0.5
+        if p > puntaje:
+            mejor, puntaje = k, p
+    if puntaje >= 0.75:
+        return mejor
+
+    # Último recurso, y el que salva la mayoría de los casos raros: si alguna
+    # palabra del nombre aparece en un solo candidato, es ese y no hay con qué
+    # confundirlo. Sirve para lo que ningún diccionario de abreviaturas cubre:
+    # "Alte. Brown" comparte sólo "brown", "N. Chicago" sólo "chicago",
+    # "Gim. y Tiro" sólo "tiro" — y cada una de esas palabras es única.
+    unicos = []
+    for t in tn:
+        con_ese_token = [k for k in candidatos if t in _tokens(k)]
+        if len(con_ese_token) == 1:
+            unicos.append(con_ese_token[0])
+    if unicos and len(set(unicos)) == 1:
+        return unicos[0]
+    return None
+
+
+def _fila_generica(row):
+    """(nombre, [números]) de una fila de DataFactory, sin mapear a canónicos."""
+    if len(row) < 3:
+        return None
+    idx = next((i for i, x in enumerate(row)
+                if x and not re.fullmatch(r"-?[\d.,]+", x)), None)
+    if idx is None:
+        return None
+    nombre = _limpio(row[idx])
+    if norm(nombre) in ("equipo", "zona a", "zona b", "grupo a", "grupo b", "n", "jugador"):
+        return None
+    return nombre, row[idx + 1:]
+
+
+def _sc_standings(comp, ttl=25):
+    """
+    Posiciones de una competencia de 365scores, separadas por zona.
+    A diferencia de la Liga Profesional, acá sí vienen las dos juntas: cada
+    fila trae su groupNum y el bloque, los nombres de los grupos.
+    """
+    data = fetch("standings", {"competitions": comp, "live": "true"}, ttl=ttl)
+    bloque = (data.get("standings") or [{}])[0]
+    nombres = {g.get("num"): g.get("name") for g in (bloque.get("groups") or [])}
+    zonas = {}
+    for r in bloque.get("rows", []):
+        c = r.get("competitor") or {}
+        gf, gc = int(r.get("for") or 0), int(r.get("against") or 0)
+        form = []
+        for m in (r.get("detailedRecentForm") or [])[-5:]:
+            hc, ac = m.get("homeCompetitor") or {}, m.get("awayCompetitor") or {}
+            me, riv = (hc, ac) if hc.get("id") == c.get("id") else (ac, hc)
+            if me.get("score") is None or riv.get("score") is None:
+                continue
+            form.append("G" if me["score"] > riv["score"]
+                        else ("P" if me["score"] < riv["score"] else "E"))
+        g = r.get("groupNum")
+        zonas.setdefault(g, []).append({
+            "team": {"name": c.get("name") or "", "short": c.get("symbolicName") or "",
+                     "logo": logo(c), "site": sitio_de(c.get("name") or "")},
+            "pts": int(float(r.get("points") or 0)), "pj": int(r.get("gamePlayed") or 0),
+            "g": int(r.get("gamesWon") or 0), "e": int(r.get("gamesEven") or 0),
+            "p": int(r.get("gamesLost") or 0),
+            "gf": gf, "gc": gc, "dif": gf - gc, "form": form, "live": False,
+        })
+    out = []
+    for num in sorted(zonas):
+        out.append({"name": nombres.get(num) or ("Zona %s" % num),
+                    "num": num, "rows": sort_rows_simple(zonas[num])})
+    return out
+
+
+LEYENDA_DESTINOS = [
+    {"clave": "final", "color": "#f0b429",
+     "texto": "Final por el primer ascenso"},
+    {"clave": "reducido", "color": "#2f6fed",
+     "texto": "Reducido por el segundo ascenso"},
+    {"clave": "desciende", "color": "#e5484d", "texto": "Descienden"},
+]
+
+
+def marcar_destinos(zonas, reglas):
+    """
+    Pinta cada fila según a dónde va: ascenso, reducido o descenso.
+
+    `reglas` es {clave: (desde, hasta)} con posiciones que arrancan en 1. Los
+    números negativos cuentan desde abajo, así (-2, -1) son los dos últimos
+    sin importar cuántos equipos tenga la zona.
+    """
+    if not reglas:
+        return
+    for z in zonas:
+        n = len(z["rows"])
+        for r in z["rows"]:
+            r["destino"], r["destinoTexto"] = "", ""
+            pos = r.get("pos") or 0
+            for clave, (desde, hasta) in reglas.items():
+                a = desde if desde > 0 else n + desde + 1
+                b = hasta if hasta > 0 else n + hasta + 1
+                if a <= pos <= b:
+                    r["destino"] = clave
+                    r["destinoTexto"] = next(
+                        (x["texto"] for x in LEYENDA_DESTINOS if x["clave"] == clave), "")
+                    break
+
+
+def api_liga(q):
+    """
+    Tablas y goleadores de una liga que no sea la Profesional.
+    Uso: /api/liga?id=nacional
+    """
+    lid = (q.get("id") or ["nacional"])[0]
+    cfg = LIGAS.get(lid)
+    if not cfg:
+        return {"error": "liga desconocida: %s" % lid}
+
+    out = {"id": lid, "nombre": cfg["nombre"], "torneo": cfg["torneo"],
+           "fuente": "365scores + AFA", "zonas": [], "anual": [], "goleadores": []}
+
+    # posiciones por zona, con escudos
+    try:
+        out["zonas"] = _sc_standings(cfg["sc"])
+        marcar_destinos(out["zonas"], cfg.get("zonas_de"))
+        out["leyenda"] = LEYENDA_DESTINOS
+    except Exception as e:
+        out["errorZonas"] = str(e)
+
+    # marcar con el puntito verde a los que están jugando ahora mismo
+    try:
+        jugando = set()
+        for g in fetch("games/current", {"competitions": cfg["sc"]}, ttl=20).get("games", []):
+            lv = map_game(g)
+            if lv["status"] == "LIVE":
+                jugando.add(norm(lv["home"]["name"]))
+                jugando.add(norm(lv["away"]["name"]))
+        if jugando:
+            for z in out["zonas"]:
+                for r in z["rows"]:
+                    n = norm(r["team"]["name"])
+                    r["live"] = n in jugando or bool(emparejar(n, {x: 1 for x in jugando}))
+    except Exception:
+        pass
+
+    # Tabla general: los 36 equipos de las dos zonas ordenados por puntos.
+    #
+    # No se lee de la página de descenso de AFA porque ahí está casi toda en
+    # cero: sólo carga la columna de la temporada en curso y deja Total, Pj y
+    # Prom. en blanco. Sumar las dos zonas da lo mismo y siempre al día.
+    todos = [dict(r, zona=z["name"]) for z in out["zonas"] for r in z["rows"]]
+    todos.sort(key=lambda r: (-r["pts"], -r["dif"], -r["gf"], norm(r["team"]["name"])))
+    for i, r in enumerate(todos, 1):
+        r["pos"] = i
+    out["anual"] = todos
+    out["anualNota"] = ("Tabla general: las dos zonas juntas, ordenadas por "
+                        "puntos. AFA no publica promedios en esta categoría.")
+
+    # los escudos de la anual salen de las zonas, que sí los tienen
+    escudos = {norm(r["team"]["name"]): r["team"]
+               for z in out["zonas"] for r in z["rows"]}
+
+    def pegar(nombre):
+        k = emparejar(nombre, escudos)
+        return escudos[k] if k else None
+
+    # goleadores, de AFA (traen el desglose por tipo de gol)
+    try:
+        for tabla in df_tables("goleadores", ttl=300, liga=lid)[:1]:
+            for fila in tabla:
+                c = _cells(fila)
+                if len(c) < 3 or not re.fullmatch(r"\d+", c[2] or ""):
+                    continue
+                n = [_int(x) for x in c[2:7]] + [0] * 5
+                equipo = _limpio(c[1])
+                out["goleadores"].append({
+                    "name": c[0], "team": pegar(equipo) or {"name": equipo, "short": "",
+                                                            "logo": None, "site": None},
+                    "goals": n[0], "jugada": n[1], "cabeza": n[2],
+                    "tiroLibre": n[3], "pens": n[4]})
+        out["goleadores"].sort(key=lambda x: -x["goals"])
+        for i, r in enumerate(out["goleadores"], 1):
+            r["rank"] = i
+    except Exception as e:
+        out["errorGoleadores"] = str(e)
+
+    return out
+
+
+def sort_rows_simple(rows):
+    rows = sorted(rows, key=lambda r: (-r["pts"], -r["dif"], -r["gf"], norm(r["team"]["name"])))
+    for i, r in enumerate(rows, 1):
+        r["pos"] = i
+    return rows
+
+
+def fecha_actual(rounds, por_fecha):
+    """
+    Qué fecha mostrar al entrar.
+
+    Se decide por calendario, no por estado. Antes se tomaba la primera que
+    tuviera algún partido sin terminar, pero un suspendido de hace dos meses
+    la dejaba clavada ahí para siempre. Ahora: la que se está jugando hoy;
+    si no hay ninguna, la próxima que viene; y si el torneo terminó, la última.
+    """
+    if not rounds:
+        return None
+    hoy = dt.date.today().isoformat()
+    ahora = dt.datetime.now(dt.timezone.utc).isoformat()
+
+    def dias(r):
+        return sorted((g["start"] or "")[:10] for g in por_fecha.get(r, []) if g["start"])
+
+    # 1. alguna que tenga partidos hoy
+    for r in rounds:
+        if hoy in dias(r):
+            return r
+    # 2. alguna con un partido en juego
+    for r in rounds:
+        if any(g["status"] == "LIVE" for g in por_fecha.get(r, [])):
+            return r
+    # 3. la próxima por empezar
+    futuras = [(min((g["start"] for g in por_fecha.get(r, []) if g["start"]), default=""), r)
+               for r in rounds]
+    futuras = [(f, r) for f, r in futuras if f and f > ahora]
+    if futuras:
+        return min(futuras)[1]
+    # 4. el torneo ya terminó
+    return rounds[-1]
+
+
+def api_liga_games(q):
+    """
+    Fixture de otra liga: el calendario completo sale de AFA y lo que se
+    juega ahora, de 365scores (que además aporta escudos y zona).
+    """
+    lid = (q.get("id") or ["nacional"])[0]
+    cfg = LIGAS.get(lid)
+    if not cfg:
+        return {"error": "liga desconocida"}
+    try:
+        games = df_fixture_generico(lid)
+    except Exception as e:
+        games, err = [], str(e)
+    else:
+        err = None
+
+    # zona y escudo de cada equipo, desde las posiciones de 365scores
+    meta = {}
+    try:
+        for z in _sc_standings(cfg["sc"], ttl=120):
+            for r in z["rows"]:
+                meta[norm(r["team"]["name"])] = (z["name"], r["team"])
+    except Exception:
+        pass
+
+    def buscar(nombre):
+        k = emparejar(nombre, meta)
+        return meta[k] if k else (None, None)
+
+    for m in games:
+        za, ta = buscar(m["home"]["name"])
+        zb, tb = buscar(m["away"]["name"])
+        for lado, t in (("home", ta), ("away", tb)):
+            if not t:
+                continue
+            m[lado].update({"logo": t["logo"], "short": t["short"], "site": t["site"],
+                            "name": nombre_mas_completo(m[lado]["name"], t["name"]),
+                            "canon": t["name"]})
+        # La zona sale de en qué tabla está cada equipo. Si de uno solo se
+        # pudo averiguar, se usa esa: en estas categorías las zonas juegan
+        # separadas, así que ambos están en la misma. Sólo se marca como
+        # interzonal cuando de los dos se sabe y no coinciden.
+        zona = za or zb
+        m["zone"] = (zona or "").replace("Zona ", "").replace("Grupo ", "") or None
+        m["interzonal"] = bool(za and zb and za != zb)
+
+    # partidos en curso
+    vivos, jugando = 0, set()
+    try:
+        raw = fetch("games/current", {"competitions": cfg["sc"]}, ttl=15).get("games", [])
+        porNombre = {}
+        for m in games:
+            porNombre[(norm(m["home"]["name"]), norm(m["away"]["name"]))] = m
+        for g in raw:
+            lv = map_game(g)
+            # Los mismos dos equipos se cruzan más de una vez en el torneo, así
+            # que hay que mirar también la fecha: si no, el partido en vivo se
+            # pega al de la primera rueda y queda el marcador donde no va.
+            candidatos = []
+            for (h, a), m in porNombre.items():
+                if (h.startswith(norm(lv["home"]["name"])[:6])
+                        and a.startswith(norm(lv["away"]["name"])[:6])):
+                    candidatos.append(m)
+            key = None
+            if lv["round"]:
+                key = next((m for m in candidatos if m["round"] == lv["round"]), None)
+            if not key and lv["start"]:
+                dia = lv["start"][:10]
+                key = next((m for m in candidatos if (m["start"] or "")[:10] == dia), None)
+            if not key and len(candidatos) == 1:
+                key = candidatos[0]
+            if not key:
+                continue
+            key["liveId"] = lv["id"]
+            key["venue"] = lv["venue"] or key["venue"]
+            if lv["status"] in ("LIVE", "FIN") and lv["gh"] is not None:
+                key["status"], key["minute"] = lv["status"], lv["minute"]
+                key["statusText"] = lv["statusText"] or key["statusText"]
+                key["gh"], key["ga"] = lv["gh"], lv["ga"]
+            if key["status"] == "LIVE":
+                vivos += 1
+                jugando.add(norm(key["home"]["name"]))
+                jugando.add(norm(key["away"]["name"]))
+    except Exception:
+        pass
+
+    rnd = (q.get("round") or [None])[0]
+    rounds = sorted({g["round"] for g in games if g["round"]})
+
+    por_fecha = {}
+    for g in games:
+        por_fecha.setdefault(g["round"], []).append(g)
+    actual = fecha_actual(rounds, por_fecha)
+
+    sin_zona = sorted({g[s]["name"] for g in games for s in ("home", "away")
+                       if not g["zone"]})
+    if rnd:
+        games = [g for g in games if str(g["round"]) == str(rnd)]
+    res = {"games": games, "count": len(games), "rounds": rounds, "current": actual,
+           "live": vivos, "interzonal": sum(1 for g in games if g["interzonal"]),
+           "sinZona": sin_zona, "nombre": cfg["nombre"]}
+    if err:
+        res["error"] = err
+    return res
+
+
+def df_fixture_generico(liga):
+    """Igual que df_fixture pero sin mapear a nombres canónicos ni zonas."""
+    cfg = LIGAS[liga]
+    url = cfg["base"] + cfg["pages"].get("fixture", "fixture") + ".html"
+    with _lock:
+        hit = _cache.get(url)
+        if hit and time.time() - hit[0] < 300:
+            return hit[1]
+
+    def ir_a_la_fuente():
+        req = Request(url, headers={"User-Agent": UA, "Accept": "text/html"})
+        with urlopen(req, timeout=25) as r:
+            html = r.read().decode("utf-8", "replace")
+        p = _Fixture()
+        p.feed(html)
+        return p.matches
+
+    matches, info = almacen.con_respaldo("dffx:" + url, ir_a_la_fuente,
+                                         max_edad=300, tag="afa/fixture/" + liga)
+    if info.get("origen") == "cache-vieja":
+        ULTIMO_PROBLEMA["afa"] = info
+
+    p = type("obj", (), {"matches": matches})()
+    out = []
+    for m in p.matches:
+        campos = m["campos"]
+        eq = [_limpio(v) for k, v in campos if k == "equipo"]
+        goles = [v for k, v in campos if k == "badge"]
+        if len(eq) < 2 or norm(eq[0]) == "a confirmar":
+            continue
+        arb = next((v for k, v in campos if k == "arbitro"), "")
+        fch = next((v for k, v in campos if k == "mc-date"), "")
+        hor = next((v for k, v in campos if k in ("mc-time", "hora")), "")
+        est = next((v for k, v in campos if k == "estado"), "")
+        gh = _int(goles[0], None) if len(goles) > 0 else None
+        ga = _int(goles[1], None) if len(goles) > 1 else None
+        jugado = norm(est) in _FINALIZADO or (gh is not None and ga is not None)
+        out.append({
+            "id": "%s-%s-%s-%s" % (liga, m["fecha"], norm(eq[0])[:6], norm(eq[1])[:6]),
+            "round": m["fecha"], "zone": None, "interzonal": False,
+            "stage": cfg["torneo"], "start": _parse_dt(fch, hor),
+            "status": "FIN" if jugado else "PROG", "statusText": est, "minute": None,
+            "referee": re.sub(r"^\s*Árbitro:\s*", "", arb).strip(),
+            "home": {"id": None, "canon": eq[0], "name": eq[0], "short": "",
+                     "logo": None, "score": gh, "site": None},
+            "away": {"id": None, "canon": eq[1], "name": eq[1], "short": "",
+                     "logo": None, "score": ga, "site": None},
+            "gh": gh, "ga": ga, "venue": "",
+        })
+    out.sort(key=lambda x: (x["round"] or 0, x["start"] or ""))
+    with _lock:
+        _cache[url] = (time.time(), out)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Ficha de jugador
+# ─────────────────────────────────────────────────────────────────────────
+def _tm_link(nombre):
+    """Búsqueda en Transfermarkt. No se scrapea el sitio: sólo se enlaza."""
+    from urllib.parse import quote
+    return ("https://www.transfermarkt.es/schnellsuche/ergebnis/schnellsuche"
+            "?query=%s" % quote(nombre))
+
+
+def api_player(q):
+    """
+    Ficha de un goleador. Los datos de AFA (goles por tipo) se enriquecen,
+    si se puede, con el perfil de 365scores: posición, foto y club.
+    """
+    nombre = (q.get("name") or [""])[0].strip()
+    lid = (q.get("liga") or ["lpf"])[0]
+    if not nombre:
+        return {"error": "falta el parámetro name"}
+
+    ficha = {"name": nombre, "transfermarkt": _tm_link(nombre), "liga": lid,
+             "team": (q.get("team") or [""])[0], "fuente": "AFA / DataFactory"}
+
+    # goles por tipo, de la tabla oficial de la liga que corresponda
+    filas = (api_scorers({}).get("rows", []) if lid == "lpf"
+             else api_liga({"id": [lid]}).get("goleadores", []))
+    for r in filas:
+        if norm(r["name"]) == norm(nombre):
+            ficha.update({"goals": r["goals"], "jugada": r["jugada"],
+                          "cabeza": r["cabeza"], "tiroLibre": r["tiroLibre"],
+                          "pens": r["pens"], "rank": r["rank"],
+                          "team": r["team"]["name"], "logo": r["team"].get("logo"),
+                          "site": r["team"].get("site")})
+            break
+    if lid != "lpf":
+        return ficha        # el perfil de 365scores es sólo para Primera
+
+    # perfil en 365scores (posición, foto). Si falla, la ficha igual sirve.
+    try:
+        data = fetch("stats", {"competitions": COMPETITION, "competitor": 0}, ttl=300)
+        blocks = data.get("stats") or []
+        goles = next((b for b in blocks if norm(b.get("name")) in ("goles", "goals")), None)
+        for r in (goles or {}).get("rows", []):
+            e = r.get("entity") or {}
+            if norm(e.get("name")) == norm(nombre):
+                ficha["posicion"] = e.get("positionName") or ""
+                if e.get("id"):
+                    ficha["foto"] = ("https://imagecache.365scores.com/image/upload/"
+                                     "f_png,w_128,h_128,c_limit,q_auto:best,dpr_2/"
+                                     "v%s/Athletes/%s" % (e.get("imageVersion", 1), e["id"]))
+                break
+    except Exception:
+        pass
+
+    return ficha
+
+
+def api_home(q):
+    """
+    Portada: los partidos de un día, de todas las ligas configuradas.
+    Uso: /api/home?date=YYYY-MM-DD (si no, hoy).
+    """
+    date = (q.get("date") or [dt.date.today().isoformat()])[0]
+    bloques, vivos = [], 0
+
+    def dia(games):
+        return [g for g in games if (g["start"] or "")[:10] == date]
+
+    try:
+        ms = dia(all_games())
+        if ms:
+            for m in ms:
+                m["liga"], m["ligaNombre"] = "lpf", LIGAS["lpf"]["nombre"]
+            bloques.append({"liga": "lpf", "nombre": LIGAS["lpf"]["nombre"],
+                            "torneo": LIGAS["lpf"]["torneo"], "games": ms})
+            vivos += sum(1 for m in ms if m["status"] == "LIVE")
+    except Exception:
+        pass
+
+    for lid in [k for k in LIGAS if k != "lpf"]:
+        try:
+            ms = dia(api_liga_games({"id": [lid]}).get("games", []))
+            if not ms:
+                continue
+            for m in ms:
+                m["liga"], m["ligaNombre"] = lid, LIGAS[lid]["nombre"]
+            bloques.append({"liga": lid, "nombre": LIGAS[lid]["nombre"],
+                            "torneo": LIGAS[lid]["torneo"], "games": ms})
+            vivos += sum(1 for m in ms if m["status"] == "LIVE")
+        except Exception:
+            continue
+
+    for b in bloques:
+        b["games"].sort(key=lambda x: (x["start"] or ""))
+    total = sum(len(b["games"]) for b in bloques)
+    return {"date": date, "bloques": bloques, "total": total, "live": vivos}
+
+
+# Emblemas: sólo de las ligas que efectivamente andan. Las que están en
+# "pronto" van sin escudo: poner uno estimado quedaba mal y confundía.
+EMBLEMAS = {"lpf": 72, "nacional": 419}
+
+
+def api_ligas(q):
+    """Ligas del menú, con su emblema."""
+    # la versión de imagen viene en cualquier respuesta de partidos
+    versiones = {}
+    for lid, cfg in LIGAS.items():
+        try:
+            data = fetch("games/results", {"competitions": cfg["sc"]}, ttl=1800)
+            for c in (data.get("competitions") or []):
+                versiones[c.get("id")] = c.get("imageVersion", 1)
+        except Exception:
+            pass
+    out = []
+    for lid, comp in EMBLEMAS.items():
+        cfg = LIGAS.get(lid)
+        out.append({"id": lid, "sc": comp,
+                    "nombre": cfg["nombre"] if cfg else None,
+                    "torneo": cfg["torneo"] if cfg else None,
+                    "activa": bool(cfg),
+                    "emblema": emblema(comp, versiones.get(comp, 1))})
+    return {"ligas": out}
+
+
+def api_clubes(q):
+    """Clubes de Primera con sus colores, para el modo club."""
+    logos = {}
+    try:
+        logos = _logos()
+    except Exception:
+        pass
+    return {"clubes": sorted(
+        [{"name": n, "primary": c[0], "accent": c[1],
+          "logo": (logos.get(n) or {}).get("logo")}
+         for n, c in COLORES.items()],
+        key=lambda x: norm(x["name"]))}
+
+
+def api_diagnostico(q):
+    """
+    Revisión general: la clave, el plan, la base y el estado de las fuentes.
+    La clave nunca aparece en la respuesta, sólo si funciona o no.
+    """
+    ligas = [("Liga Profesional", 128, 2026), ("Primera Nacional", 129, 2026)]
+    try:
+        af = apifootball.diagnostico(APIFOOTBALL_KEY, ligas)
+    except Exception as e:
+        af = {"error": str(e), "clave_configurada": bool(APIFOOTBALL_KEY)}
+
+    fuentes = {}
+    for nombre, prueba in (("afa", lambda: len(df_tables("zonas", ttl=300))),
+                           ("365scores", lambda: len(all_games(ttl=300)))):
+        try:
+            fuentes[nombre] = {"ok": True, "items": prueba()}
+        except Exception as e:
+            fuentes[nombre] = {"ok": False, "error": str(e)}
+        if nombre in ULTIMO_PROBLEMA:
+            fuentes[nombre]["ultimo_problema"] = ULTIMO_PROBLEMA[nombre]
+
+    return {"apifootball": af, "base": almacen.estado(), "fuentes": fuentes,
+            "consejo": ("Si alguna liga dice ok=false con 0 partidos, el plan "
+                        "gratis no cubre esa temporada. Mientras tanto la página "
+                        "sigue andando con AFA y 365scores.")}
+
+
+ROUTES = {
+    "/api/diagnostico": api_diagnostico,
+    "/api/base": lambda q: almacen.estado(),
+    "/api/home": api_home,
+    "/api/clubes": api_clubes,
+    "/api/liga": api_liga,
+    "/api/liga/games": api_liga_games,
+    "/api/player": api_player,
+    "/api/ligas": lambda q: api_ligas(q),
+    "/api/games": api_games,
+    "/api/rounds": api_rounds,
+    "/api/standings": api_standings,
+    "/api/annual": api_annual,
+    "/api/promedios": api_promedios,
+    "/api/scorers": api_scorers,
+    "/api/match": api_match,
+}
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, directory=HERE, **kw)
+
+    def log_message(self, fmt, *args):
+        if "/api/" in (self.path or ""):
+            sys.stderr.write("  %s\n" % (fmt % args))
+
+    def _json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        q = parse_qs(parsed.query)
+
+        # escudos servidos desde acá: /img/competidor/<version>/<id>
+        if path.startswith("/img/"):
+            partes = path.strip("/").split("/")
+            if len(partes) != 4:
+                self.send_error(404)
+                return
+            _, tipo, ver, ident = partes
+            if not re.fullmatch(r"\d+", ver) or not re.fullmatch(r"\d+", ident):
+                self.send_error(400)
+                return
+            try:
+                datos, ctype = traer_imagen(tipo, ver, ident)
+            except Exception:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self.send_header("Content-Length", str(len(datos)))
+            self.end_headers()
+            self.wfile.write(datos)
+            return
+
+        # passthrough crudo para inspeccionar la API: /api/raw?path=games/results
+        if path == "/api/raw":
+            ep = (q.get("path") or ["games/results"])[0]
+            extra = {k: v[0] for k, v in q.items() if k != "path"}
+            try:
+                return self._json(fetch(ep, dict({"competitions": COMPETITION}, **extra), ttl=10))
+            except Exception as e:
+                return self._json({"error": str(e)}, 502)
+
+        fn = ROUTES.get(path)
+        if fn:
+            try:
+                return self._json(fn(q))
+            except (HTTPError, URLError) as e:
+                return self._json({"error": "no se pudo llegar a 365scores: %s" % e}, 502)
+            except Exception as e:
+                return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 500)
+
+        if path == "/":
+            self.path = "/index.html"
+        return super().do_GET()
+
+
+def main():
+    # En local escucha sólo en 127.0.0.1. En un hosting (Render y compañía)
+    # hay que escuchar en 0.0.0.0 y tomar el puerto de la variable PORT.
+    env_port = os.environ.get("PORT")
+    if env_port:
+        host, port = "0.0.0.0", int(env_port)
+    else:
+        host = "127.0.0.1"
+        port = int(sys.argv[1]) if len(sys.argv) > 1 else 8010
+
+    srv = ThreadingHTTPServer((host, port), Handler)
+    print("\n  HAYVAR — Fútbol Argentino")
+    print("  " + "-" * 40)
+    print("  Escuchando en %s:%d" % (host, port))
+    if host == "127.0.0.1":
+        print("  Abrí:  http://localhost:%d" % port)
+    print("  Datos: AFA + 365scores")
+    print("  Cortar con Ctrl+C\n")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Listo, servidor detenido.\n")
+
+
+if __name__ == "__main__":
+    main()

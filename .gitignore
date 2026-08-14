@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.command
+clave.txt
+
+# la base de datos es de cada maquina: en el servidor se crea sola
+*.db
+*.db-wal
+*.db-shm

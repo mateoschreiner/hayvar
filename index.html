@@ -340,6 +340,27 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
 <div class="ov" id="ov" onclick="if(event.target===this)App.closeModal()"><div class="modal" id="modalBox"></div></div>
 
 <script>
+/* ───────────────────────────────────────────────────────────────────────
+   Actualización en vivo
+
+   La página no se recarga nunca sola: eso hacía saltar el scroll y cortaba
+   la lectura. En su lugar, cuando hay partidos en juego se piden los datos
+   cada tanto y se reescriben únicamente los pedacitos que cambiaron —el
+   minuto y el marcador— dejando el resto del DOM intacto. Si nada cambió,
+   no se toca nada.
+
+   VIVO_CADA son los segundos entre consultas. Sólo consulta si hay algo en
+   juego o a punto de empezar; si no, se queda quieto y no gasta nada.
+   ─────────────────────────────────────────────────────────────────────── */
+const VIVO_ACTIVO = true;
+const VIVO_CADA   = 20;
+const VIVO_MARGEN = 3;    // horas antes y después del horario, para el arranque
+
+// El refresco completo de la página queda apagado.
+const AUTO_REFRESCO = false;
+const CADA_EN_VIVO  = 30;
+const CADA_NORMAL   = 180;
+
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const js=s=>esc(String(s??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
@@ -364,7 +385,7 @@ const App=(()=>{
   const S={round:null,rounds:[],games:[],tab:'A',onlyLive:false,liga:'home',emblemas:{},current:null,
            homeDate:new Date(),weekStart:null,home:null,club:null,
            standings:null,annual:null,promedios:null,scorers:null,otra:null,
-           scores:{},timer:null,failures:0};
+           scores:{},timer:null,vivoTimer:null,failures:0};
 
   // link=true convierte el escudo en un enlace al sitio oficial del club
   const crest=(t,px,link)=>{
@@ -481,10 +502,11 @@ const App=(()=>{
     $('#liveBtn').classList.toggle('on',h.live>0);
     drawHomeRight();
     status(h.live?'live':'ok', h.live
-      ? `<b>${h.live} partido${h.live>1?'s':''} en vivo</b> · refresco cada 15 s`
+      ? `<b>${h.live} partido${h.live>1?'s':''} en vivo</b> · el marcador se actualiza solo`
       : `<b>${h.total} partido${h.total===1?'':'s'}</b> el ${DIAS[S.homeDate.getDay()]} ${S.homeDate.getDate()} de ${MESES[S.homeDate.getMonth()]}`);
     clearTimeout(S.timer);
-    S.timer=setTimeout(loadHome, h.live?15000:120000);
+    if(AUTO_REFRESCO) S.timer=setTimeout(loadHome,(h.live?CADA_EN_VIVO:CADA_NORMAL)*1000);
+    programarVivo();
   }
 
   // Panel derecho de la portada: lo que pasa hoy, sin tener que entrar al torneo
@@ -650,26 +672,36 @@ const App=(()=>{
   }
 
   /* ── partidos ── */
-  function matchRow(m){
+  // Las tres piezas que cambian durante un partido, separadas del resto de
+  // la fila para poder reescribir sólo eso sin volver a dibujar nada más.
+  function htmlTiempo(m){
     const lv=m.status==='LIVE', fin=m.status==='FIN', susp=m.status==='SUSP';
-    let time;
-    if(lv) time=`<div class="m-time live"><span class="mm">${m.minute??''}'</span><span class="st">en vivo</span></div>`;
-    else if(fin) time=`<div class="m-time fin">${hhmm(m.start)}<span class="st">final</span></div>`;
-    else if(susp) time=`<div class="m-time fin">—<span class="st">susp.</span></div>`;
-    else{const d=new Date(m.start);time=`<div class="m-time">${hhmm(m.start)}<span class="st">${DOW[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}</span></div>`;}
+    if(lv) return `<div class="m-time live"><span class="mm">${m.minute??''}'</span><span class="st">en vivo</span></div>`;
+    if(fin) return `<div class="m-time fin">${hhmm(m.start)}<span class="st">final</span></div>`;
+    if(susp) return `<div class="m-time fin">—<span class="st">susp.</span></div>`;
+    const d=new Date(m.start);
+    return `<div class="m-time">${hhmm(m.start)}<span class="st">${DOW[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}</span></div>`;
+  }
+  function htmlMarcador(m){
+    return m.gh==null ? `<div class="m-score pend">vs</div>`
+                      : `<div class="m-score ${m.status==='LIVE'?'live':''}">${m.gh}-${m.ga}</div>`;
+  }
+  const claseLado=(m,local)=>{
+    const decidido=m.status==='FIN'||m.status==='LIVE';
+    const gana=decidido&&(local ? m.gh>m.ga : m.ga>m.gh);
+    const pierde=decidido&&(local ? m.gh<m.ga : m.ga<m.gh);
+    return `side ${local?'':'away '}${gana?'win':''}${pierde?'lose':''}`.replace(/\s+/g,' ').trim();
+  };
 
-    const hw=(fin||lv)&&m.gh>m.ga, aw=(fin||lv)&&m.ga>m.gh;
-    const sc=m.gh==null?`<div class="m-score pend">vs</div>`
-                       :`<div class="m-score ${lv?'live':''}">${m.gh}-${m.ga}</div>`;
+  function matchRow(m){
     const changed=S.scores[m.id]!==undefined && S.scores[m.id]!==`${m.gh}-${m.ga}` && m.gh!=null;
     S.scores[m.id]=`${m.gh}-${m.ga}`;
-
     // el id es texto (viene del fixture de AFA): tiene que ir entre comillas
-    return `<div class="match ${changed?'flash':''}" onclick="App.openMatch('${js(m.id)}')">
-      ${time}
-      <div class="side ${hw?'win':''}${aw?'lose':''}">${crest(m.home)}<span class="tn">${esc(m.home.canon||m.home.name)}</span></div>
-      ${sc}
-      <div class="side away ${aw?'win':''}${hw?'lose':''}">${crest(m.away)}<span class="tn">${esc(m.away.canon||m.away.name)}</span></div>
+    return `<div class="match ${changed?'flash':''}" data-id="${esc(m.id)}" onclick="App.openMatch('${js(m.id)}')">
+      ${htmlTiempo(m)}
+      <div class="${claseLado(m,true)}">${crest(m.home)}<span class="tn">${esc(m.home.canon||m.home.name)}</span></div>
+      ${htmlMarcador(m)}
+      <div class="${claseLado(m,false)}">${crest(m.away)}<span class="tn">${esc(m.away.canon||m.away.name)}</span></div>
     </div>`;
   }
 
@@ -1010,8 +1042,9 @@ const App=(()=>{
     $('#tabs').innerHTML=tabs.map(([id,nm])=>
       `<button data-t="${id}" class="${S.tab===id?'on':''}" onclick="App.tab('${id}')">${esc(nm)}</button>`).join('');
     drawOtra();
-    status('ok',`<b>${esc(d.nombre)}</b> · tablas oficiales de AFA · sin datos en vivo`);
+    status('ok',`<b>${esc(d.nombre)}</b> · tablas oficiales de AFA`);
     clearTimeout(S.timer);
+    programarVivo();
   }
 
   function drawOtra(){
@@ -1084,9 +1117,10 @@ const App=(()=>{
 
       const live=S.games.filter(m=>m.status==='LIVE').length;
       const tot=rd.total_partidos||0;
-      if(live) status('live',`<b>${live} partido${live>1?'s':''} en vivo</b> · tablas moviéndose · refresco cada 15 s`);
+      if(live) status('live',`<b>${live} partido${live>1?'s':''} en vivo</b> · tablas moviéndose`);
       else status('ok',`<b>Tablas oficiales de AFA</b> · partidos de 365scores · ${tot} del Clausura cargados`);
       // avisos que explican por qué algo podría no cerrar
+      programarVivo();
       if(st&&st.nota) status('err',`<b>Atención:</b> ${esc(st.nota)}`);
       else if(rd.incompletas&&rd.incompletas.length)
         status('err',`<b>Ojo:</b> falta${rd.incompletas.length>1?'n':''} partido${rd.incompletas.length>1?'s':''} en la fecha ${rd.incompletas.join(', ')}`);
@@ -1107,7 +1141,95 @@ const App=(()=>{
 
   function schedule(fast){
     clearTimeout(S.timer);
-    S.timer=setTimeout(()=>loadAll(false), fast?15000:60000);
+    if(!AUTO_REFRESCO) return;
+    S.timer=setTimeout(()=>loadAll(false), (fast?CADA_EN_VIVO:CADA_NORMAL)*1000);
+  }
+
+  /* ── Actualización en vivo, sin redibujar ───────────────────────────── */
+
+  // ¿Vale la pena consultar? Sólo si hay algo en juego o cerca de empezar.
+  function hayQueMirar(){
+    const ahora=Date.now(), margen=VIVO_MARGEN*3600*1000;
+    return S.games.some(m=>m.status==='LIVE' ||
+      (m.status==='PROG' && m.start && Math.abs(new Date(m.start)-ahora)<margen));
+  }
+
+  // Reemplaza un pedazo sólo si de verdad cambió, para no tocar el DOM al pedo
+  function reemplazar(viejo,html){
+    if(!viejo || viejo.outerHTML===html) return false;
+    const tmp=document.createElement('div');
+    tmp.innerHTML=html;
+    viejo.replaceWith(tmp.firstElementChild);
+    return true;
+  }
+
+  function actualizarFila(fila,m){
+    const partes=fila.children;   // [tiempo, local, marcador, visitante]
+    const antes=(partes[2]||{}).textContent;
+    let toco=false;
+    toco=reemplazar(partes[0],htmlTiempo(m))||toco;
+    toco=reemplazar(partes[2],htmlMarcador(m))||toco;
+    // el negrita del que va ganando
+    const c1=claseLado(m,true), c2=claseLado(m,false);
+    if(partes[1]&&partes[1].className!==c1){ partes[1].className=c1; toco=true; }
+    if(partes[3]&&partes[3].className!==c2){ partes[3].className=c2; toco=true; }
+
+    const ahora=(fila.children[2]||{}).textContent;
+    const gol = antes && ahora && antes!==ahora && ahora!=='vs';
+    if(gol){                       // relanzar el destello verde
+      fila.classList.remove('flash');
+      void fila.offsetWidth;
+      fila.classList.add('flash');
+    }
+    return {toco, gol};
+  }
+
+  async function tickVivo(){
+    clearTimeout(S.vivoTimer); S.vivoTimer=null;
+    if(!VIVO_ACTIVO || document.hidden) return programarVivo();
+    if(!hayQueMirar()) return programarVivo();
+
+    let datos;
+    try{
+      if(S.liga==='home')
+        datos=(await get('/api/home?date='+ymd(S.homeDate))).bloques.flatMap(b=>b.games);
+      else if(S.liga==='lpf')
+        datos=(await get('/api/games?round='+S.round)).games;
+      else
+        datos=(await get('/api/liga/games?id='+S.liga+'&round='+S.round)).games;
+    }catch(e){ return programarVivo(); }
+
+    let goles=0, vivos=0;
+    datos.forEach(m=>{
+      if(m.status==='LIVE') vivos++;
+      const i=S.games.findIndex(x=>String(x.id)===String(m.id));
+      if(i>=0) S.games[i]=Object.assign(S.games[i],m);
+      const fila=document.querySelector('.match[data-id="'+String(m.id).replace(/"/g,'\\"')+'"]');
+      if(!fila) return;
+      S.scores[m.id]=`${m.gh}-${m.ga}`;
+      if(actualizarFila(fila,m).gol) goles++;
+    });
+
+    const cnt=$('#liveCnt');
+    if(cnt) cnt.textContent=vivos;
+    const btn=$('#liveBtn');
+    if(btn) btn.classList.toggle('on',vivos>0);
+
+    // Las tablas sólo se rehacen cuando hubo un gol: es cuando de verdad
+    // cambian. Están en el panel de al lado, así que no molesta.
+    if(goles && S.liga!=='home'){
+      try{ S.liga==='lpf' ? await renderRight() : await refrescarTablas(); }catch(e){}
+    }
+    programarVivo();
+  }
+
+  function programarVivo(){
+    clearTimeout(S.vivoTimer);
+    if(VIVO_ACTIVO) S.vivoTimer=setTimeout(tickVivo, VIVO_CADA*1000);
+  }
+
+  async function refrescarTablas(){
+    try{ S.otra=await get('/api/liga?id='+S.liga); drawOtra(); }catch(e){}
   }
 
   const api={
@@ -1121,7 +1243,7 @@ const App=(()=>{
     liga(id){
       if(id===S.liga) return;
       S.liga=id; S.round=null; S.tab=id==='lpf'?'A':'z0'; S.otra=null; S.scores={};
-      clearTimeout(S.timer); drawSide(); api.menu(false);
+      clearTimeout(S.timer); clearTimeout(S.vivoTimer); drawSide(); api.menu(false);
       if(id==='lpf'){
         $('.tag').textContent='Liga Profesional · Clausura 2026';
         $('#tabs').innerHTML=[['A','Zona A'],['B','Zona B'],['anual','Anual'],['prom','Promedios'],['gol','Goles']]
@@ -1155,7 +1277,11 @@ const App=(()=>{
       document.documentElement.dataset.theme=t; try{localStorage.setItem('hayvar.theme',t);}catch(e){} }
   };
   document.addEventListener('keydown',e=>{if(e.key==='Escape')api.closeModal();});
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) api.reload(); });
+  // volver a la pestaña actualiza sólo si el refresco automático está activado
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden) return;
+    if(AUTO_REFRESCO) api.reload(); else tickVivo();
+  });
   return api;
 })();
 

@@ -400,7 +400,7 @@ LIGAS = {
         "base": NACIONAL_BASE,
         "pages": {"zonas": "posiciones", "anual": "descenso",
                   "goleadores": "goleadores", "fixture": "fixture"},
-        "propia": False, "sc": 419,
+        "propia": False, "sc": 419, "pais": "Argentina",
         # Reglamento 2026: 36 equipos en dos zonas de 18, 34 fechas.
         # Ascienden dos. El primer ascenso se define en una final entre los
         # ganadores de cada zona; el perdedor cae al Reducido, que juegan del
@@ -412,42 +412,93 @@ LIGAS = {
             "desciende": (-2, -1),  # los dos últimos
         },
     },
+    "pbm": {
+        "nombre": "Primera B Metro", "torneo": "Temporada 2026",
+        "base": ("https://info.afa.org.ar/deposito/html/v3/htmlCenter/data/"
+                 "deportes/futbol/primerab/pages/es/"),
+        "pages": {"zonas": "posiciones", "goleadores": "goleadores",
+                  "fixture": "fixture"},
+        "propia": False, "sc": 5077, "pais": "Argentina",
+        "anual": False,   # una sola tabla: sin acumulada
+        "zonas_de": {"final": (1, 1), "reducido": (2, 8), "desciende": (-1, -1)},
+    },
+    "fa": {
+        # El canal de DataFactory del Federal A es "argentinoa" (lo dice el
+        # iframe de afa.com.ar/es/pages/federal-a), pero NO sirve: esa página
+        # quedó publicando la Primera Fase —su fecha 1 es del 20-03-2026— y no
+        # la Reválida, que es lo que se está jugando. Traerla mezclaba fechas
+        # viejas con las nuevas y desordenaba todo el fixture.
+        #
+        # Así que el Federal A sigue por 365scores. Devuelve pocas fechas de
+        # una, pero el servidor las va acumulando en la base y el calendario
+        # crece solo, sin fases viejas de por medio.
+        "nombre": "Federal A", "torneo": "Temporada 2026",
+        "base": None, "pages": {}, "propia": False, "sc": 5078,
+        "pais": "Argentina", "anual": False,
+    },
+    "fem": {
+        # Igual que arriba: el canal es "primeraafemenino", según la página
+        # de estadísticas del fútbol femenino de AFA.
+        "nombre": "Liga Femenina", "torneo": "Temporada 2026",
+        "base": ("https://info.afa.org.ar/deposito/html/v3/htmlCenter/data/"
+                 "deportes/futbol/primeraafemenino/pages/es/"),
+        "pages": {"zonas": "posiciones", "goleadores": "goleadores",
+                  "fixture": "fixture"},
+        "propia": False, "sc": 6224, "pais": "Argentina",
+        "anual": False,
+    },
+    "laliga": {
+        # España. El calendario completo sale de laliga.com (las 38 jornadas);
+        # los marcadores y el vivo, de 365scores.
+        "nombre": "LaLiga", "torneo": "Temporada 2026-27",
+        "base": None, "pages": {}, "propia": False, "sc": 11, "pais": "España",
+        "anual": False,   # LaLiga tiene una sola tabla
+        "fixture_propio": "laliga",
+        # 20 equipos: los 4 primeros a Champions, 5° a Europa League,
+        # 6° a Conference y los 3 últimos descienden a Segunda.
+        "zonas_de": {
+            "champions": (1, 4),
+            "europa": (5, 5),
+            "conference": (6, 6),
+            "desciende": (-3, -1),
+        },
+    },
 }
 
 # Colores de cada club para el modo club: (fondo de la barra, color de acento).
 # El acento es el que la camiseta usa como segundo color, así "VAR" y el logo
 # quedan legibles sobre el fondo. Si alguno no convence, se cambia acá.
 COLORES = {
-    "Aldosivi":                ("#0b6b3a", "#f7d417"),  # verde y amarillo
-    "Argentinos Juniors":      ("#b81b22", "#1a4fa0"),  # rojo y blanco
-    "Atlético Tucumán":        ("#1a4fa0", "#111111"),  # celeste y blanco
-    "Banfield":                ("#0d5c34", "#111111"),  # verde y blanco
-    "Barracas Central":        ("#c8102e", "#111111"),  # rojo y blanco
-    "Belgrano":                ("#3a8fd4", "#111111"),  # celeste y blanco
-    "Boca Juniors":            ("#0a2472", "#f2c94c"),  # azul y oro
-    "Central Córdoba (SdE)":   ("#111111", "#f2f2f2"),  # negro y blanco
-    "Defensa y Justicia":      ("#0f8a45", "#f7d417"),  # verde y amarillo
-    "Deportivo Riestra":       ("#111111", "#f2f2f2"),  # negro y blanco
-    "Estudiantes (LP)":        ("#c8102e", "#111111"),  # rojo y blanco
-    "Estudiantes (RC)":        ("#1a4fa0", "#7ec8f2"),  # azul y blanco
-    "Gimnasia y Esgrima (LP)": ("#12539b", "#111111"),  # azul y blanco
-    "Gimnasia y Esgrima (M)":  ("#111111", "#f2f2f2"),  # negro y blanco
-    "Huracán":                 ("#d81e29", "#111111"),  # rojo y blanco
-    "Independiente":           ("#c8102e", "#111111"),  # rojo y blanco
-    "Independiente Rivadavia": ("#1a4fa0", "#111111"),  # azul y blanco
-    "Instituto":               ("#c8102e", "#111111"),  # rojo y blanco
-    "Lanús":                   ("#6d1b34", "#111111"),  # granate y blanco
-    "Newell's Old Boys":       ("#c8102e", "#111111"),  # rojo y negro
-    "Platense":                ("#8c1d2c", "#111111"),  # marrón y blanco
-    "Racing":                  ("#0e4c92", "#8ecdf2"),  # azul y celeste
-    "River Plate":             ("#f2f2f2", "#e2001a"),  # blanco y rojo
-    "Rosario Central":         ("#1a4fa0", "#f2c94c"),  # azul y amarillo
-    "San Lorenzo":             ("#0a2a6b", "#c8102e"),  # azul y rojo
-    "Sarmiento (J)":           ("#0d7a3f", "#111111"),  # verde y blanco
-    "Talleres (C)":            ("#0b1f45", "#111111"),  # azul y blanco
-    "Tigre":                   ("#1a4fa0", "#c8102e"),  # azul y rojo
-    "Unión":                   ("#c8102e", "#111111"),  # rojo y blanco
-    "Vélez Sarsfield":         ("#f2f2f2", "#12376b"),  # blanco y azul
+    "Aldosivi":               ('#0b6b3a', '#f7d417'),   # verde y amarillo
+    "Argentinos Juniors":     ('#f2f2f2', '#c8102e'),   # blanco y rojo
+    "Atlético Tucumán":       ('#5aa9e6', '#f2f2f2'),   # celeste y blanco
+    "Banfield":               ('#0d5c34', '#f2f2f2'),   # verde y blanco
+    "Barracas Central":       ('#c8102e', '#f2f2f2'),   # rojo y blanco
+    "Belgrano":               ('#4aa3dc', '#4aa3dc'),   # celeste
+    "Boca Juniors":           ('#0a2472', '#f2c94c'),   # azul y oro
+    "Central Córdoba (SdE)":  ('#111111', '#f2f2f2'),   # negro y blanco
+    "Defensa y Justicia":     ('#0f8a45', '#f7d417'),   # verde y amarillo
+    "Deportivo Riestra":      ('#f2f2f2', '#111111'),   # blanco y negro
+    "Estudiantes (LP)":       ('#c8102e', '#f2f2f2'),   # rojo y blanco
+    "Estudiantes (RC)":       ('#1668b3', '#1668b3'),   # celeste mas oscuro
+    "Gimnasia y Esgrima (LP)":('#f2f2f2', '#12539b'),   # blanco y azul
+    "Gimnasia y Esgrima (M)": ('#f2f2f2', '#111111'),   # blanco y negro
+    "Huracán":                ('#f2f2f2', '#d81e29'),   # blanco y rojo
+    "Independiente":          ('#c8102e', '#c8102e'),   # rojo
+    "Independiente Rivadavia":('#3b2f8f', '#3b2f8f'),   # azul casi violeta
+    "Instituto":              ('#c8102e', '#f2f2f2'),   # rojo y blanco
+    "Lanús":                  ('#6d1b34', '#6d1b34'),   # granate
+    "Newell's Old Boys":      ('#c8102e', '#111111'),   # rojo y negro
+    "Platense":               ('#f2f2f2', '#6b4423'),   # blanco y marron
+    "Racing":                 ('#7ec0ee', '#f2f2f2'),   # celeste y blanco
+    "River Plate":            ('#f2f2f2', '#e2001a'),   # blanco y rojo
+    "Rosario Central":        ('#1a4fa0', '#f2c94c'),   # azul y amarillo
+    "San Lorenzo":            ('#0a2a6b', '#8f1020'),   # azul y rojo oscuro
+    "Sarmiento (J)":          ('#0d7a3f', '#0d7a3f'),   # verde
+    "Talleres (C)":           ('#12376b', '#f2f2f2'),   # azul y blanco
+    "Tigre":                  ('#1a4fa0', '#c8102e'),   # azul y rojo
+    "Unión":                  ('#c8102e', '#f2f2f2'),   # rojo y blanco
+    "Vélez Sarsfield":        ('#f2f2f2', '#12376b'),   # blanco y azul
 }
 
 
@@ -1296,7 +1347,8 @@ def api_match(q):
     quien = {}
     for m in (g.get("members") or []):
         quien[m.get("id")] = {"name": m.get("name") or m.get("shortName") or "",
-                              "n": m.get("jerseyNumber")}
+                              "n": m.get("jerseyNumber"),
+                              "aid": m.get("athleteId")}
 
     TIPOS = {1: "gol", 2: "amarilla", 3: "roja", 1000: "cambio", 12: "palo"}
     events = []
@@ -1349,28 +1401,95 @@ def api_match(q):
     # titulares y suplentes; el nombre y el número salen de `members`
     lineups = {"home": [], "away": []}
     banco = {"home": [], "away": []}
+    banco_real = {"home": True, "away": True}
     formation = {}
-    TITULAR = ("titular", "starting", "starter")
+    TITULAR = ("titular", "starting", "starter", "titulares")
+    SUPLENTE = ("suplente", "suplentes", "substitute", "sub", "banco", "bench")
+    # En la Liga Profesional se pueden llevar hasta doce al banco. Si la lista
+    # que queda es más larga que eso, no es un banco: es el plantel entero.
+    MAX_BANCO = 12
+
+    def es_dt(f):
+        """El entrenador: 365scores le pone el dorsal -1."""
+        if str(f.get("n")) == "-1":
+            return True
+        etiqueta = norm("%s %s" % (f.get("puesto") or "", f.get("pos") or ""))
+        return any(x in etiqueta for x in ("entrenador", "director tecnico",
+                                           "coach", "manager"))
     for c_key, key in (("homeCompetitor", "home"), ("awayCompetitor", "away")):
         lu = (g.get(c_key) or {}).get("lineups") or {}
         formation[key] = lu.get("formation") or ""
+        clasificados = []
         for m in (lu.get("members") or []):
             p = quien.get(m.get("id"), {})
+            # yardFormation trae dónde para el jugador en la cancha, en
+            # porcentajes: fieldLine es la profundidad (0 = línea propia) y
+            # fieldSide el costado (0 izquierda, 100 derecha).
+            yf = m.get("yardFormation") or {}
             ficha = {"n": p.get("n") or m.get("jerseyNumber"),
                      "name": p.get("name") or "",
-                     "pos": (m.get("position") or {}).get("name") or ""}
+                     "id": p.get("aid"),
+                     "pos": puesto_ar((m.get("position") or {}).get("name")),
+                     "puesto": puesto_ar((m.get("formation") or {}).get("name")),
+                     "x": yf.get("fieldSide"), "y": yf.get("fieldLine")}
             if not ficha["name"]:
                 continue
-            es_titular = m.get("status") == 1 or norm(m.get("statusText")) in TITULAR
-            (lineups if es_titular else banco)[key].append(ficha)
+            st, txt = m.get("status"), norm(m.get("statusText"))
+            if es_dt(ficha):
+                rol = "dt"
+            elif st == 1 or txt in TITULAR:
+                rol = "titular"
+            elif st == 2 or txt in SUPLENTE:
+                rol = "suplente"
+            else:
+                rol = "?"          # está en la lista pero sin decir de qué
+            clasificados.append((rol, ficha))
+
+        # 365scores manda a todo el plantel en la misma lista. Tomar "el que
+        # no es titular" como suplente dejaba a Racing con diecinueve en el
+        # banco. Si la fuente marca explícitamente a los suplentes, se usa
+        # eso; si no marca nada, se muestran los que quedaron, pero avisando
+        # que es el plantel y no el banco.
+        lineups[key] = [f for r, f in clasificados if r == "titular"]
+        explicitos = [f for r, f in clasificados if r == "suplente"]
+        resto = [f for r, f in clasificados if r == "?"]
+        elegidos = explicitos or resto
+        banco_real[key] = bool(explicitos) or len(elegidos) <= MAX_BANCO
+        # el cuerpo técnico va siempre, lo marque como lo marque la fuente
+        banco[key] = elegidos + [f for r, f in clasificados if r == "dt"]
 
     ofic = [o.get("name") if isinstance(o, dict) else str(o) for o in (g.get("officials") or [])]
     venue = g.get("venue") or {}
     for s in ("home", "away"):
         out[s]["site"] = SITIOS.get(out[s]["canon"])
 
+    # Cada formación que vemos alimenta la trayectoria y el conteo de
+    # partidos. Es la única fuente propia que tenemos de eso.
+    liga_id = (q.get("liga") or ["lpf"])[0]
+    for key, lado in (("home", out["home"]), ("away", out["away"])):
+        club = lado.get("canon") or lado.get("name")
+        for p in lineups[key]:
+            anotar_paso(p["name"], club, liga_id, lado.get("logo"))
+            anotar_partido(p["name"], liga_id, out.get("id"))
+        for p in banco[key]:
+            anotar_paso(p["name"], club, liga_id, lado.get("logo"))
+
+    # colores del club, para pintar la cancha
+    for key, lado in (("home", out["home"]), ("away", out["away"])):
+        c = COLORES.get(lado.get("canon") or "")
+        lado["colores"] = list(c) if c else None
+
+    tv = [t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")]
+    # Hasta que el partido está por empezar, 365scores manda el plantel entero
+    # sin marcar quién es titular: si eso se muestra tal cual, el banco queda
+    # con veinte nombres. Se avisa si la formación ya está confirmada (once
+    # titulares) para que la página no publique un banco que todavía no es.
+    confirmada = {k: len(v) >= 11 for k, v in lineups.items()}
+
     out.update({"events": events, "stats": stats, "lineups": lineups,
-                "banco": banco, "formation": formation,
+                "banco": banco, "confirmada": confirmada,
+                "bancoReal": banco_real,
+                "formation": formation, "tv": tv,
                 "referee": ofic[0] if ofic else "",
                 "venue": venue.get("name") or out.get("venue") or "",
                 "capacidad": venue.get("capacity")})
@@ -1455,6 +1574,17 @@ def nombre_mas_completo(a, b):
     return a if len(a or "") >= len(b or "") else b
 
 
+# Nombres que no se parecen en nada al del club y que ninguna regla puede
+# adivinar: siglas, apodos, cambios de denominación. Van a mano.
+#
+#   SATSAID es el sindicato de televisión: el club se llama Social Atlético
+#   Televisión y AFA lo publica con la sigla, así que el escudo no aparecía.
+ALIAS_EQUIPOS = {
+    "satsaid": "social atletico television",
+    "sat saird": "social atletico television",
+}
+
+
 def emparejar(nombre, candidatos):
     """
     Devuelve la clave de `candidatos` que mejor corresponde a `nombre`.
@@ -1466,6 +1596,18 @@ def emparejar(nombre, candidatos):
     n = norm(nombre)
     if n in candidatos:
         return n
+
+    # las siglas primero: ninguna regla de tokens las va a sacar
+    otro = ALIAS_EQUIPOS.get(n)
+    if otro and otro != n:
+        if otro in candidatos:
+            return otro
+        # el club puede figurar con otra variante ("Social Atl. Televisión"):
+        # se busca el nombre largo con las reglas de siempre
+        aprox = emparejar(otro, candidatos)
+        if aprox:
+            return aprox
+
     tn = _tokens(nombre)
     if not tn:
         return None
@@ -1500,6 +1642,19 @@ def emparejar(nombre, candidatos):
             unicos.append(con_ese_token[0])
     if unicos and len(set(unicos)) == 1:
         return unicos[0]
+
+    # Y una más: DataFactory corta los nombres largos a la mitad de la
+    # palabra. En la B Metro escribe "Excursion" y el escudo, al lado, dice
+    # "Excursionistas". Como no es una abreviatura con punto, nada de lo de
+    # arriba lo agarra. Si una palabra de un lado empieza igual que una del
+    # otro y son cinco letras o más, es el mismo equipo.
+    def empieza_igual(a, b):
+        return len(a) >= 5 and len(b) >= 5 and (a.startswith(b) or b.startswith(a))
+
+    prefijos = [k for k in candidatos
+                if any(empieza_igual(t, u) for t in tn for u in _tokens(k))]
+    if len(set(prefijos)) == 1:
+        return prefijos[0]
     return None
 
 
@@ -1549,7 +1704,13 @@ def _sc_standings(comp, ttl=25):
         })
     out = []
     for num in sorted(zonas):
-        out.append({"name": nombres.get(num) or ("Zona %s" % num),
+        # Los torneos sin zonas vienen con num en blanco. Antes se armaba
+        # "Zona %s" igual y la pestaña terminaba diciendo "Zona None": si no
+        # hay nombre ni número, se deja vacío y la página pone "Tabla".
+        nombre = nombres.get(num)
+        if not nombre and num not in (None, "", 0):
+            nombre = "Zona %s" % num
+        out.append({"name": nombre or None,
                     "num": num, "rows": sort_rows_simple(zonas[num])})
     return out
 
@@ -1559,6 +1720,9 @@ LEYENDA_DESTINOS = [
      "texto": "Final por el primer ascenso"},
     {"clave": "reducido", "color": "#2f6fed",
      "texto": "Reducido por el segundo ascenso"},
+    {"clave": "champions", "color": "#2f6fed", "texto": "Champions League"},
+    {"clave": "europa", "color": "#f0b429", "texto": "Europa League"},
+    {"clave": "conference", "color": "#12b76a", "texto": "Conference League"},
     {"clave": "desciende", "color": "#e5484d", "texto": "Descienden"},
 ]
 
@@ -1588,6 +1752,48 @@ def marcar_destinos(zonas, reglas):
                     break
 
 
+def _sc_goleadores(comp, escudos=None):
+    """Goleadores desde 365scores, para las ligas que no cubre AFA."""
+    data = fetch("stats", {"competitions": comp, "competitor": 0}, ttl=900)
+    bloques = data.get("stats") or data.get("statistics") or []
+    goles = next((b for b in bloques if norm(b.get("name")) in ("goles", "goals")),
+                 bloques[0] if bloques else None)
+    if not goles:
+        return []
+
+    # nombre de equipo por id, del mismo paquete
+    equipos = {}
+    for c in (data.get("competitors") or []):
+        equipos[c.get("id")] = {"name": c.get("name") or "", "short": c.get("symbolicName") or "",
+                                "logo": logo(c), "site": None}
+
+    filas = []
+    for r in goles.get("rows", []):
+        e = r.get("entity") or {}
+        st = r.get("stats") or []
+        try:
+            g = int(float(st[0].get("value") if st else r.get("value") or 0))
+        except (TypeError, ValueError):
+            g = 0
+        pen = 0
+        mm = re.search(r"(\d+)", str(r.get("secondaryStatName") or ""))
+        if mm:
+            pen = int(mm.group(1))
+        eq = equipos.get(e.get("competitorId")) or {"name": "", "short": "",
+                                                    "logo": None, "site": None}
+        if escudos and not eq["logo"]:
+            k = emparejar(eq["name"], escudos)
+            if k:
+                eq = escudos[k]
+        filas.append({"name": e.get("name") or "", "team": eq, "goals": g,
+                      "pens": pen, "jugada": None, "cabeza": None, "tiroLibre": None,
+                      "athleteId": e.get("id")})
+    filas.sort(key=lambda x: -x["goals"])
+    for i, r in enumerate(filas, 1):
+        r["rank"] = i
+    return filas
+
+
 def api_liga(q):
     """
     Tablas y goleadores de una liga que no sea la Profesional.
@@ -1599,13 +1805,21 @@ def api_liga(q):
         return {"error": "liga desconocida: %s" % lid}
 
     out = {"id": lid, "nombre": cfg["nombre"], "torneo": cfg["torneo"],
-           "fuente": "365scores + AFA", "zonas": [], "anual": [], "goleadores": []}
+           "fuente": ("365scores + AFA" if cfg.get("base")
+                      else "365scores + LaLiga" if cfg.get("fixture_propio")
+                      else "365scores"),
+           "zonas": [], "anual": [], "goleadores": [],
+           # Hay ligas que tienen una sola tabla y nada más: LaLiga y la B
+           # Metro. Ahí la acumulada no aporta y se esconde la pestaña.
+           "conAnual": cfg.get("anual", True)}
 
     # posiciones por zona, con escudos
     try:
         out["zonas"] = _sc_standings(cfg["sc"])
         marcar_destinos(out["zonas"], cfg.get("zonas_de"))
-        out["leyenda"] = LEYENDA_DESTINOS
+        # sólo las referencias que esta liga usa de verdad
+        usadas = set(cfg.get("zonas_de") or {})
+        out["leyenda"] = [x for x in LEYENDA_DESTINOS if x["clave"] in usadas]
     except Exception as e:
         out["errorZonas"] = str(e)
 
@@ -1630,13 +1844,15 @@ def api_liga(q):
     # No se lee de la página de descenso de AFA porque ahí está casi toda en
     # cero: sólo carga la columna de la temporada en curso y deja Total, Pj y
     # Prom. en blanco. Sumar las dos zonas da lo mismo y siempre al día.
-    todos = [dict(r, zona=z["name"]) for z in out["zonas"] for r in z["rows"]]
-    todos.sort(key=lambda r: (-r["pts"], -r["dif"], -r["gf"], norm(r["team"]["name"])))
-    for i, r in enumerate(todos, 1):
-        r["pos"] = i
-    out["anual"] = todos
-    out["anualNota"] = ("Tabla general: las dos zonas juntas, ordenadas por "
-                        "puntos. AFA no publica promedios en esta categoría.")
+    if out["conAnual"]:
+        todos = [dict(r, zona=z["name"]) for z in out["zonas"] for r in z["rows"]]
+        todos.sort(key=lambda r: (-r["pts"], -r["dif"], -r["gf"],
+                                  norm(r["team"]["name"])))
+        for i, r in enumerate(todos, 1):
+            r["pos"] = i
+        out["anual"] = todos
+        out["anualNota"] = ("Tabla general: las dos zonas juntas, ordenadas por "
+                            "puntos. AFA no publica promedios en esta categoría.")
 
     # los escudos de la anual salen de las zonas, que sí los tienen
     escudos = {norm(r["team"]["name"]): r["team"]
@@ -1646,7 +1862,15 @@ def api_liga(q):
         k = emparejar(nombre, escudos)
         return escudos[k] if k else None
 
-    # goleadores, de AFA (traen el desglose por tipo de gol)
+    # Goleadores. AFA los da con el desglose por tipo de gol, que es mejor,
+    # pero sólo para las categorías argentinas. Para el resto, 365scores.
+    if not cfg.get("base"):
+        try:
+            out["goleadores"] = _sc_goleadores(cfg["sc"], escudos)
+        except Exception as e:
+            out["errorGoleadores"] = str(e)
+        return out
+
     try:
         for tabla in df_tables("goleadores", ttl=300, liga=lid)[:1]:
             for fila in tabla:
@@ -1666,6 +1890,14 @@ def api_liga(q):
     except Exception as e:
         out["errorGoleadores"] = str(e)
 
+    # Si AFA no devolvió nada —la página cambió, se cayó, o esa categoría
+    # todavía no la publica— se completa con 365scores antes que dejarlo vacío.
+    if not out["goleadores"]:
+        try:
+            out["goleadores"] = _sc_goleadores(cfg["sc"], escudos)
+        except Exception:
+            pass
+
     return out
 
 
@@ -1674,6 +1906,136 @@ def sort_rows_simple(rows):
     for i, r in enumerate(rows, 1):
         r["pos"] = i
     return rows
+
+
+def _sc_fixture(comp, ttl=120):
+    """
+    Calendario desde 365scores, acumulado en la base.
+
+    365scores sólo publica una ventana móvil: para LaLiga devuelve las fechas
+    36, 37 y 38 de la temporada pasada más la 1 y la 2 de la nueva, y nada de
+    lo que hay en el medio. Pedirle el resto no sirve, no lo tiene.
+
+    Por eso cada consulta se fusiona con lo ya guardado: lo que entró una vez
+    se queda. La primera vez el calendario está incompleto y se va llenando
+    solo a medida que la temporada avanza.
+    """
+    clave = "fixture:%s" % comp
+    guardado, _ = almacen.leer(clave)
+    acumulado = {str(m["id"]): m for m in (guardado or [])}
+
+    frescos, temporadas = 0, {}
+    for ep in ("games/results", "games/fixtures", "games/current"):
+        try:
+            data = fetch(ep, {"competitions": comp}, ttl=ttl)
+        except Exception:
+            continue
+        for g in data.get("games", []):
+            m = map_game(g)
+            m["liveId"] = g.get("id")
+            m["temporada"] = g.get("seasonNum")
+            m["zone"] = None
+            m["interzonal"] = False
+            for s in ("home", "away"):
+                m[s]["canon"] = m[s]["name"]
+            # lo nuevo pisa a lo viejo: el marcador puede haber cambiado
+            acumulado[str(m["id"])] = m
+            frescos += 1
+        for c in (data.get("competitions") or []):
+            if c.get("id") == comp and c.get("currentSeasonNum"):
+                temporadas["actual"] = c["currentSeasonNum"]
+
+    todos = list(acumulado.values())
+    if frescos:
+        almacen.guardar(clave, todos)
+
+    # 365scores mezcla el final de la temporada pasada con el arranque de la
+    # nueva: para LaLiga devolvía las fechas 36, 37 y 38 del torneo anterior
+    # junto a la 1 y la 2. Nos quedamos sólo con la temporada en curso.
+    actual = temporadas.get("actual")
+    if actual is None:
+        vistas = [m.get("temporada") for m in todos if m.get("temporada")]
+        actual = max(vistas) if vistas else None
+    if actual is not None:
+        todos = [m for m in todos
+                 if m.get("temporada") in (None, actual)] or todos
+
+    return sorted(todos, key=lambda x: (x["round"] or 0, x["start"] or ""))
+
+
+# ── Canal de TV y goleadores de cada partido ─────────────────────────────
+#
+# Los dos salen del detalle del partido, un pedido por partido. Es caro para
+# pedirlo en cada visita, pero no cambia: una vez terminado el partido los
+# goles son los que son. Por eso se cachea fuerte y sólo se refresca lo que
+# está en juego.
+def detalle_liviano(game_id, en_juego=False, liga="lpf"):
+    ttl = 30 if en_juego else 60 * 60 * 12
+    data = fetch("game", {"gameId": game_id}, ttl=ttl)
+    g = data.get("game") or {}
+    hid = (g.get("homeCompetitor") or {}).get("id")
+    quien = {m.get("id"): (m.get("name") or m.get("shortName") or "")
+             for m in (g.get("members") or [])}
+
+    # Ya que tenemos el partido entero abierto, anotamos quiénes jugaron.
+    # Esto es lo que hace que el contador de partidos se llene solo: /api/
+    # detalles se pide para cada fecha que el usuario mira, así que alcanza
+    # con navegar el torneo para que se complete.
+    for ck in ("homeCompetitor", "awayCompetitor"):
+        comp = g.get(ck) or {}
+        club = comp.get("name") or ""
+        escudo = logo(comp)
+        for mm in ((comp.get("lineups") or {}).get("members") or []):
+            nom = quien.get(mm.get("id"))
+            if not nom:
+                continue
+            if mm.get("status") == 1 or norm(mm.get("statusText")) in ("titular", "starting", "starter"):
+                anotar_partido(nom, liga, game_id)
+            anotar_paso(nom, club, liga, escudo)
+    goles = []
+    for e in (g.get("events") or []):
+        et = e.get("eventType") or {}
+        if et.get("id") != 1 and "gol" not in norm(et.get("name")):
+            continue
+        mins = e.get("gameTime")
+        goles.append({
+            "min": int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None,
+            "added": e.get("addedTime") or 0,
+            "side": "h" if e.get("competitorId") == hid else "a",
+            "player": quien.get(e.get("playerId"), ""),
+            "sub": et.get("subTypeName") or "",
+        })
+    goles.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
+    tv = [t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")]
+    return {"tv": tv, "goles": goles}
+
+
+def api_detalles(q):
+    """
+    Canal de TV y goleadores de todos los partidos de una fecha, para poder
+    mostrarlos en la lista sin abrir cada uno.
+    Uso: /api/detalles?round=5  ·  /api/detalles?id=nacional&round=26
+    """
+    lid = (q.get("id") or ["lpf"])[0]
+    rnd = (q.get("round") or [None])[0]
+    if lid == "lpf":
+        games = all_games()
+    else:
+        games = api_liga_games({"id": [lid]}).get("games", [])
+    if rnd:
+        games = [g for g in games if str(g["round"]) == str(rnd)]
+
+    salida = {}
+    pendientes = [g for g in games if g.get("liveId")]
+    for g in pendientes:
+        try:
+            salida[str(g["id"])] = detalle_liviano(g["liveId"],
+                                                   en_juego=g["status"] == "LIVE",
+                                                   liga=lid)
+        except Exception:
+            continue
+    return {"detalles": salida, "consultados": len(pendientes),
+            "sinDetalle": len(games) - len(pendientes)}
 
 
 def fecha_actual(rounds, por_fecha):
@@ -1720,12 +2082,40 @@ def api_liga_games(q):
     cfg = LIGAS.get(lid)
     if not cfg:
         return {"error": "liga desconocida"}
-    try:
-        games = df_fixture_generico(lid)
-    except Exception as e:
-        games, err = [], str(e)
+    err = None
+    if cfg.get("fixture_propio") == "laliga":
+        # Calendario de laliga.com (las 38 jornadas) con los goles de 365scores.
+        try:
+            games = laliga_fixture()
+        except Exception as e:
+            games, err = [], str(e)
+        if games:
+            try:
+                pegar_marcadores(games, _sc_fixture(cfg["sc"]))
+            except Exception:
+                pass
+        else:
+            try:
+                games, err = _sc_fixture(cfg["sc"]), None
+            except Exception:
+                pass
+    elif not cfg.get("base"):
+        # sin fixture propio ni de AFA: el calendario sale entero de 365scores
+        try:
+            games = _sc_fixture(cfg["sc"])
+        except Exception as e:
+            games, err = [], str(e)
     else:
-        err = None
+        try:
+            games = df_fixture_generico(lid)
+        except Exception as e:
+            games, err = [], str(e)
+        if not games:
+            try:
+                games = _sc_fixture(cfg["sc"])
+                err = None
+            except Exception:
+                pass
 
     # zona y escudo de cada equipo, desde las posiciones de 365scores
     meta = {}
@@ -1815,6 +2205,245 @@ def api_liga_games(q):
     if err:
         res["error"] = err
     return res
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LaLiga: calendario completo desde laliga.com
+# ─────────────────────────────────────────────────────────────────────────
+#
+# 365scores devuelve siempre la misma ventana de partidos, así que de LaLiga
+# se veían tres jornadas y nada más. laliga.com publica cada jornada en su
+# propia dirección —.../resultados/2026-27/jornada-N— y con cambiarle el
+# número se recorre el torneo entero.
+#
+# De ahí sale el esqueleto: quién juega contra quién, qué día y a qué hora.
+# Los goles y el minuto a minuto los sigue poniendo 365scores.
+
+LALIGA_URL = ("https://www.laliga.com/es-GB/laliga-easports/resultados/"
+              "%s/jornada-%d")
+LALIGA_TEMPORADA = "2026-27"
+LALIGA_JORNADAS = 38
+
+# El nombre del club sale del enlace, no del texto: en la tabla aparece
+# "R. Racing Club" o "Celta" y en las posiciones "Racing de Santander" y
+# "Celta de Vigo". La dirección, en cambio, no cambia nunca.
+LALIGA_CLUBES = {
+    "d-alaves": "Alavés",
+    "athletic-club": "Athletic Club",
+    "atletico-de-madrid": "Atlético de Madrid",
+    "rc-celta": "Celta de Vigo",
+    "elche-c-f": "Elche CF",
+    "fc-barcelona": "FC Barcelona",
+    "getafe-cf": "Getafe CF",
+    "levante-ud": "Levante UD",
+    "malaga-cf": "Málaga CF",
+    "c-a-osasuna": "Osasuna",
+    "r-racing-club": "Racing de Santander",
+    "rayo-vallecano": "Rayo Vallecano",
+    "rc-deportivo": "RC Deportivo",
+    "rcd-espanyol": "RCD Espanyol",
+    "real-betis": "Real Betis",
+    "real-madrid": "Real Madrid",
+    "real-sociedad": "Real Sociedad",
+    "sevilla-fc": "Sevilla FC",
+    "valencia-cf": "Valencia CF",
+    "villarreal-cf": "Villarreal CF",
+}
+
+_LL_CLUB = re.compile(r"/clubes/([a-z0-9\-]+)/", re.I)
+_LL_FECHA = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")
+_LL_HORA = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
+
+
+class _LaLiga(HTMLParser):
+    """
+    Recorre la página de una jornada y va anotando, en orden, los enlaces a
+    clubes y los textos que parecen fecha u hora. Cada par de clubes seguidos
+    es un partido, con la última fecha y hora vistas.
+
+    Se mira el enlace y no la clase CSS a propósito: laliga.com rehace su
+    maquetación cada tanto, pero las direcciones de los clubes son estables.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.partidos = []
+        self._pend = []          # clubes esperando pareja
+        self._fecha = self._hora = None
+        self._buf = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "a":
+            return
+        href = dict(attrs).get("href") or ""
+        m = _LL_CLUB.search(href)
+        if not m:
+            return
+        slug = m.group(1).lower()
+        if slug not in LALIGA_CLUBES:
+            return
+        self._pend.append(slug)
+        if len(self._pend) == 2:
+            a, b = self._pend
+            self._pend = []
+            if a == b:                      # el mismo enlace repetido
+                return
+            self.partidos.append({"local": a, "visita": b,
+                                  "fecha": self._fecha, "hora": self._hora})
+
+    def handle_data(self, d):
+        t = d.strip()
+        if not t or len(t) > 40:
+            return
+        f = _LL_FECHA.search(t)
+        if f:
+            self._fecha = "%s-%s-%s" % (f.group(3), f.group(2), f.group(1))
+            self._hora = None
+            return
+        h = _LL_HORA.match(t)
+        if h:
+            self._hora = "%02d:%02d" % (int(h.group(1)), int(h.group(2)))
+
+
+def _laliga_jornada(n, ttl=21600):
+    """Los partidos de una jornada. Se guarda 6 horas: el calendario no vuela."""
+    url = LALIGA_URL % (LALIGA_TEMPORADA, n)
+
+    def ir_a_la_fuente():
+        req = Request(url, headers={"User-Agent": UA,
+                                    "Accept": "text/html",
+                                    "Accept-Language": "es-ES,es;q=0.9"})
+        with urlopen(req, timeout=25) as r:
+            html = r.read().decode("utf-8", "replace")
+        p = _LaLiga()
+        p.feed(html)
+        return p.partidos
+
+    datos, info = almacen.con_respaldo("laliga:%s:%d" % (LALIGA_TEMPORADA, n),
+                                       ir_a_la_fuente, max_edad=ttl,
+                                       tag="laliga/jornada")
+    if info.get("origen") == "cache-vieja":
+        ULTIMO_PROBLEMA["laliga"] = info
+    return datos or []
+
+
+def laliga_fixture(ttl=21600):
+    """
+    Las 38 jornadas juntas. Se piden de a varias en paralelo porque si no
+    son 38 idas y vueltas de una en una y el primer visitante espera medio
+    minuto.
+    """
+    url = "laliga:fixture:" + LALIGA_TEMPORADA
+    with _lock:
+        hit = _cache.get(url)
+        if hit and time.time() - hit[0] < 600:
+            return hit[1]
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    def una(n):
+        try:
+            return n, _laliga_jornada(n, ttl)
+        except Exception:
+            return n, []
+
+    crudo = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for n, ps in pool.map(una, range(1, LALIGA_JORNADAS + 1)):
+            crudo[n] = ps
+
+    out, vistos = [], set()
+    for n in sorted(crudo):
+        for p in crudo[n]:
+            # laliga.com repite la tabla para la versión de celular; si no se
+            # filtra, cada partido aparece dos veces.
+            if (n, p["local"], p["visita"]) in vistos:
+                continue
+            vistos.add((n, p["local"], p["visita"]))
+            loc = LALIGA_CLUBES.get(p["local"], p["local"])
+            vis = LALIGA_CLUBES.get(p["visita"], p["visita"])
+            out.append({
+                "id": "ll-%d-%s-%s" % (n, p["local"][:8], p["visita"][:8]),
+                "round": n, "zone": None, "interzonal": False,
+                "stage": "LaLiga %s" % LALIGA_TEMPORADA,
+                "start": _laliga_dt(p["fecha"], p["hora"]),
+                "status": "PROG", "statusText": "", "minute": None, "referee": "",
+                "home": {"id": None, "canon": loc, "name": loc, "short": "",
+                         "logo": None, "score": None, "site": None},
+                "away": {"id": None, "canon": vis, "name": vis, "short": "",
+                         "logo": None, "score": None, "site": None},
+                "gh": None, "ga": None, "venue": "",
+            })
+    out.sort(key=lambda x: (x["round"] or 0, x["start"] or ""))
+    with _lock:
+        _cache[url] = (time.time(), out)
+    return out
+
+
+def _laliga_dt(fecha, hora):
+    """
+    '2026-08-20' + '19:00' -> ISO con huso de Madrid.
+
+    Los horarios de laliga.com son de España; el sitio los muestra en la hora
+    local de quien mira, así que hay que decir de dónde salen. En agosto rige
+    el horario de verano (+02:00) y desde el último domingo de octubre, +01:00.
+    """
+    if not fecha:
+        return None
+    try:
+        y, m, d = (int(x) for x in fecha.split("-"))
+    except ValueError:
+        return None
+    hh, mi = 0, 0
+    mm = re.search(r"(\d{1,2}):(\d{2})", hora or "")
+    if mm:
+        hh, mi = int(mm.group(1)), int(mm.group(2))
+    dia = dt.date(y, m, d)
+    # último domingo de marzo y de octubre
+    def ultimo_domingo(anio, mes):
+        d31 = dt.date(anio, mes, 31)
+        return d31 - dt.timedelta(days=(d31.weekday() + 1) % 7)
+    verano = ultimo_domingo(y, 3) <= dia < ultimo_domingo(y, 10)
+    huso = "+02:00" if verano else "+01:00"
+    return "%04d-%02d-%02dT%02d:%02d:00%s" % (y, m, d, hh, mi, huso)
+
+
+def pegar_marcadores(base, extra):
+    """
+    Pone sobre el calendario los goles de otra fuente (365scores).
+
+    El calendario dice quién juega y cuándo; los goles y el estado del
+    partido vienen de afuera. Se emparejan por fecha del torneo y equipos.
+    """
+    if not extra:
+        return base
+    indice = {}
+    for m in extra:
+        k = (m.get("round"), norm(m["home"]["name"])[:8], norm(m["away"]["name"])[:8])
+        indice[k] = m
+    for m in base:
+        e = indice.get((m.get("round"), norm(m["home"]["name"])[:8],
+                        norm(m["away"]["name"])[:8]))
+        if not e:
+            # sin la fecha: puede que la fuente numere distinto
+            e = next((x for x in extra
+                      if norm(x["home"]["name"])[:8] == norm(m["home"]["name"])[:8]
+                      and norm(x["away"]["name"])[:8] == norm(m["away"]["name"])[:8]
+                      and (x["start"] or "")[:10] == (m["start"] or "")[:10]), None)
+        if not e:
+            continue
+        m["liveId"] = e.get("id")
+        m["venue"] = e.get("venue") or m["venue"]
+        # El horario de 365scores manda: viene con huso y ya reprogramado.
+        if e.get("start"):
+            m["start"] = e["start"]
+        if e.get("gh") is not None:
+            m["gh"], m["ga"] = e["gh"], e["ga"]
+            m["home"]["score"], m["away"]["score"] = e["gh"], e["ga"]
+            m["status"] = e.get("status") or m["status"]
+            m["statusText"] = e.get("statusText") or m["statusText"]
+            m["minute"] = e.get("minute")
+    return base
 
 
 def df_fixture_generico(liga):
@@ -1910,6 +2539,7 @@ def api_player(q):
         return ficha        # el perfil de 365scores es sólo para Primera
 
     # perfil en 365scores (posición, foto). Si falla, la ficha igual sirve.
+    atleta = _int((q.get("atleta") or [""])[0], None)
     try:
         data = fetch("stats", {"competitions": COMPETITION, "competitor": 0}, ttl=300)
         blocks = data.get("stats") or []
@@ -1918,20 +2548,244 @@ def api_player(q):
             e = r.get("entity") or {}
             if norm(e.get("name")) == norm(nombre):
                 ficha["posicion"] = e.get("positionName") or ""
-                if e.get("id"):
-                    ficha["foto"] = ("https://imagecache.365scores.com/image/upload/"
-                                     "f_png,w_128,h_128,c_limit,q_auto:best,dpr_2/"
-                                     "v%s/Athletes/%s" % (e.get("imageVersion", 1), e["id"]))
+                atleta = atleta or e.get("id")
                 break
     except Exception:
         pass
 
+    ficha.update(perfil_atleta(atleta))
     return ficha
+
+
+def perfil_atleta(atleta_id):
+    """
+    Datos personales del jugador.
+
+    365scores da edad, nacionalidad y puesto. Altura y peso no los publica
+    en esta API, así que para eso queda el enlace a Transfermarkt.
+    """
+    if not atleta_id:
+        return {}
+    try:
+        data = fetch("athletes", {"athletes": atleta_id}, ttl=60 * 60 * 24)
+    except Exception:
+        return {}
+    a = (data.get("athletes") or [{}])[0]
+    if not a:
+        return {}
+    salida = {
+        "atletaId": a.get("id"),
+        "edad": a.get("age"),
+        "nacionalidad": a.get("nationalityName") or "",
+        "posicion": puesto_ar((a.get("position") or {}).get("name")),
+        "puesto": puesto_ar((a.get("formationPosition") or {}).get("name")),
+    }
+    if a.get("id"):
+        salida["foto"] = ("https://imagecache.365scores.com/image/upload/"
+                          "f_png,w_160,h_160,c_limit,q_auto:best,dpr_2/"
+                          "v%s/Athletes/%s" % (a.get("imageVersion", 1), a["id"]))
+    if a.get("nationalityId"):
+        salida["bandera"] = ("https://imagecache.365scores.com/image/upload/"
+                             "f_png,w_48,h_48,c_limit,q_auto:eco,dpr_2/"
+                             "v1/Countries/Round/%s" % a["nationalityId"])
+    return {k: v for k, v in salida.items() if v not in (None, "")}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Datos físicos, desde Wikidata
+#
+# 365scores no publica altura ni peso. Transfermarkt sí, pero scrapearlo
+# sería lo mismo que ya decidimos no hacer. Wikidata los tiene, su licencia
+# es CC0 —uso libre, sin condiciones— y tiene una API pensada para esto.
+# La cobertura no es total: para jugadores de ascenso muchas veces no hay
+# ficha. Cuando falta, simplemente no se muestra.
+# ─────────────────────────────────────────────────────────────────────────
+# 365scores usa el castellano de España; acá se dice de otra manera.
+PUESTOS = {
+    "portero": "Arquero", "guardameta": "Arquero",
+    "defensa central": "Defensor central", "defensa": "Defensor",
+    "defensa lateral izquierdo": "Lateral izquierdo",
+    "defensa lateral derecho": "Lateral derecho",
+    "lateral izquierdo": "Lateral izquierdo", "lateral derecho": "Lateral derecho",
+    "centrocampista": "Mediocampista",
+    "centrocampista defensivo": "Volante central",
+    "centrocampista ofensivo": "Enganche",
+    "extremo izquierdo": "Extremo izquierdo", "extremo derecho": "Extremo derecho",
+    "delantero centro": "Centrodelantero", "centro delantero": "Centrodelantero",
+    "delantero": "Delantero", "mediapunta": "Enganche",
+}
+
+
+def puesto_ar(t):
+    return PUESTOS.get(norm(t), t or "")
+
+
+WD = "https://www.wikidata.org/w/api.php"
+
+
+def _wd(params):
+    from urllib.parse import urlencode
+    url = WD + "?" + urlencode(dict(params, format="json"))
+    req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def fisico(nombre):
+    """Altura, peso y fecha de nacimiento. {} si no se encuentra."""
+    if not nombre:
+        return {}
+    clave = "wd:" + norm(nombre)
+
+    def buscar():
+        b = _wd({"action": "wbsearchentities", "search": nombre,
+                 "language": "es", "type": "item", "limit": 5})
+        # nos quedamos con el que la descripción indique que es futbolista
+        cands = b.get("search") or []
+        elegido = next((c for c in cands
+                        if re.search(r"f[uú]tbol|football|soccer",
+                                     (c.get("description") or ""), re.I)), None)
+        if not elegido:
+            return {}
+        ident = elegido["id"]
+        e = _wd({"action": "wbgetentities", "ids": ident,
+                 "props": "claims", "languages": "es"})
+        c = ((e.get("entities") or {}).get(ident) or {}).get("claims") or {}
+
+        def valor(p):
+            try:
+                return c[p][0]["mainsnak"]["datavalue"]["value"]
+            except (KeyError, IndexError, TypeError):
+                return None
+
+        alt, pes, nac = valor("P2048"), valor("P2067"), valor("P569")
+        salida = {"wikidata": ident}
+        if isinstance(alt, dict):
+            salida["altura"] = int(float(alt.get("amount", 0)))
+        if isinstance(pes, dict):
+            salida["peso"] = int(float(pes.get("amount", 0)))
+        if isinstance(nac, dict) and nac.get("time"):
+            salida["nacimiento"] = nac["time"].lstrip("+")[:10]
+        return {k: v for k, v in salida.items() if v}
+
+    try:
+        datos, _ = almacen.con_respaldo(clave, buscar,
+                                        max_edad=60 * 60 * 24 * 30, tag="wikidata")
+        return datos or {}
+    except Exception:
+        return {}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Trayectoria propia
+#
+# Ni 365scores ni Wikidata publican la carrera completa de forma confiable.
+# Pero nosotros ya vemos, partido a partido, en qué club juega cada uno. Así
+# que lo vamos anotando: cada vez que aparece en una formación o entre los
+# goleadores, queda registrado club + liga + temporada. Con el tiempo se
+# arma una trayectoria real, la de lo que efectivamente pasó por acá.
+# ─────────────────────────────────────────────────────────────────────────
+def anotar_paso(nombre, club, liga, escudo=None):
+    if not nombre or not club:
+        return
+    clave = "carrera:" + norm(nombre)
+    hist, _ = almacen.leer(clave)
+    hist = hist or []
+    hoy = dt.date.today().isoformat()
+    for h in hist:
+        if norm(h["club"]) == norm(club) and h["liga"] == liga:
+            h["hasta"] = hoy
+            if escudo:
+                h["escudo"] = escudo
+            almacen.guardar(clave, hist)
+            return
+    hist.append({"club": club, "liga": liga, "escudo": escudo,
+                 "desde": hoy, "hasta": hoy})
+    almacen.guardar(clave, hist)
+
+
+def carrera(nombre):
+    hist, _ = almacen.leer("carrera:" + norm(nombre))
+    return sorted(hist or [], key=lambda h: h.get("desde") or "", reverse=True)
+
+
+def partidos_jugados(nombre, liga="lpf"):
+    """
+    Cuántos partidos del torneo actual jugó, contados sobre lo que ya vimos.
+
+    Sale de las formaciones que fuimos guardando, así que arranca en cero y
+    se completa a medida que se abren partidos. Es un piso, no un total
+    oficial, y en la ficha se aclara.
+    """
+    clave = "pj:%s:%s" % (liga, norm(nombre))
+    dato, _ = almacen.leer(clave)
+    return (dato or {}).get("n", 0)
+
+
+def anotar_partido(nombre, liga, game_id):
+    if not nombre:
+        return
+    clave = "pj:%s:%s" % (liga, norm(nombre))
+    dato, _ = almacen.leer(clave)
+    dato = dato or {"n": 0, "ids": []}
+    if str(game_id) in dato["ids"]:
+        return
+    dato["ids"] = (dato["ids"] + [str(game_id)])[-60:]
+    dato["n"] = len(set(dato["ids"]))
+    almacen.guardar(clave, dato)
+
+
+def api_atleta(q):
+    """Ficha de un jugador. /api/atleta?id=8167&name=...&liga=lpf"""
+    aid = _int((q.get("id") or [""])[0], None)
+    nombre = (q.get("name") or [""])[0].strip()
+    lid = (q.get("liga") or ["lpf"])[0]
+    if not aid and not nombre:
+        return {"error": "falta el parámetro id o name"}
+
+    p = perfil_atleta(aid) if aid else {}
+    p["name"] = nombre or p.get("name") or ""
+    p["transfermarkt"] = _tm_link(p["name"])
+
+    # altura, peso y fecha de nacimiento
+    p.update(fisico(p["name"]))
+    if p.get("nacimiento") and not p.get("edad"):
+        try:
+            n = dt.date.fromisoformat(p["nacimiento"])
+            hoy = dt.date.today()
+            p["edad"] = hoy.year - n.year - ((hoy.month, hoy.day) < (n.month, n.day))
+        except ValueError:
+            pass
+
+    p["carrera"] = carrera(p["name"])
+    p["pj"] = partidos_jugados(p["name"], lid)
+
+    # goles en el torneo, si figura entre los goleadores
+    try:
+        filas = (api_scorers({}).get("rows", []) if lid == "lpf"
+                 else api_liga({"id": [lid]}).get("goleadores", []))
+        for r in filas:
+            if norm(r["name"]) == norm(p["name"]):
+                p.update({"goals": r["goals"], "jugada": r.get("jugada"),
+                          "cabeza": r.get("cabeza"), "tiroLibre": r.get("tiroLibre"),
+                          "pens": r.get("pens"), "rank": r.get("rank"),
+                          "team": r["team"]["name"], "logo": r["team"].get("logo"),
+                          "site": r["team"].get("site")})
+                break
+    except Exception:
+        pass
+    return {k: v for k, v in p.items() if v not in (None, "", [])}
+
+
+# Qué ligas entran en la portada. Están todas en el menú de la izquierda,
+# pero la tapa muestra sólo estas dos para no quedar cargada. Se agregan
+# sumando la clave acá.
+HOME_LIGAS = ("lpf", "nacional", "laliga")
 
 
 def api_home(q):
     """
-    Portada: los partidos de un día, de todas las ligas configuradas.
+    Portada: los partidos de un día, de las ligas de HOME_LIGAS.
     Uso: /api/home?date=YYYY-MM-DD (si no, hoy).
     """
     date = (q.get("date") or [dt.date.today().isoformat()])[0]
@@ -1951,7 +2805,7 @@ def api_home(q):
     except Exception:
         pass
 
-    for lid in [k for k in LIGAS if k != "lpf"]:
+    for lid in [k for k in HOME_LIGAS if k != "lpf" and k in LIGAS]:
         try:
             ms = dia(api_liga_games({"id": [lid]}).get("games", []))
             if not ms:
@@ -1967,12 +2821,51 @@ def api_home(q):
     for b in bloques:
         b["games"].sort(key=lambda x: (x["start"] or ""))
     total = sum(len(b["games"]) for b in bloques)
-    return {"date": date, "bloques": bloques, "total": total, "live": vivos}
+    return {"date": date, "bloques": bloques, "total": total, "live": vivos,
+            "partidazo": partidazo_del_dia(bloques)}
+
+
+def partidazo_del_dia(bloques):
+    """
+    El partido más importante de la jornada, entre los de Primera.
+
+    La regla es la de cualquier hincha: el que tiene al equipo mejor ubicado
+    en la tabla. La excepción es la fecha de los interzonales, donde se juegan
+    los clásicos: ese día el clásico es el partido, aunque los dos equipos
+    vengan últimos.
+    """
+    lpf = next((b["games"] for b in bloques if b["liga"] == "lpf"), [])
+    if not lpf:
+        return None
+
+    # posición de cada equipo: la anual ordena a los 30 en una sola lista
+    puesto = {}
+    try:
+        for r in api_annual({"live": ["0"]}).get("rows", []):
+            puesto[norm(r.get("canon") or r["team"]["name"])] = r.get("pos") or 99
+    except Exception:
+        pass
+    if not puesto:
+        try:
+            for z in api_standings({"live": ["0"]}).get("zones", []):
+                for r in z["rows"]:
+                    puesto[norm(r.get("canon") or r["team"]["name"])] = r.get("pos") or 99
+        except Exception:
+            return lpf[0]["id"]
+
+    def mejor_puesto(m):
+        return min(puesto.get(norm(m[s].get("canon") or m[s]["name"]), 99)
+                   for s in ("home", "away"))
+
+    clasicos = [m for m in lpf if m.get("interzonal")]
+    elegibles = clasicos or lpf
+    return min(elegibles, key=mejor_puesto)["id"]
 
 
 # Emblemas: sólo de las ligas que efectivamente andan. Las que están en
 # "pronto" van sin escudo: poner uno estimado quedaba mal y confundía.
-EMBLEMAS = {"lpf": 72, "nacional": 419}
+EMBLEMAS = {"lpf": 72, "nacional": 419, "pbm": 5077, "fa": 5078,
+            "fem": 6224, "laliga": 11}
 
 
 def api_ligas(q):
@@ -1995,6 +2888,46 @@ def api_ligas(q):
                     "activa": bool(cfg),
                     "emblema": emblema(comp, versiones.get(comp, 1))})
     return {"ligas": out}
+
+
+def api_club(q):
+    """
+    El partido anterior y el siguiente de un club, para el modo club.
+    Uso: /api/club?name=Racing
+    """
+    nombre = (q.get("name") or [""])[0].strip()
+    if not nombre:
+        return {"error": "falta el parámetro name"}
+    canon = match_team(nombre) or nombre
+
+    try:
+        todos = all_games(ttl=120)
+    except Exception as e:
+        return {"error": str(e), "club": canon}
+
+    suyos = [m for m in todos
+             if canon in (m["home"].get("canon"), m["away"].get("canon"))]
+    suyos.sort(key=lambda m: m["start"] or "")
+
+    ahora = dt.datetime.now(dt.timezone.utc)
+
+    def ya_paso(m):
+        if not m["start"]:
+            return False
+        try:
+            return dt.datetime.fromisoformat(m["start"]) < ahora
+        except ValueError:
+            return False
+
+    envivo = next((m for m in suyos if m["status"] == "LIVE"), None)
+    # el último jugado: el más reciente que ya terminó
+    ultimo = next((m for m in reversed(suyos) if m["status"] == "FIN"), None)
+    # el próximo: el primero que todavía no empezó
+    proximo = next((m for m in suyos
+                    if m["status"] not in ("FIN", "LIVE") and not ya_paso(m)), None)
+
+    return {"club": canon, "envivo": envivo, "ultimo": ultimo,
+            "proximo": proximo, "total": len(suyos)}
 
 
 def api_clubes(q):
@@ -2039,10 +2972,13 @@ def api_diagnostico(q):
 
 
 ROUTES = {
+    "/api/detalles": api_detalles,
+    "/api/atleta": api_atleta,
     "/api/diagnostico": api_diagnostico,
     "/api/base": lambda q: almacen.estado(),
     "/api/home": api_home,
     "/api/clubes": api_clubes,
+    "/api/club": api_club,
     "/api/liga": api_liga,
     "/api/liga/games": api_liga_games,
     "/api/player": api_player,

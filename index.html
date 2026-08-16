@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HAYVAR — Liga Profesional Argentina</title>
+
+<!-- Google Analytics (GA4). El ID de medición no es un secreto: viaja en el
+     código de cualquier página que lo use. Si alguna vez hay que sacarlo,
+     se borran estas cinco líneas y listo. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-VT430JPYEY"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-VT430JPYEY');
+</script>
 <style>
 :root{
   --nav:#141b34; --nav2:#1c2547; --nav3:#26315c;
@@ -1046,6 +1057,7 @@ const App=(()=>{
 
   /* ── ficha del jugador ── */
   async function openPlayer(nombre,equipo,atletaId){
+    medir.evento('ver_jugador',{liga:S.liga, jugador:nombre, equipo:equipo||''});
     $('#ov').classList.add('show'); document.body.style.overflow='hidden';
     $('#modalBox').innerHTML=`<div class="mhead" style="padding:16px">
       <div class="top"><span>Jugador</span><button class="x" onclick="App.closeModal()">×</button></div>
@@ -1135,6 +1147,12 @@ const App=(()=>{
     mBase=S.games.find(m=>String(m.id)===String(id))
       || [cg.envivo,cg.ultimo,cg.proximo].find(m=>m&&String(m.id)===String(id));
     if(!mBase) return;
+    medir.evento('abrir_partido',{
+      liga:S.liga,
+      partido:`${mBase.home.canon||mBase.home.name} - ${mBase.away.canon||mBase.away.name}`,
+      fecha:String(mBase.round??''),
+      estado:mBase.status||''
+    });
     $('#ov').classList.add('show'); document.body.style.overflow='hidden';
     drawModal(mBase,!!mBase.liveId);
     // el detalle sale de 365scores; sólo existe para los partidos de su ventana
@@ -1794,9 +1812,74 @@ const App=(()=>{
     drawRight();
   }
 
+  /* ─────────────────────────────────────────────────────────────────────
+     Medición de visitas (Google Analytics 4)
+     ─────────────────────────────────────────────────────────────────────
+     Pegá tu identificador acá abajo y listo. Se saca de
+     analytics.google.com → Administrar → Flujos de datos → Web, y tiene
+     la forma G-XXXXXXXXXX.
+
+     Mientras esté vacío no se carga nada de Google: ni scripts, ni
+     cookies, ni pedidos. La página funciona igual.
+
+     HAYVAR es una sola página: el navegador nunca cambia de dirección, así
+     que Analytics contaría una sola visita y nunca sabrías qué miraron.
+     Por eso cada sección avisa por su cuenta cuál se abrió.               */
+
+  const GA_ID = '';   // ej: 'G-ABC1234XYZ'
+
+  const medir = (function(){
+    // nombre de cada sección tal como va a aparecer en los informes
+    const RUTA={home:'/portada', lpf:'/liga-profesional',
+                nacional:'/primera-nacional', pbm:'/primera-b-metro',
+                fa:'/federal-a', fem:'/futbol-femenino', laliga:'/laliga'};
+    const TITULO={home:'Portada', lpf:'Liga Profesional',
+                  nacional:'Primera Nacional', pbm:'Primera B Metro',
+                  fa:'Federal A', fem:'Fútbol femenino', laliga:'LaLiga'};
+    let listo=false, ultima=null;
+
+    function arrancar(){
+      if(!GA_ID||listo) return;
+      listo=true;
+      window.dataLayer=window.dataLayer||[];
+      window.gtag=function(){window.dataLayer.push(arguments);};
+      gtag('js', new Date());
+      // el page_view automático se apaga: lo manda seccion() con la ruta
+      // que corresponde, si no todo quedaría bajo "/"
+      gtag('config', GA_ID, {send_page_view:false});
+      const s=document.createElement('script');
+      s.async=true;
+      s.src='https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(GA_ID);
+      document.head.appendChild(s);
+      seccion(S.liga);
+    }
+
+    // una "visita a página" por cada torneo que se abre
+    function seccion(id){
+      if(!listo||!window.gtag) return;
+      const ruta=RUTA[id]||('/'+id);
+      if(ruta===ultima) return;
+      ultima=ruta;
+      gtag('event','page_view',{
+        page_title:TITULO[id]||id,
+        page_location:location.origin+ruta,
+        page_path:ruta
+      });
+    }
+
+    // cualquier otra cosa que valga la pena saber
+    function evento(nombre,datos){
+      if(!listo||!window.gtag) return;
+      try{ gtag('event',nombre,datos||{}); }catch(e){}
+    }
+
+    return {arrancar, seccion, evento};
+  })();
+
   const api={
     init(){
       document.documentElement.dataset.theme=localStorage.getItem('hayvar.theme')||'light';
+      medir.arrancar();
       loadAll(true);
       cargarEmblemas();
       // el club elegido se recuerda entre sesiones
@@ -1804,6 +1887,7 @@ const App=(()=>{
     },
     liga(id){
       if(id===S.liga) return;
+      medir.seccion(id);
       S.liga=id; S.round=null; S.tab=id==='lpf'?'A':'z0'; S.otra=null; S.scores={};
       clearTimeout(S.timer); clearTimeout(S.vivoTimer); drawSide(); api.menu(false);
       if(id==='lpf'){
@@ -1827,8 +1911,10 @@ const App=(()=>{
     // al cambiar de club se rehace lo que está en pantalla: la portada para
     // traer el último y el próximo, y las tablas para pintar la fila
     setClub(c){ aplicarClub(c); api.closeModal();
+      medir.evento('modo_club',{club:c?c.name:'(ninguno)'});
       if(S.liga==='home') loadHome(); else if(S.liga==='lpf') drawRight(); },
     pick(r){ S.round=r; drawRounds();
+      medir.evento('cambiar_fecha',{liga:S.liga, fecha:String(r)});
       if(S.liga!=='lpf'){ pintarFecha(); return; }
       loadRound().then(()=>{ const live=S.games.filter(m=>m.status==='LIVE').length; schedule(live>0); }); },
     player: openPlayer,

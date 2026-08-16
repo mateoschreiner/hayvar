@@ -2941,6 +2941,58 @@ def api_ligas(q):
     return {"ligas": out}
 
 
+def api_competencias(q):
+    """
+    Busca torneos en 365scores y devuelve el número con el que los identifica.
+
+    Existe para no adivinar: cada torneo tiene un id y ponerle el equivocado
+    a una liga hace que la página muestre otra cosa sin avisar, que es peor
+    que no tenerla. Se entra una vez, se anota el número y se configura.
+
+    Uso: /api/competencias           → busca las copas que faltan
+         /api/competencias?q=copa%20del%20rey
+    """
+    terminos = [t for t in (q.get("q") or
+                            ["libertadores", "sudamericana", "copa argentina"])
+                if t.strip()]
+
+    try:
+        data = fetch("competitions", {"sports": 1}, ttl=3600)
+    except Exception as e:
+        return {"error": "no se pudo consultar 365scores: %s" % e,
+                "sugerencia": "reintentar en un rato: suele ser pasajero"}
+
+    comps = data.get("competitions") or []
+    if not comps:
+        # por si cambia el nombre del campo: se busca la lista más larga
+        listas = [v for v in data.values() if isinstance(v, list) and v]
+        comps = max(listas, key=len) if listas else []
+
+    paises = {c.get("id"): c.get("name") for c in (data.get("countries") or [])}
+
+    salida = {}
+    for t in terminos:
+        tn = norm(t)
+        encontrados = []
+        for c in comps:
+            nombre = c.get("name") or ""
+            if tn in norm(nombre):
+                encontrados.append({
+                    "id": c.get("id"),
+                    "nombre": nombre,
+                    "pais": paises.get(c.get("countryId")) or c.get("countryId"),
+                    "temporada": c.get("currentSeasonNum"),
+                    "fase": c.get("currentStageNum"),
+                })
+        encontrados.sort(key=lambda x: (len(x["nombre"]), str(x["id"])))
+        salida[t] = encontrados
+
+    return {"buscado": terminos, "resultados": salida,
+            "torneosLeidos": len(comps),
+            "comoUsarlo": ("Pasale a Claudia el número (id) de cada torneo y "
+                           "los agrega al menú.")}
+
+
 def api_club(q):
     """
     El partido anterior y el siguiente de un club, para el modo club.
@@ -3030,6 +3082,7 @@ ROUTES = {
     "/api/home": api_home,
     "/api/clubes": api_clubes,
     "/api/club": api_club,
+    "/api/competencias": api_competencias,
     "/api/liga": api_liga,
     "/api/liga/games": api_liga_games,
     "/api/player": api_player,

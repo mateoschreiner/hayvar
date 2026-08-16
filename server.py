@@ -1366,6 +1366,10 @@ def api_match(q):
         p = quien.get(e.get("playerId"), {})
         extra = [quien.get(x, {}).get("name", "") for x in (e.get("extraPlayers") or [])]
         mins = e.get("gameTime")
+        # lo mismo que en la lista: el gol anulado llega como evento de gol
+        etiqueta = norm("%s %s" % (et.get("name") or "", et.get("subTypeName") or ""))
+        anulado = any(x in etiqueta for x in
+                      ("anulad", "disallow", "cancel", "invalid", "no valido"))
         events.append({
             "min": int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None,
             "added": e.get("addedTime") or 0,
@@ -1374,6 +1378,7 @@ def api_match(q):
             "sub": et.get("subTypeName") or "",
             "player": p.get("name", ""),
             "extra": ", ".join(x for x in extra if x),
+            "anulado": anulado,
         })
     events.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
 
@@ -1999,12 +2004,21 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
         if et.get("id") != 1 and "gol" not in norm(et.get("name")):
             continue
         mins = e.get("gameTime")
+        # Los goles anulados por el VAR también llegan como evento y se
+        # llaman "Gol anulado": entraban por el filtro de arriba y quedaban
+        # contados como goles. Platense aparecía con dos y el partido iba 1-1.
+        # Se marcan en vez de esconderse: enterarse de que hubo un gol
+        # anulado es parte de lo que uno quiere ver.
+        etiqueta = norm("%s %s" % (et.get("name") or "", et.get("subTypeName") or ""))
+        anulado = any(x in etiqueta for x in
+                      ("anulad", "disallow", "cancel", "invalid", "no valido"))
         goles.append({
             "min": int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None,
             "added": e.get("addedTime") or 0,
             "side": "h" if e.get("competitorId") == hid else "a",
             "player": quien.get(e.get("playerId"), ""),
             "sub": et.get("subTypeName") or "",
+            "anulado": anulado,
         })
     goles.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
     tv = [t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")]
@@ -2028,13 +2042,27 @@ def api_detalles(q):
 
     salida = {}
     pendientes = [g for g in games if g.get("liveId")]
-    for g in pendientes:
+
+    # Cada partido es un pedido a 365scores. De a uno, una fecha entera son
+    # quince idas y vueltas en fila y por eso los goleadores y el canal
+    # tardaban en aparecer después de que la lista ya estaba en pantalla.
+    # En paralelo se resuelve en el tiempo del más lento.
+    from concurrent.futures import ThreadPoolExecutor
+
+    def uno(g):
         try:
-            salida[str(g["id"])] = detalle_liviano(g["liveId"],
-                                                   en_juego=g["status"] == "LIVE",
-                                                   liga=lid)
+            return str(g["id"]), detalle_liviano(g["liveId"],
+                                                 en_juego=g["status"] == "LIVE",
+                                                 liga=lid)
         except Exception:
-            continue
+            return None, None
+
+    if pendientes:
+        with ThreadPoolExecutor(max_workers=min(8, len(pendientes))) as pool:
+            for gid, det in pool.map(uno, pendientes):
+                if gid:
+                    salida[gid] = det
+
     return {"detalles": salida, "consultados": len(pendientes),
             "sinDetalle": len(games) - len(pendientes)}
 

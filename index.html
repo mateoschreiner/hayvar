@@ -593,9 +593,9 @@ const App=(()=>{
     ['',[['home','Portada',1]]],
     ['Argentina',[['lpf','Liga Profesional',1],['nacional','Primera Nacional',1],
                   ['pbm','Primera B Metro',1],['fa','Federal A',1],
-                  ['ca','Copa Argentina',0]]],
+                  ['ca','Copa Argentina',1]]],
     ['Fútbol femenino',[['fem','Primera División Argentina',1]]],
-    ['Internacional',[['lib','Libertadores',0],['sud','Sudamericana',0],['ucl','Champions',0]]],
+    ['Internacional',[['lib','Libertadores',1],['sud','Sudamericana',1],['ucl','Champions',0]]],
     ['Europa',[['laliga','LaLiga',1],['pre','Premier League',0],['sa','Serie A',0],['bun','Bundesliga',0]]]
   ];
 
@@ -873,11 +873,28 @@ const App=(()=>{
   }
 
   /* ── selector de fechas ── */
+  /* En las copas los botones no son números sino etapas. Los nombres que
+     manda 365scores son largos —"Octavos de final"— y no entran, así que se
+     acortan a lo que cualquiera diría en voz alta. */
+  const ETAPA_CORTA=[[/fase de grupos|group/i,'Grupos'],[/repechaje|playoff/i,'Repechaje'],
+    [/dieciseisavos|round of 32/i,'16avos'],[/octavos|round of 16/i,'Octavos'],
+    [/cuartos|quarter/i,'Cuartos'],[/semi/i,'Semis'],[/tercer/i,'3° puesto'],
+    [/final/i,'Final'],[/primera fase|preliminar|previa/i,'Previa']];
+  function etapaCorta(nombre){
+    const t=String(nombre||'').trim(); if(!t) return t;
+    for(const [re,corto] of ETAPA_CORTA) if(re.test(t)) return corto;
+    return t.length>11?t.slice(0,10)+'…':t;
+  }
+
   function drawRounds(){
     const el=$('#rounds');
-    el.innerHTML='<span class="lb">Fecha</span>'+S.rounds.map(r=>
+    const et=S.etapas;
+    const rotulo=r=>et&&et[r-1]?esc(etapaCorta(et[r-1])):r;
+    const titulo=r=>et&&et[r-1]?esc(et[r-1])
+      :(r===S.current?'Fecha en curso':'');
+    el.innerHTML=`<span class="lb">${et?'Etapa':'Fecha'}</span>`+S.rounds.map(r=>
       `<button class="${r.round===S.round?'on':''} ${r.live?'playing':''} ${r.round===S.current?'actual':''}"
-         title="${r.round===S.current?'Fecha en curso':''}" onclick="App.pick(${r.round})">${r.round}</button>`
+         title="${titulo(r.round)}" onclick="App.pick(${r.round})">${rotulo(r.round)}</button>`
     ).join('');
   }
 
@@ -1626,6 +1643,7 @@ const App=(()=>{
     catch(e){ return status('err','No se pudo cargar la liga: '+esc(e.message)); }
     S.otra=d; S.games=g.games||[]; S.rounds=(g.rounds||[]).map(r=>({round:r,live:r===g.current&&g.live?g.live:0}));
     S.current=g.current;
+    S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
     if(S.round==null||!g.rounds.includes(S.round))
       S.round=g.current??g.rounds[g.rounds.length-1]??null;
     $('.tag').textContent=`${d.nombre} · ${d.torneo}`;
@@ -1655,6 +1673,7 @@ const App=(()=>{
     // y por eso LaLiga no marcaba nada.
     const DEST={final:'z-camp',reducido:'z-lib',
                 champions:'z-lib',europa:'z-camp',conference:'z-sud',
+                avanza:'z-lib',repechaje:'z-camp',
                 desciende:'z-desc'};
     const tabla=(rows,cols)=>`<div class="tablewrap"><table><thead><tr>
       <th style="width:26px"></th><th class="l">Equipo</th>${cols.map(c=>`<th>${c[0]}</th>`).join('')}
@@ -1943,6 +1962,7 @@ const App=(()=>{
       if(id===S.liga) return;
       medir.seccion(id);
       S.liga=id; S.round=null; S.tab=id==='lpf'?'A':'z0'; S.otra=null; S.scores={};
+      S.etapas=null;   // si venías de una copa, los rótulos eran etapas
       clearTimeout(S.timer); clearTimeout(S.vivoTimer); drawSide(); api.menu(false);
       if(id==='lpf'){
         $('.tag').textContent='Liga Profesional · Clausura 2026';

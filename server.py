@@ -464,6 +464,33 @@ LIGAS = {
             "desciende": (-3, -1),
         },
     },
+    # ── Copas ────────────────────────────────────────────────────────────
+    # Los números salen de /api/competencias, no de la memoria: 365scores
+    # tiene 799 torneos cargados y varios se llaman parecido (está la
+    # Libertadores, la Sub20 y la Femenina, y una Recopa Sudamericana que no
+    # es la Sudamericana).
+    "lib": {
+        "nombre": "Copa Libertadores", "torneo": "Edición 2026",
+        "base": None, "pages": {}, "propia": False, "sc": 102,
+        "pais": "Sudamérica", "anual": False, "copa": True,
+        # fase de grupos: pasan los dos primeros de cada zona
+        "zonas_de": {"avanza": (1, 2)},
+    },
+    "sud": {
+        "nombre": "Copa Sudamericana", "torneo": "Edición 2026",
+        "base": None, "pages": {}, "propia": False, "sc": 389,
+        "pais": "Sudamérica", "anual": False, "copa": True,
+        # acá pasa sólo el primero; el segundo juega el repechaje contra los
+        # terceros de la Libertadores
+        "zonas_de": {"avanza": (1, 1), "repechaje": (2, 2)},
+    },
+    "ca": {
+        # Eliminación directa de punta a punta, sin tabla de posiciones.
+        "nombre": "Copa Argentina", "torneo": "Edición 2026",
+        "base": None, "pages": {}, "propia": False, "sc": 640,
+        "pais": "Argentina", "anual": False, "copa": True,
+        # sin zonas_de: acá no hay tabla que marcar, se elimina y listo
+    },
 }
 
 # Colores de cada club para el modo club: (fondo de la barra, color de acento).
@@ -1726,6 +1753,9 @@ LEYENDA_DESTINOS = [
      "texto": "Final por el primer ascenso"},
     {"clave": "reducido", "color": "#2f6fed",
      "texto": "Reducido por el segundo ascenso"},
+    {"clave": "avanza", "color": "#2f6fed", "texto": "Avanza a octavos"},
+    {"clave": "repechaje", "color": "#f0b429",
+     "texto": "Juega el repechaje por octavos"},
     {"clave": "champions", "color": "#2f6fed", "texto": "Champions League"},
     {"clave": "europa", "color": "#f0b429", "texto": "Europa League"},
     {"clave": "conference", "color": "#12b76a", "texto": "Conference League"},
@@ -2238,6 +2268,26 @@ def api_liga_games(q):
     except Exception:
         pass
 
+    # En las copas no hay fechas numeradas sino etapas: fase de grupos,
+    # octavos, cuartos. 365scores las manda como texto en `stage`, así que se
+    # ordenan por cuándo empezaron y se les da un número, que es lo que el
+    # resto del servidor ya sabe manejar. El nombre viaja aparte, para el
+    # rótulo de los botones.
+    etapas = []
+    if cfg.get("copa"):
+        primero = {}
+        for g in games:
+            et = (g.get("stage") or "").strip() or "Fase única"
+            ini = g.get("start") or "9999"
+            if et not in primero or ini < primero[et]:
+                primero[et] = ini
+        etapas = sorted(primero, key=lambda e: primero[e])
+        idx = {e: i + 1 for i, e in enumerate(etapas)}
+        for g in games:
+            et = (g.get("stage") or "").strip() or "Fase única"
+            g["etapa"] = et
+            g["round"] = idx[et]
+
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})
 
@@ -2252,7 +2302,8 @@ def api_liga_games(q):
         games = [g for g in games if str(g["round"]) == str(rnd)]
     res = {"games": games, "count": len(games), "rounds": rounds, "current": actual,
            "live": vivos, "interzonal": sum(1 for g in games if g["interzonal"]),
-           "sinZona": sin_zona, "nombre": cfg["nombre"]}
+           "sinZona": sin_zona, "nombre": cfg["nombre"],
+           "copa": bool(cfg.get("copa")), "etapas": etapas}
     if err:
         res["error"] = err
     return res
@@ -2916,7 +2967,8 @@ def partidazo_del_dia(bloques):
 # Emblemas: sólo de las ligas que efectivamente andan. Las que están en
 # "pronto" van sin escudo: poner uno estimado quedaba mal y confundía.
 EMBLEMAS = {"lpf": 72, "nacional": 419, "pbm": 5077, "fa": 5078,
-            "fem": 6224, "laliga": 11}
+            "fem": 6224, "laliga": 11,
+            "lib": 102, "sud": 389, "ca": 640}
 
 
 def api_ligas(q):

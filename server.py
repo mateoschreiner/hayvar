@@ -32,6 +32,7 @@ Sólo biblioteca estándar.
 """
 
 import datetime as dt
+import gzip
 import json
 import os
 import re
@@ -3001,12 +3002,52 @@ class Handler(SimpleHTTPRequestHandler):
         if "/api/" in (self.path or ""):
             sys.stderr.write("  %s\n" % (fmt % args))
 
+    def _acepta_gzip(self):
+        return "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+
+    def _comprimir(self, body):
+        """
+        Devuelve (cuerpo, encoding). Comprime sólo si al navegador le sirve y
+        si el ahorro vale la pena: para respuestas chicas, el trabajo de
+        comprimir y descomprimir cuesta más que los bytes que se ahorran.
+        """
+        if len(body) < 1024 or not self._acepta_gzip():
+            return body, None
+        return gzip.compress(body, 6), "gzip"
+
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        body, enc = self._comprimir(body)
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
+        if enc:
+            self.send_header("Content-Encoding", enc)
+            self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _archivo(self, ruta, ctype):
+        """
+        Sirve un archivo del proyecto comprimido. La página pesa 104 KB y
+        gzipeada baja a 31: es la diferencia más barata de conseguir.
+        """
+        try:
+            with open(ruta, "rb") as f:
+                body = f.read()
+        except OSError:
+            self.send_error(404)
+            return
+        body, enc = self._comprimir(body)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        # se revalida siempre: si sube una versión nueva, se ve al recargar
+        self.send_header("Cache-Control", "no-cache")
+        if enc:
+            self.send_header("Content-Encoding", enc)
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -3057,9 +3098,40 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 500)
 
-        if path == "/":
-            self.path = "/index.html"
+        # la página, comprimida
+        if path in ("/", "/index.html"):
+            return self._archivo(os.path.join(HERE, "index.html"),
+                                 "text/html; charset=utf-8")
         return super().do_GET()
+
+
+def precalentar():
+    """
+    Llena el caché antes de que llegue el primer visitante.
+
+    Sin esto, el que entra justo después de un deploy paga la espera de ir a
+    buscar todo a AFA y a 365scores. Corre en segundo plano, así que el
+    servidor ya está atendiendo mientras tanto, y si alguna fuente falla no
+    pasa nada: se resuelve sola cuando alguien la pida.
+    """
+    tareas = [
+        ("partidos de Primera", lambda: all_games(ttl=0)),
+        ("tabla de zonas", lambda: api_standings({"live": ["0"]})),
+        ("tabla anual", lambda: api_annual({"live": ["0"]})),
+        ("promedios", lambda: api_promedios({"live": ["0"]})),
+        ("goleadores", lambda: api_scorers({})),
+        ("Primera Nacional", lambda: api_liga_games({"id": ["nacional"]})),
+        ("LaLiga", lambda: api_liga_games({"id": ["laliga"]})),
+    ]
+    for nombre, tarea in tareas:
+        arranque = time.time()
+        try:
+            tarea()
+            print("  · %-22s listo en %.1fs" % (nombre, time.time() - arranque))
+        except Exception as e:
+            print("  · %-22s falló (%s), se reintenta al pedirlo"
+                  % (nombre, type(e).__name__))
+    print("  Caché precalentado\n")
 
 
 def main():
@@ -3080,6 +3152,7 @@ def main():
         print("  Abrí:  http://localhost:%d" % port)
     print("  Datos: AFA + 365scores")
     print("  Cortar con Ctrl+C\n")
+    threading.Thread(target=precalentar, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

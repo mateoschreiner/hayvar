@@ -2033,15 +2033,36 @@ def api_detalles(q):
     """
     lid = (q.get("id") or ["lpf"])[0]
     rnd = (q.get("round") or [None])[0]
-    if lid == "lpf":
-        games = all_games()
+    fecha = (q.get("date") or [None])[0]
+
+    def de_liga(x):
+        return all_games() if x == "lpf" else api_liga_games({"id": [x]}).get("games", [])
+
+    # Cada partido cuesta un pedido a 365scores. Sin este tope, un round
+    # vacío pedía el torneo entero: cientos de llamadas para mostrar una
+    # pantalla de quince partidos.
+    TOPE = 40
+
+    pares = []          # (liga, partido)
+    if fecha:
+        # la portada: los partidos de ese día, de las ligas que muestra
+        for x in HOME_LIGAS:
+            try:
+                pares += [(x, g) for g in de_liga(x)
+                          if (g.get("start") or "")[:10] == fecha]
+            except Exception:
+                continue
     else:
-        games = api_liga_games({"id": [lid]}).get("games", [])
-    if rnd:
-        games = [g for g in games if str(g["round"]) == str(rnd)]
+        try:
+            games = de_liga(lid)
+        except Exception:
+            games = []
+        if rnd:
+            games = [g for g in games if str(g["round"]) == str(rnd)]
+        pares = [(lid, g) for g in games]
 
     salida = {}
-    pendientes = [g for g in games if g.get("liveId")]
+    pendientes = [(x, g) for x, g in pares if g.get("liveId")][:TOPE]
 
     # Cada partido es un pedido a 365scores. De a uno, una fecha entera son
     # quince idas y vueltas en fila y por eso los goleadores y el canal
@@ -2049,11 +2070,12 @@ def api_detalles(q):
     # En paralelo se resuelve en el tiempo del más lento.
     from concurrent.futures import ThreadPoolExecutor
 
-    def uno(g):
+    def uno(par):
+        x, g = par
         try:
             return str(g["id"]), detalle_liviano(g["liveId"],
                                                  en_juego=g["status"] == "LIVE",
-                                                 liga=lid)
+                                                 liga=x)
         except Exception:
             return None, None
 
@@ -2064,7 +2086,7 @@ def api_detalles(q):
                     salida[gid] = det
 
     return {"detalles": salida, "consultados": len(pendientes),
-            "sinDetalle": len(games) - len(pendientes)}
+            "sinDetalle": len(pares) - len(pendientes)}
 
 
 def fecha_actual(rounds, por_fecha):

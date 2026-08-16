@@ -663,6 +663,9 @@ const App=(()=>{
       : `<div class="empty"><span class="big">◎</span>No hay partidos programados para este día.</div>`;
     $('#liveCnt').textContent=h.live;
     $('#liveBtn').classList.toggle('on',h.live>0);
+    // faltaba esto: la portada armaba las filas pero nunca pedía los
+    // goleadores ni el canal, así que abajo de cada partido no salía nada
+    cargarDetalles();
     drawHomeRight();
     status(h.live?'live':'ok', h.live
       ? `<b>${h.live} partido${h.live>1?'s':''} en vivo</b> · el marcador se actualiza solo`
@@ -938,14 +941,18 @@ const App=(()=>{
   // Los goleadores y la TV se piden aparte, después de dibujar la fecha:
   // son un pedido por partido y no vale la pena hacer esperar a la lista.
   async function cargarDetalles(){
-    const liga=S.liga==='home'?null:S.liga;
-    const clave=`${S.liga}-${S.round}`;
+    // En la portada la clave es el día, no la fecha del torneo: son partidos
+    // de varias ligas juntos y hay que pedirlos por día.
+    const enPortada=S.liga==='home';
+    const clave=enPortada?`home-${ymd(S.homeDate)}`:`${S.liga}-${S.round}`;
     if(S.detallesDe===clave) return;
     S.detallesDe=clave;
     try{
-      const url=liga==='lpf'||liga===null
-        ? `/api/detalles?round=${S.round??''}`
-        : `/api/detalles?id=${liga}&round=${S.round??''}`;
+      const url=enPortada
+        ? `/api/detalles?date=${ymd(S.homeDate)}`
+        : (S.liga==='lpf'
+            ? `/api/detalles?round=${S.round??''}`
+            : `/api/detalles?id=${S.liga}&round=${S.round??''}`);
       const d=await get(url);
       Object.assign(S.detalles,d.detalles||{});
     }catch(e){ return; }

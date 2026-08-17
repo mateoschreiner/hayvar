@@ -264,6 +264,19 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
   padding:0 16px 10px;font-size:12px;color:var(--txt2)}
 .cl-pos b{color:var(--txt);font-weight:800}
 .cl-pos .form{display:flex;gap:3px}
+/* la comparación del radar, en texto: el número del club, el de la liga y
+   cuánto se aparta del promedio */
+.cmp{display:flex;flex-direction:column;gap:10px}
+.cmp-eje{font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt2);font-weight:800}
+.cmp-eje i{font-style:normal;font-weight:400;text-transform:none;
+  letter-spacing:0;color:var(--txt3)}
+.cmp-vals{display:flex;align-items:baseline;gap:9px;margin-top:2px}
+.cmp-vals b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.cmp-vals span{font-size:11.5px;color:var(--txt3)}
+.cmp-vals em{margin-left:auto;font-style:normal;font-size:12px;font-weight:800}
+.cmp-vals em.up{color:var(--live)}
+.cmp-vals em.down{color:var(--red)}
 /* las camisetas: giran al tocarlas */
 .kits{display:flex;gap:18px;padding:4px 16px 18px;flex-wrap:wrap;justify-content:center}
 .kit{width:150px;text-align:center}
@@ -818,19 +831,62 @@ const App=(()=>{
   /* ── página del club ──────────────────────────────────────────────────
      Vive en su propia dirección (/belgrano) para poder compartirla. El
      servidor devuelve el mismo index y acá se decide qué mostrar.       */
-  /* La camiseta. Los sponsors van como texto, no como sus logos: copiar una
-     marca registrada en la página es un problema que no hace falta. Con el
-     color, el corte raglán y los nombres en su lugar se reconoce igual. */
+  /* La camiseta, limpia: color, corte y diseño, sin sponsors ni escudo ni
+     marca. Ponerlos a medias quedaba peor que no ponerlos, y con los logos
+     de verdad habría que hospedar marcas registradas ajenas. */
   function camisetaSVG(k, atras, nombre, dorsal){
     const cuerpo='M64 30 L96 18 Q115 34 134 18 L166 30 L192 62 L168 84 L158 74 '
       +'L158 214 Q115 224 72 214 L72 74 L62 84 L38 62 Z';
+    /* Cada club se reconoce por su diseño antes que por su color: la banda
+       de River, el bastón de Central, la mitad de Newell's, la V de Vélez.
+       Todo va recortado contra el cuerpo de la camiseta. */
     let patron='';
-    if(k.patron==='rayas') for(let i=0;i<5;i++)
-      patron+=`<rect x="${76+i*22}" y="18" width="11" height="206" fill="${k.raya}"/>`;
+    if(k.patron==='rayas')                    // finas: Racing, Talleres, Unión
+      for(let i=0;i<7;i++)
+        patron+=`<rect x="${36+i*22}" y="16" width="12" height="210" fill="${k.raya}"/>`;
+    if(k.patron==='bastones')                 // anchos: Central, Estudiantes
+      for(let i=0;i<4;i++)
+        patron+=`<rect x="${34+i*42}" y="16" width="24" height="210" fill="${k.raya}"/>`;
+    /* La diagonal. No todas caen para el mismo lado: la de River baja de
+       izquierda a derecha y la de Banfield al revés, así que la dirección
+       la decide cada club y no el dibujo. */
     if(k.patron==='banda')
-      patron=`<path d="M40 60 L190 190 L190 214 L40 84 Z" fill="${k.raya}"/>`;
-    if(k.patron==='franja')
+      patron = k.invertida
+        ? `<path d="M190 60 L40 190 L40 214 L190 84 Z" fill="${k.raya}"/>`
+        : `<path d="M40 60 L190 190 L190 214 L40 84 Z" fill="${k.raya}"/>`;
+    if(k.patron==='franja')                   // la horizontal de Boca
       patron=`<rect x="38" y="104" width="154" height="34" fill="${k.raya}"/>`;
+    if(k.patron==='mitades')                  // partida al medio: Newell's
+      patron=`<rect x="115" y="16" width="80" height="210" fill="${k.raya}"/>`;
+    if(k.patron==='uve')                      // la V de Vélez
+      patron=`<path d="M50 40 L115 152 L180 40 L156 40 L115 110 L74 40 Z"
+        fill="${k.raya}"/>`;
+    /* Franjas horizontales. Van con dos medidas porque no es lo mismo el
+       aro ancho de la suplente de Boca que el hilo blanco de la de
+       Gimnasia: `alto` es el grosor y `hueco` lo que queda del color de
+       fondo entre una y otra. Y admiten dos colores alternados, porque la
+       de Boca lleva celeste y oro. */
+    if(k.patron==='franjas'){
+      const otra=k.raya2||k.raya, alto=k.alto||13,
+            hueco=(k.hueco==null?alto:k.hueco), paso=alto+hueco;
+      for(let i=0;i*paso<212;i++)
+        patron+=`<rect x="30" y="${18+i*paso}" width="170" height="${alto}"
+          fill="${i%2?otra:k.raya}"/>`;
+    }
+    if(k.patron==='vivo')                     // los dos vivos de Argentinos
+      patron=`<rect x="138" y="16" width="7" height="210" fill="${k.raya}"/>
+        <rect x="151" y="16" width="7" height="210" fill="${k.raya}"/>`;
+    /* Dos franjas pegadas en el pecho, cada una de su color: la suplente
+       de Tigre lleva la roja arriba y la azul abajo, y nada más. */
+    if(k.patron==='doblefranja')
+      patron=`<rect x="30" y="56" width="170" height="18" fill="${k.raya}"/>
+        <rect x="30" y="78" width="170" height="18" fill="${k.raya2||k.raya}"/>`;
+    /* La franja vertical al medio, con dos hilos que la escoltan: es la
+       camiseta de Huracán, y sin esto quedaba blanca y ya. */
+    if(k.patron==='centro')
+      patron=`<rect x="88" y="16" width="54" height="210" fill="${k.raya}"/>
+        <rect x="79" y="16" width="4" height="210" fill="${k.raya}"/>
+        <rect x="147" y="16" width="4" height="210" fill="${k.raya}"/>`;
     const id='k'+Math.random().toString(36).slice(2,8);
     const det=k.detalle||'#fff', panel=k.panel||'rgba(255,255,255,.06)';
     const d=dorsal||{};
@@ -847,31 +903,7 @@ const App=(()=>{
         <rect x="38" y="206" width="154" height="4" fill="${det}" opacity=".8"/>
       </g>
       <path d="M96 20 L115 46 L134 20 L127 18 L115 36 L103 18 Z" fill="${k.cuello||det}"/>
-      ${atras ? `
-        <text x="115" y="60" text-anchor="middle" font-size="13" font-weight="800"
-          fill="${det}" letter-spacing=".5">${esc(k.espalda||'')}</text>
-        <text x="115" y="96" text-anchor="middle" font-size="13" font-weight="700"
-          fill="${det}" letter-spacing="1.2">${esc(d.nombre||(nombre||'').toUpperCase())}</text>
-        <text x="115" y="164" text-anchor="middle" font-size="66" font-weight="800"
-          fill="${k.base}" stroke="${det}" stroke-width="3">${d.n??10}</text>
-        <text x="115" y="196" text-anchor="middle" font-size="9" font-weight="700"
-          fill="${det}" opacity=".9">${esc(k.abajo||'')}</text>
-      ` : `
-        <text x="86" y="52" text-anchor="middle" font-size="8" font-weight="800"
-          fill="${det}" letter-spacing=".4" transform="rotate(-16 86 52)">${esc(k.hombro||'')}</text>
-        <text x="146" y="52" text-anchor="middle" font-size="8" font-weight="800"
-          fill="${det}" letter-spacing=".4" transform="rotate(16 146 52)">${esc(k.hombro||'')}</text>
-        <path d="M104 66 l7 5 -7 5 -7 -5 Z M118 66 l7 5 -7 5 -7 -5 Z" fill="${det}"/>
-        <text x="80" y="86" text-anchor="middle" font-size="8" font-weight="700"
-          fill="${det}">${esc(k.marca||'')}</text>
-        <circle cx="152" cy="80" r="13" fill="none" stroke="${det}" stroke-width="1.6"/>
-        <text x="152" y="84" text-anchor="middle" font-size="10" font-weight="800"
-          fill="${det}">CAB</text>
-        <path d="M92 120 a23 23 0 0 1 46 0" fill="none" stroke="${det}" stroke-width="7"/>
-        <circle cx="115" cy="122" r="6" fill="${det}"/>
-        <text x="115" y="150" text-anchor="middle" font-size="20" font-weight="800"
-          fill="${det}">${esc(k.pecho||'')}</text>
-      `}
+      ${atras ? `<rect x="72" y="96" width="86" height="1.5" fill="${det}" opacity=".25"/>` : ''}
       <path d="${cuerpo}" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="2"/></svg>`;
   }
 
@@ -882,46 +914,51 @@ const App=(()=>{
     if(!r||!r.ejes||!r.ejes.length) return `<div class="cl-sec">Cómo juega</div>
       <div class="note" style="padding:0 16px 14px">Todavía sin estadísticas
       suficientes: se juntan solas partido a partido.</div>`;
-    const N=r.ejes.length, R=76, CX=105, CY=100;
+    // El círculo del medio es el promedio de la liga. Lo que sobresale es
+    // mejor que el promedio; lo que queda adentro, peor. Así se lee de una.
+    const N=r.ejes.length, R=58, CX=120, CY=104;
     const punto=(i,rad)=>{const a=-Math.PI/2+i*2*Math.PI/N;
       return [CX+Math.cos(a)*rad, CY+Math.sin(a)*rad];};
-    // el promedio de la liga es el 100%: el club se dibuja relativo a eso
     const poly=f=>r.ejes.map((e,i)=>punto(i,
-      Math.max(14,Math.min(R*1.25, R*f(e)/100))).map(n=>n.toFixed(1)).join(',')).join(' ');
-    const rejilla=[1,.66,.33].map(f=>`<polygon points="${r.ejes.map((_,i)=>
+      Math.max(12,Math.min(R*1.8, R*f(e)/100))).map(n=>n.toFixed(1)).join(',')).join(' ');
+    const rejilla=[1.5,1,.5].map(f=>`<polygon points="${r.ejes.map((_,i)=>
       punto(i,R*f).map(n=>n.toFixed(1)).join(',')).join(' ')}" fill="none"
       stroke="var(--line)" stroke-width="1"/>`).join('');
-    const ejes=r.ejes.map((_,i)=>{const [x,y]=punto(i,R);
+    const ejes=r.ejes.map((_,i)=>{const [x,y]=punto(i,R*1.5);
       return `<line x1="${CX}" y1="${CY}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"
         stroke="var(--line)" stroke-width="1"/>`;}).join('');
-    const rot=r.ejes.map((e,i)=>{const [x,y]=punto(i,R+16);
-      const an=Math.abs(x-CX)<6?'middle':(x>CX?'start':'end');
+    const rot=r.ejes.map((e,i)=>{const [x,y]=punto(i,R*1.5+13);
+      const an=Math.abs(x-CX)<8?'middle':(x>CX?'start':'end');
       return `<text x="${x.toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="${an}"
-        font-size="9" font-weight="700" fill="var(--txt2)"
-        style="text-transform:uppercase;letter-spacing:.4px">${esc(e.eje)}</text>`;}).join('');
+        font-size="8.5" font-weight="700" fill="var(--txt2)"
+        style="text-transform:uppercase;letter-spacing:.3px">${esc(e.eje)}</text>`;}).join('');
     const col=(d.primary&&claro(d.primary))?d.accent:(d.primary||'#2f6fed');
     return `<div class="cl-sec">Cómo juega
       <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt3)">
         · promedio de ${r.partidos} partidos en la liga</span></div>
       <div class="radar-wrap" style="padding:0 16px 14px">
-        <svg viewBox="0 0 210 200" class="radar">${rejilla}${ejes}
-          <polygon points="${poly(()=>100)}" fill="var(--txt3)" fill-opacity=".18"
-            stroke="var(--txt3)" stroke-width="1.5"/>
-          <polygon points="${poly(e=>e.indice)}" fill="${col}" fill-opacity=".26"
+        <svg viewBox="0 0 240 210" class="radar">${rejilla}${ejes}
+          <polygon points="${poly(()=>100)}" fill="none"
+            stroke="var(--txt3)" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <polygon points="${poly(e=>e.indice)}" fill="${col}" fill-opacity=".24"
             stroke="${col}" stroke-width="2"/>
           ${rot}</svg>
-        <div class="radar-nums">
-          ${r.ejes.map(e=>`<div><div class="rn">
-            <b style="color:${col}">${e.club}${esc(e.unidad||'')}</b>
-            <span>${esc(e.eje)}${e.invertido?' <i style="font-style:normal;color:var(--txt3)">(recibidos)</i>':''}</span>
-            <b style="color:var(--txt3)">${e.liga}${esc(e.unidad||'')}</b></div>
-            <div class="rn-barra"><i style="width:${Math.min(100,e.indice/2)}%;background:${col}"></i>
-              <i style="width:${Math.max(0,100-e.indice/2)}%;background:var(--line)"></i></div>
-          </div>`).join('')}
+        <div class="cmp">
+          ${r.ejes.map(e=>{
+            const dif=e.indice-100, mejor=dif>=0;
+            return `<div class="cmp-fila">
+              <div class="cmp-eje">${esc(e.eje)}${e.invertido
+                ?' <i>goles recibidos, menos es mejor</i>':''}</div>
+              <div class="cmp-vals">
+                <b style="color:${col}">${e.club}${esc(e.unidad||'')}</b>
+                <span>liga ${e.liga}${esc(e.unidad||'')}</span>
+                <em class="${mejor?'up':'down'}">${mejor?'+':''}${dif}%</em>
+              </div></div>`;}).join('')}
         </div>
       </div>
-      <div class="note" style="padding:0 16px 14px">El polígono gris es el promedio
-      de la Liga Profesional. El de color, ${esc(d.club)}.</div>`;
+      <div class="note" style="padding:0 16px 14px">La línea punteada es el promedio
+      de la liga. Lo que sobresale, ${esc(d.club)} lo hace mejor que el promedio;
+      lo que queda adentro, peor.</div>`;
   }
 
   // el fixture del club, una sección por competencia
@@ -1314,10 +1351,17 @@ const App=(()=>{
     const rotulo=r=>et&&et[r-1]?esc(etapaCorta(et[r-1])):r;
     const titulo=r=>et&&et[r-1]?esc(et[r-1])
       :(r===S.current?'Fecha en curso':'');
+    // Cuando el torneo tiene más fechas de las que hay bajadas, se dice.
+    // Es preferible a que parezca que la Premier tiene ocho fechas.
+    const faltan=(S.totalFechas&&S.rounds.length)
+      ? S.totalFechas-S.rounds.length : 0;
     el.innerHTML=`<span class="lb">${et?'Etapa':'Fecha'}</span>`+S.rounds.map(r=>
       `<button class="${r.round===S.round?'on':''} ${r.live?'playing':''} ${r.round===S.current?'actual':''}"
          title="${titulo(r.round)}" onclick="App.pick(${r.round})">${rotulo(r.round)}</button>`
-    ).join('');
+    ).join('')+(faltan>0
+      ? `<span class="lb" style="margin-left:8px;text-transform:none;letter-spacing:0"
+           title="El calendario se baja solo, de a poco">de ${S.totalFechas} · bajando</span>`
+      : '');
   }
 
   /* ── partidos ── */
@@ -2144,6 +2188,7 @@ const App=(()=>{
     catch(e){ return status('err','No se pudo cargar la liga: '+esc(e.message)); }
     S.otra=d; S.games=g.games||[]; S.rounds=(g.rounds||[]).map(r=>({round:r,live:r===g.current&&g.live?g.live:0}));
     S.current=g.current;
+    S.totalFechas=g.bajando?g.totalFechas:null;
     S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
     S.llaves=g.llaves||null; S.grupoAbierto=null; S.cuadroDesde=null;
     S.fasesLiga=(g.fasesLiga&&g.fasesLiga.length)?g.fasesLiga:null;
@@ -2597,7 +2642,7 @@ const App=(()=>{
     if(S.liga!=='lpf') return loadOtra();
     try{
       const rd=await get('/api/rounds');
-      S.rounds=rd.rounds; S.current=rd.current;
+      S.rounds=rd.rounds; S.current=rd.current; S.totalFechas=null;
       if(S.round==null) S.round=rd.current;
       S.failures=0;
       shell();
@@ -2876,7 +2921,12 @@ const App=(()=>{
       p.style.transform='rotateY('+(dado?0:180)+'deg)';
     },
     club(nombre){ S.liga='club'; location.hash=''; history.pushState({},'', '/'+
-      nombre.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,'-'));
+      /* misma regla que el servidor: sin acentos, sin paréntesis y con
+         guiones. "Estudiantes (LP)" -> estudiantes-lp, que se puede pegar
+         en un mensaje sin que se rompa. */
+      nombre.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()
+        .replace(/['´`]/g,'')          // Newell's -> newells, sin cortar
+        .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''));
       loadClub(nombre); },
     // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
     // que se redibuja más chico

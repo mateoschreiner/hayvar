@@ -2087,46 +2087,83 @@ def fetch_ruta(ruta, ttl=86400):
         return json.loads(r.read().decode("utf-8"))
 
 
-def rescatar_historico(comp, paginas=25):
-    """
-    Recupera los partidos que ya no entran en la ventana de 365scores.
+# El paginado de 365scores va para los dos lados. Cada dirección lleva su
+# propio marcador de "por dónde iba", porque avanzan a ritmos distintos.
+_CLAVE_CAMINO = {-1: "hist:%s", 1: "fut:%s"}
 
-    La ventana muestra lo de ahora y poco más, así que la fase de grupos de
-    la Libertadores —jugada meses atrás— no aparece nunca. Pero la respuesta
-    trae un `paging.previousPage`: una dirección a la página anterior. Yendo
-    hacia atrás de a una se recorre el torneo entero.
 
-    Se guarda dónde quedó, así cada vuelta sigue desde ahí en lugar de
-    empezar de cero, y cuando ya no hay página anterior se marca terminado y
-    no se vuelve a pedir.
+def caminar_fixture(comp, direccion=-1, paginas=25):
     """
-    estado, _ = almacen.leer("hist:%s" % comp)
+    Recorre el calendario de un torneo página por página y lo va guardando.
+
+    365scores publica una ventana móvil: lo de ahora y poco más. Todo lo
+    anterior y todo lo posterior quedan afuera. Pero la respuesta trae
+    `paging.previousPage` y `paging.nextPage`, dos direcciones ya armadas
+    que llevan a la página de al lado. Yendo de a una se recorre el torneo
+    entero para cualquiera de los dos lados.
+
+    `direccion=-1` va al pasado: recupera la fase de grupos de la
+    Libertadores jugada hace meses. `direccion=1` va al futuro: trae las 38
+    fechas de la Premier cuando todavía no se jugó ninguna.
+
+    Se guarda dónde quedó cada dirección, así cada vuelta sigue desde ahí en
+    vez de empezar de cero.
+
+    La diferencia entre los dos lados es qué pasa al terminar. El pasado ya
+    está escrito: una vez recorrido no se vuelve a mirar. El futuro no: la
+    AFA reprograma, 365scores publica fechas que antes no tenía. Por eso,
+    cuando el camino hacia adelante llega al final, se guarda el último
+    tramo y la próxima vuelta se reintenta desde ahí. Si no hay nada nuevo
+    es un solo pedido y se corta; si apareció algo, entra.
+    """
+    campo = "previousPage" if direccion < 0 else "nextPage"
+    estado, _ = almacen.leer(_CLAVE_CAMINO[direccion] % comp)
     estado = estado or {}
-    if estado.get("listo"):
-        return {"comp": comp, "estado": "ya estaba completo",
-                "rescatados": estado.get("total", 0)}
 
     ruta = estado.get("siguiente")
+    if estado.get("listo"):
+        if direccion < 0:
+            return {"comp": comp, "dir": direccion, "listo": True,
+                    "estado": "ya estaba completo", "nuevos": 0,
+                    "total": estado.get("total", 0)}
+        # hacia adelante se reintenta desde el último tramo conocido
+        ruta = estado.get("ultimo")
+
     if not ruta:
         try:
             data = fetch("games/fixtures", {"competitions": comp}, ttl=300)
         except Exception as e:
-            return {"comp": comp, "error": str(e)}
-        ruta = ((data.get("paging") or {}).get("previousPage") or "")
+            return {"comp": comp, "dir": direccion, "error": str(e)}
+        ruta = (data.get("paging") or {}).get(campo) or ""
 
     clave = "fixture:%s" % comp
     guardado, _ = almacen.leer(clave)
     acumulado = {str(m["id"]): m for m in (guardado or [])}
     antes = len(acumulado)
 
-    vueltas, listo = 0, False
+    vueltas, listo, ultimo = 0, False, ruta
+    vistas = set()
     while ruta and vueltas < paginas:
+        if ruta in vistas:        # el paginado se mordió la cola
+            listo = True
+            break
+        vistas.add(ruta)
         try:
             data = fetch_ruta(ruta)
         except Exception:
             break
         vueltas += 1
+        ultimo = ruta
+        time.sleep(0.4)     # veinte páginas seguidas sin respirar es abuso
         juegos = data.get("games") or []
+        if not juegos:
+            # Se acabó el torneo. Hace falta cortar acá y no sólo cuando
+            # falta la página siguiente: al final del calendario 365scores
+            # igual devuelve una dirección más, y sin este corte el rescate
+            # se quedaría pidiendo páginas vacías para siempre.
+            listo = True
+            ruta = None
+            break
         for g in juegos:
             m = map_game(g)
             m["liveId"] = g.get("id")
@@ -2134,8 +2171,10 @@ def rescatar_historico(comp, paginas=25):
             m["zone"], m["interzonal"] = None, False
             for s in ("home", "away"):
                 m[s]["canon"] = m[s]["name"]
+            # lo guardado manda: puede tener el marcador ya cargado y esto
+            # viene del listado, que a veces llega sin él
             acumulado.setdefault(str(m["id"]), m)
-        siguiente = (data.get("paging") or {}).get("previousPage")
+        siguiente = (data.get("paging") or {}).get(campo)
         if not siguiente or siguiente == ruta:
             listo = True
             ruta = None
@@ -2143,29 +2182,61 @@ def rescatar_historico(comp, paginas=25):
         ruta = siguiente
 
     almacen.guardar(clave, list(acumulado.values()))
-    almacen.guardar("hist:%s" % comp,
-                    {"siguiente": ruta, "listo": listo,
+    almacen.guardar(_CLAVE_CAMINO[direccion] % comp,
+                    {"siguiente": ruta, "ultimo": ultimo, "listo": listo,
                      "total": len(acumulado)})
-    return {"comp": comp, "paginas": vueltas, "listo": listo,
+    return {"comp": comp, "dir": direccion, "paginas": vueltas, "listo": listo,
             "nuevos": len(acumulado) - antes, "total": len(acumulado)}
+
+
+def rescatar_historico(comp, paginas=25):
+    """Hacia atrás: los partidos que 365scores ya sacó de la ventana."""
+    return caminar_fixture(comp, -1, paginas)
+
+
+def rescatar_futuro(comp, paginas=25):
+    """Hacia adelante: las fechas que todavía no entraron en la ventana."""
+    return caminar_fixture(comp, 1, paginas)
 
 
 def api_historico(q):
     """
-    Trae los partidos viejos de un torneo. /api/historico?id=lib
+    Completa el calendario de un torneo. /api/historico?id=lib
+    Con `dir=1` va al futuro, con `dir=-1` al pasado, sin `dir` hace los dos.
     Se puede repetir: cada vez sigue desde donde quedó.
     """
     lid = (q.get("id") or ["lib"])[0]
     cfg = LIGAS.get(lid)
     if not cfg:
         return {"error": "liga desconocida: %s" % lid}
-    paginas = _int((q.get("paginas") or ["25"])[0], 25)
-    r = rescatar_historico(cfg["sc"], max(1, min(80, paginas)))
-    r["liga"] = cfg["nombre"]
-    if not r.get("listo"):
-        r["nota"] = ("Todavía queda historia por traer: volvé a entrar para "
-                     "seguir desde acá.")
+    paginas = max(1, min(80, _int((q.get("paginas") or ["25"])[0], 25)))
+    pedido = (q.get("dir") or [""])[0]
+    lados = [int(pedido)] if pedido in ("1", "-1") else [-1, 1]
+
+    tramos = [caminar_fixture(cfg["sc"], d, paginas) for d in lados]
+    r = {"liga": cfg["nombre"], "comp": cfg["sc"],
+         "pasado": next((t for t in tramos if t["dir"] < 0), None),
+         "futuro": next((t for t in tramos if t["dir"] > 0), None),
+         "nuevos": sum(t.get("nuevos") or 0 for t in tramos),
+         "total": max((t.get("total") or 0) for t in tramos),
+         "listo": all(t.get("listo") for t in tramos)}
+    r["fechas"] = fechas_del_torneo(cfg["sc"])
+    if not r["listo"]:
+        r["nota"] = ("Todavía queda calendario por traer: volvé a entrar "
+                     "para seguir desde acá.")
     return r
+
+
+def fechas_del_torneo(comp):
+    """
+    Cuántas fechas tiene el torneo, según 365scores.
+
+    Viene en `roundFilters`, la lista con la que arma su propio selector de
+    fechas. Sirve para saber que a la Premier le faltan 30 fechas por bajar
+    en vez de creer que el torneo tiene ocho.
+    """
+    n, _ = almacen.leer("fechas:%s" % comp)
+    return n or None
 
 
 def _sc_fixture(comp, ttl=120):
@@ -2190,6 +2261,13 @@ def _sc_fixture(comp, ttl=120):
             data = fetch(ep, {"competitions": comp}, ttl=ttl)
         except Exception:
             continue
+        # cuántas fechas tiene el torneo. 365scores lo dice en la lista con
+        # la que arma su selector: la fecha más alta que figura ahí es el
+        # largo del campeonato, aunque todavía no haya bajado esos partidos.
+        topes = [_int(f.get("key", "").rsplit("_", 1)[-1], 0)
+                 for f in (data.get("roundFilters") or []) if f.get("key")]
+        if topes and max(topes) > 1:
+            almacen.guardar("fechas:%s" % comp, max(topes))
         for g in data.get("games", []):
             m = map_game(g)
             m["liveId"] = g.get("id")
@@ -2966,6 +3044,14 @@ def api_liga_games(q):
            "sinZona": sin_zona, "nombre": cfg["nombre"],
            "copa": bool(cfg.get("copa")), "etapas": etapas,
            "fasesLiga": fases_liga}
+    # Cuántas fechas tiene el torneo en total. Si son más de las que hay
+    # cargadas, el calendario todavía se está bajando: mejor decirlo que
+    # dejar creer que la Premier tiene ocho fechas.
+    total_fechas = fechas_del_torneo(cfg["sc"]) if not cfg.get("copa") else None
+    if total_fechas and rounds:
+        res["totalFechas"] = total_fechas
+        if max(rounds) < total_fechas:
+            res["bajando"] = True
     if llaves is not None:
         res["llaves"] = llaves
     if err:
@@ -3486,8 +3572,12 @@ EJES_RADAR = [
     {"eje": "Efectividad", "tipo": "efectividad", "unidad": "%", "claves": []},
     {"eje": "Solidez", "tipo": "recibidos", "unidad": "", "invertido": True,
      "claves": []},
-    {"eje": "Pases", "tipo": "stat", "unidad": "%",
-     "claves": ["precision de pases", "pases completados", "precision pases"]},
+    # Ojo con este: "pases completados" es la CANTIDAD de pases (330 por
+    # partido), no la precisión. Mezclarlos daba un eje de 330% que no
+    # significaba nada. Sólo vale la precisión, y si no viene, el eje se cae
+    # solo en lugar de mostrar un número inventado.
+    {"eje": "Al arco", "tipo": "stat", "unidad": "",
+     "claves": ["remates al arco", "tiros al arco", "remates a puerta"]},
 ]
 
 
@@ -3586,6 +3676,10 @@ def radar_promedio(liga, club):
     ejes = []
     for e in EJES_RADAR:
         c, l = valor(club_ac, e), valor(liga_ac, e)
+        # un eje sin datos no se muestra: mejor cuatro puntas de verdad que
+        # cinco con un cero inventado
+        if not c and not l:
+            continue
         # en los ejes invertidos, menos es mejor: el índice se da vuelta
         if e.get("invertido"):
             indice = round((l / c * 100)) if c else 100
@@ -4163,6 +4257,354 @@ CLUBES_INFO = {
 }
 
 
+# El resto de Primera. Acá va lo que no cambia de un año al otro: nombre,
+# apodo, fundación, cancha y —sobre todo— el diseño de la camiseta.
+#
+# Sobre las camisetas. Las treinta están confirmadas con la foto de la
+# camiseta de esta temporada: no es el diseño "de siempre" de cada club sino
+# el que se está usando ahora.
+#
+# Eso importa porque a veces el club se aleja de su propia tradición. La de
+# Banfield 2026, por los 130 años, es una banda diagonal y no las rayas
+# verticales; la suplente de River es la tricolor a bastones y no la banda
+# en otro color. Cuando alguna cambie, se cambia acá y listo.
+#
+# Lo que NO va, y no va a ir: sponsors, escudo y marca. Son marcas
+# registradas ajenas y hospedarlas es meterse en un lío al pedo. La
+# camiseta se reconoce igual por el color y el corte.
+#
+# NO van los sponsors ni el escudo ni la marca. Son marcas registradas
+# ajenas y hospedarlas en la página es meterse en un lío que no hace falta.
+# Copiar el png de otro sitio, lo mismo.
+#
+# Si querés una camiseta puntual clavada al detalle de este año, pasame la
+# foto como hiciste con la de Belgrano y la dejo exacta.
+#
+# Las capacidades son las de uso corriente y pueden variar según la fuente:
+# tomalas como orientativas hasta que las confirmemos una por una.
+#
+# El apodo del estadio va sólo cuando es el que usa todo el mundo. Inventar
+# uno para rellenar es peor que dejarlo vacío.
+_OTROS_CLUBES = {
+    "River Plate": {
+        "nombre": "Club Atlético River Plate", "apodo": "El Millonario",
+        "fundado": 1901, "estadio": "Estadio Más Monumental",
+        "estadioApodo": "El Monumental",
+        "direccion": "Av. Figueroa Alcorta 7597, Núñez, CABA",
+        "capacidad": 83214, "sitio": "https://www.riverplate.com",
+        "titular": ("banda", "#fbfbfb", "#e0202f", "#131313"),
+        # la tricolor: bastones rojos sobre blanco con los hilos negros
+        "suplente": ("bastones", "#fbfbfb", "#d32232", "#131313"),
+    },
+    # ── Confirmadas con foto ─────────────────────────────────────────────
+    "Boca Juniors": {
+        "nombre": "Club Atlético Boca Juniors", "apodo": "El Xeneize",
+        "fundado": 1905, "estadio": "Estadio Alberto J. Armando",
+        "estadioApodo": "La Bombonera",
+        "direccion": "Brandsen 805, La Boca, CABA",
+        "capacidad": 54000, "sitio": "https://www.bocajuniors.com.ar",
+        "titular": ("franja", "#12409a", "#f2b024", "#f2b024"),
+        # la suplente no es una franja sola: son franjas celestes y oro
+        # sobre blanco, de arriba a abajo
+        "suplente": ("franjas", "#f6f6f6", "#2f56c4", "#12409a", "#f2c73c"),
+    },
+    "Racing": {
+        "nombre": "Racing Club", "apodo": "La Academia",
+        "fundado": 1903, "estadio": "Estadio Presidente Perón",
+        "estadioApodo": "El Cilindro",
+        "direccion": "Mozart y Cuyo, Avellaneda",
+        "capacidad": 51389, "sitio": "https://www.racingclub.com.ar",
+        "titular": ("rayas", "#ffffff", "#6cb4e4", "#1a2b5e"),
+        "suplente": ("liso", "#1a2b5e", "#1a2b5e", "#6cb4e4"),
+    },
+    "Independiente": {
+        "nombre": "Club Atlético Independiente", "apodo": "El Rojo",
+        "fundado": 1905,
+        "estadio": "Estadio Libertadores de América - Ricardo Enrique Bochini",
+        "direccion": "Bochini 751, Avellaneda",
+        "capacidad": 48069, "sitio": "https://clubaindependiente.com.ar",
+        "titular": ("liso", "#e02329", "#e02329", "#ffffff"),
+        "suplente": ("liso", "#f8f8f8", "#f8f8f8", "#e02329"),
+    },
+    "San Lorenzo": {
+        "nombre": "Club Atlético San Lorenzo de Almagro", "apodo": "El Ciclón",
+        "fundado": 1908, "estadio": "Estadio Pedro Bidegain",
+        "estadioApodo": "El Nuevo Gasómetro",
+        "direccion": "Av. Perito Moreno 1500, Bajo Flores, CABA",
+        "capacidad": 47964, "sitio": "https://sanlorenzo.com.ar",
+        "titular": ("bastones", "#2a3a86", "#d03a2a", "#ffffff"),
+        # bordó con los vivos azules, no blanca
+        "suplente": ("liso", "#8f2437", "#8f2437", "#26397a"),
+    },
+    "Huracán": {
+        "nombre": "Club Atlético Huracán", "apodo": "El Globo",
+        "fundado": 1908, "estadio": "Estadio Tomás Adolfo Ducó",
+        "estadioApodo": "El Palacio Ducó",
+        "direccion": "Av. Amancio Alcorta 2570, Parque Patricios, CABA",
+        "capacidad": 48314, "sitio": "https://cahuracan.com",
+        # blanca con la franja roja vertical al medio, no blanca a secas
+        "titular": ("centro", "#f8f8f8", "#e22128", "#e22128"),
+        "suplente": ("liso", "#e02329", "#e02329", "#ffffff"),
+    },
+    "Vélez Sarsfield": {
+        # la V azul en el pecho: no hay otra camiseta en el fútbol argentino
+        # que se reconozca por una letra
+        "nombre": "Club Atlético Vélez Sarsfield", "apodo": "El Fortín",
+        "fundado": 1910, "estadio": "Estadio José Amalfitani",
+        "estadioApodo": "El Fortín",
+        "direccion": "Av. Juan B. Justo 9200, Liniers, CABA",
+        "capacidad": 49540, "sitio": "https://velez.com.ar",
+        "titular": ("uve", "#fbfbfb", "#1a4fd8", "#1a4fd8"),
+        "suplente": ("uve", "#16255c", "#2b5fe0", "#2b5fe0"),
+    },
+    "Argentinos Juniors": {
+        # las tenía al revés: Argentinos juega de rojo, no de blanco
+        "nombre": "Asociación Atlética Argentinos Juniors", "apodo": "El Bicho",
+        "fundado": 1904, "estadio": "Estadio Diego Armando Maradona",
+        "direccion": "Boyacá 2152, La Paternal, CABA",
+        "capacidad": 26000, "sitio": "https://argentinosjuniors.com.ar",
+        # roja con los dos vivos blancos al costado del pecho
+        "titular": ("vivo", "#d8232a", "#ffffff", "#ffffff"),
+        # blanca con franjas grises apenas marcadas
+        "suplente": ("franjas", "#fbfbfb", "#d5d7da", "#d8232a"),
+    },
+    "Lanús": {
+        "nombre": "Club Atlético Lanús", "apodo": "El Granate",
+        "fundado": 1915,
+        "estadio": "Estadio Ciudad de Lanús - Néstor Díaz Pérez",
+        "estadioApodo": "La Fortaleza",
+        "direccion": "Av. Hipólito Yrigoyen 3750, Lanús",
+        "capacidad": 47027, "sitio": "https://clublanus.com",
+        "titular": ("liso", "#6b2233", "#6b2233", "#e08a92"),
+        "suplente": ("liso", "#f8f8f8", "#f8f8f8", "#8f2438"),
+    },
+    "Banfield": {
+        # Ojo: la 2026 es la de los 130 años y rompe con la tradición. No
+        # son las rayas verticales de siempre sino una banda diagonal
+        # verde, en blanco la titular y en negro la suplente. El año que
+        # viene esto seguramente vuelva a cambiar.
+        "nombre": "Club Atlético Banfield", "apodo": "El Taladro",
+        "fundado": 1896, "estadio": "Estadio Florencio Sola",
+        "direccion": "Arenales 1457, Banfield",
+        "capacidad": 34901, "sitio": "https://clubabanfield.org",
+        # la diagonal cae al revés que la de River
+        "titular": ("banda", "#f6f6f6", "#1e9b47", "#1e9b47",
+                    {"invertida": True}),
+        "suplente": ("banda", "#15181b", "#20a04b", "#20a04b",
+                     {"invertida": True}),
+    },
+    "Estudiantes (LP)": {
+        "nombre": "Club Estudiantes de La Plata", "apodo": "El Pincha",
+        "fundado": 1905, "estadio": "Estadio Jorge Luis Hirschi",
+        "estadioApodo": "UNO",
+        "direccion": "Calle 1 y 57, La Plata",
+        "capacidad": 30018, "sitio": "https://estudiantesdelaplata.com",
+        "titular": ("bastones", "#ffffff", "#d92130", "#131313"),
+        "suplente": ("liso", "#f8f8f8", "#f8f8f8", "#d92130"),
+    },
+    "Gimnasia y Esgrima (LP)": {
+        "nombre": "Club de Gimnasia y Esgrima La Plata", "apodo": "El Lobo",
+        "fundado": 1887, "estadio": "Estadio Juan Carmelo Zerillo",
+        "estadioApodo": "El Bosque",
+        "direccion": "Calle 60 y 118, La Plata",
+        "capacidad": 33000, "sitio": "https://www.gimnasia.org.ar",
+        # el Lobo no juega a rayas verticales: es la franja azul cruzada
+        "titular": ("franja", "#f6f6f6", "#1b3f8f", "#1b3f8f"),
+        # azul con hilos blancos finitos, no aros anchos
+        "suplente": ("franjas", "#16306e", "#ffffff", "#ffffff",
+                     {"alto": 3, "hueco": 22}),
+    },
+    "Newell's Old Boys": {
+        # media roja y media negra, partida al medio
+        "nombre": "Club Atlético Newell's Old Boys", "apodo": "La Lepra",
+        "fundado": 1903, "estadio": "Estadio Marcelo Bielsa",
+        "estadioApodo": "El Coloso del Parque",
+        "direccion": "Parque Independencia, Rosario",
+        "capacidad": 42000, "sitio": "https://www.newellsoldboys.com.ar",
+        "titular": ("mitades", "#e0342c", "#151515", "#e0342c"),
+        "suplente": ("liso", "#f8f8f8", "#f8f8f8", "#e0342c"),
+    },
+    "Rosario Central": {
+        "nombre": "Club Atlético Rosario Central", "apodo": "El Canalla",
+        "fundado": 1889, "estadio": "Estadio Gigante de Arroyito",
+        "estadioApodo": "El Gigante de Arroyito",
+        "direccion": "Av. Génova 640, Rosario",
+        "capacidad": 41654, "sitio": "https://rosariocentral.com",
+        "titular": ("bastones", "#2d5fd0", "#f5c518", "#ffffff"),
+        "suplente": ("liso", "#fbfbfb", "#fbfbfb", "#2d5fd0"),
+    },
+    "Talleres (C)": {
+        "nombre": "Club Atlético Talleres", "apodo": "La T",
+        "fundado": 1913, "estadio": "Estadio Mario Alberto Kempes",
+        "estadioApodo": "El Kempes",
+        "direccion": "Av. Cárcano s/n, Córdoba",
+        "capacidad": 57000, "sitio": "https://www.clubtalleres.com.ar",
+        "titular": ("rayas", "#fbfbfb", "#1e2f6b", "#1e2f6b"),
+        "suplente": ("liso", "#26439c", "#26439c", "#fbfbfb"),
+    },
+    "Instituto": {
+        "nombre": "Instituto Atlético Central Córdoba", "apodo": "La Gloria",
+        "fundado": 1918, "estadio": "Estadio Juan Domingo Perón",
+        "estadioApodo": "Alta Córdoba",
+        "direccion": "Av. Cruz Roja Argentina, Córdoba",
+        "capacidad": 26000, "sitio": "https://institutoacc.com.ar",
+        # el blanco es el fondo y el rojo la raya, no al revés
+        "titular": ("rayas", "#f8f8f8", "#d5232c", "#2b3440"),
+        "suplente": ("liso", "#8b5fd0", "#8b5fd0", "#e8484f"),
+    },
+    "Atlético Tucumán": {
+        "nombre": "Club Atlético Tucumán", "apodo": "El Decano",
+        "fundado": 1902, "estadio": "Estadio Monumental José Fierro",
+        "direccion": "Av. Roca 950, San Miguel de Tucumán",
+        "capacidad": 35200, "sitio": "https://www.clubatleticotucuman.com.ar",
+        "titular": ("rayas", "#5ec3ef", "#ffffff", "#111111"),
+        # azul y negra a rayas, nada que ver con la titular
+        "suplente": ("rayas", "#2a5cd8", "#131313", "#ffffff"),
+    },
+    "Central Córdoba (SdE)": {
+        "nombre": "Club Atlético Central Córdoba", "apodo": "El Ferroviario",
+        "fundado": 1919, "estadio": "Estadio Alfredo Terrera",
+        "direccion": "Santiago del Estero",
+        "capacidad": 23000, "sitio": "https://www.cacentralcordoba.com",
+        "titular": ("rayas", "#131313", "#f4f4f4", "#f4f4f4"),
+        "suplente": ("liso", "#f6f6f6", "#f6f6f6", "#131313"),
+    },
+    "Unión": {
+        "nombre": "Club Atlético Unión", "apodo": "El Tatengue",
+        "fundado": 1907, "estadio": "Estadio 15 de Abril",
+        "direccion": "Av. López y Planes 3200, Santa Fe",
+        "capacidad": 28000, "sitio": "https://www.clubaunion.com.ar",
+        "titular": ("rayas", "#fbfbfb", "#e02b2b", "#26397a"),
+        # roja adelante y azul atrás
+        "suplente": ("liso", "#d8322f", "#d8322f", "#26397a"),
+    },
+    "Defensa y Justicia": {
+        "nombre": "Club Social y Deportivo Defensa y Justicia",
+        "apodo": "El Halcón", "fundado": 1935,
+        "estadio": "Estadio Norberto Tomaghello",
+        "direccion": "Av. Frías 361, Florencio Varela",
+        "capacidad": 16800, "sitio": "https://www.defensayjusticia.org.ar",
+        # también las tenía dadas vuelta: Defensa juega de amarillo
+        "titular": ("liso", "#f5d117", "#f5d117", "#12502c"),
+        "suplente": ("liso", "#16281c", "#16281c", "#f5d117"),
+    },
+    "Tigre": {
+        "nombre": "Club Atlético Tigre", "apodo": "El Matador",
+        "fundado": 1902, "estadio": "Estadio José Dellagiovanna",
+        "direccion": "Italia 1001, Victoria, Tigre",
+        "capacidad": 26500, "sitio": "https://catigre.com.ar",
+        # azul con la franja roja cruzada en el pecho
+        "titular": ("franja", "#1d5299", "#c62b32", "#c62b32"),
+        # blanca con las dos franjas, la roja arriba y la azul abajo
+        "suplente": ("doblefranja", "#fbfbfb", "#d8382f", "#1f4fc4", "#1f4fc4"),
+    },
+    "Platense": {
+        "nombre": "Club Atlético Platense", "apodo": "El Calamar",
+        "fundado": 1905, "estadio": "Estadio Ciudad de Vicente López",
+        "direccion": "Manuel Ugarte 2380, Vicente López",
+        "capacidad": 26000, "sitio": "https://cap.org.ar",
+        # la franja marrón cruzada, en blanco la titular y al revés la otra
+        "titular": ("franja", "#fbfbfb", "#5f4534", "#5f4534"),
+        "suplente": ("franja", "#5f4534", "#fbfbfb", "#fbfbfb"),
+    },
+    "Barracas Central": {
+        "nombre": "Club Atlético Barracas Central", "apodo": "El Guapo",
+        "fundado": 1904, "estadio": "Estadio Claudio Tapia",
+        "direccion": "Luna 1500, Barracas, CABA",
+        "capacidad": 4500, "sitio": "https://www.barracascentral.com",
+        "titular": ("bastones", "#ffffff", "#d2232a", "#111111"),
+        # negra con los vivos rojos en cuello y puños
+        "suplente": ("liso", "#131313", "#131313", "#e8323a"),
+    },
+    "Deportivo Riestra": {
+        "nombre": "Club Deportivo Riestra", "apodo": "El Malevo",
+        "fundado": 1931, "estadio": "Estadio Guillermo Laza",
+        "direccion": "Barrio Nueva Pompeya, CABA",
+        # el club no tiene sitio propio: lo que publica va por su cuenta
+        "capacidad": 3000, "sitio": "https://x.com/prensariestra",
+        "titular": ("liso", "#131313", "#131313", "#f6f6f6"),
+        "suplente": ("liso", "#f6f6f6", "#f6f6f6", "#131313"),
+    },
+    "Aldosivi": {
+        "nombre": "Club Atlético Aldosivi", "apodo": "El Tiburón",
+        "fundado": 1913, "estadio": "Estadio José María Minella",
+        "estadioApodo": "El Minella",
+        "direccion": "Mar del Plata",
+        "capacidad": 35354, "sitio": "https://www.aldosivi.com",
+        "titular": ("rayas", "#f0cf1c", "#1c9e78", "#12241c"),
+        # la suplente es casi negra, verde muy oscuro, con los vivos en
+        # verde lima
+        "suplente": ("liso", "#101d18", "#101d18", "#8ed13a"),
+    },
+    "Sarmiento (J)": {
+        "nombre": "Club Atlético Sarmiento", "apodo": "El Verde",
+        "fundado": 1911, "estadio": "Estadio Eva Perón",
+        "direccion": "Junín, Buenos Aires",
+        "capacidad": 22000, "sitio": "https://clubatleticosarmiento.com",
+        "titular": ("liso", "#14603a", "#14603a", "#2fbf6a"),
+        "suplente": ("liso", "#fbfbfb", "#fbfbfb", "#14603a"),
+    },
+    "Independiente Rivadavia": {
+        "nombre": "Club Sportivo Independiente Rivadavia", "apodo": "La Lepra",
+        "fundado": 1913, "estadio": "Estadio Bautista Gargantini",
+        "direccion": "Mendoza",
+        "capacidad": 25000, "sitio": "https://independienterivadavia.com.ar",
+        # azul lisa, no a rayas
+        "titular": ("liso", "#1b2a5e", "#1b2a5e", "#ffffff"),
+        "suplente": ("liso", "#f8f8f8", "#f8f8f8", "#1b2a5e"),
+    },
+    "Estudiantes (RC)": {
+        "nombre": "Club Atlético Estudiantes", "apodo": "El León",
+        "fundado": 1968, "estadio": "Estadio Ciudad de Río Cuarto",
+        "direccion": "Río Cuarto, Córdoba",
+        "capacidad": 12000, "sitio": "https://aaestudiantes.accessfan.ar",
+        # celeste lisa, no a rayas
+        "titular": ("liso", "#3a9fdb", "#3a9fdb", "#ffffff"),
+        "suplente": ("liso", "#1f4a45", "#1f4a45", "#dfe8e6"),
+    },
+    "Gimnasia y Esgrima (M)": {
+        "nombre": "Club Atlético Gimnasia y Esgrima",
+        "apodo": "El Lobo mendocino", "fundado": 1908,
+        "estadio": "Estadio Víctor Legrotaglie",
+        "direccion": "Mendoza",
+        "capacidad": 15000, "sitio": "https://gimnasiayesgrimamza.com.ar",
+        "titular": ("rayas", "#f6f6f6", "#131313", "#131313"),
+        "suplente": ("liso", "#f6f6f6", "#f6f6f6", "#131313"),
+    },
+}
+
+
+def _kit(t):
+    """
+    Del atajo al diccionario que usa el dibujo.
+
+    (patrón, base, raya, detalle) y, si hace falta, un quinto valor:
+    un color suelto para el segundo tono de las franjas alternadas —el
+    celeste y oro de la suplente de Boca— o un diccionario con lo que sea
+    que ese diseño necesite, como el grosor de las líneas.
+    """
+    patron, base, raya, detalle = t[:4]
+    k = {"patron": patron, "base": base, "raya": raya,
+         "detalle": detalle, "cuello": detalle}
+    extra = t[4] if len(t) > 4 else None
+    if isinstance(extra, dict):
+        k.update(extra)
+    elif extra:
+        k["raya2"] = extra
+    return k
+
+
+for _n, _d in _OTROS_CLUBES.items():
+    CLUBES_INFO[_n] = {
+        "nombre": _d["nombre"], "apodo": _d["apodo"], "fundado": _d["fundado"],
+        "estadio": _d["estadio"], "estadioApodo": _d.get("estadioApodo"),
+        "direccion": _d["direccion"], "capacidad": _d["capacidad"],
+        "sitio": _d["sitio"],
+        "camisetas": {"titular": _kit(_d["titular"]),
+                      "suplente": _kit(_d["suplente"])},
+    }
+
+
 def api_club_info(q):
     """
     Todo lo del club para su página. /api/club-info?name=Belgrano
@@ -4327,7 +4769,39 @@ ROUTES = {
 
 # Las direcciones propias de cada club. Por ahora sólo la de prueba; se
 # suman solas a medida que se cargue CLUBES_INFO.
-RUTAS_CLUB = {norm(n).replace(" ", "-"): n for n in CLUBES_INFO}
+def _slug(nombre):
+    """
+    El nombre del club convertido en dirección web.
+
+    Los paréntesis se van: /estudiantes-lp se puede pegar en un mensaje,
+    /estudiantes-(lp) se rompe apenas alguien lo codifica.
+    """
+    s = norm(nombre).replace("(", " ").replace(")", " ")
+    return "-".join(s.split())
+
+
+def _rutas_de_club():
+    """
+    Todas las direcciones que llevan a la página de un club.
+
+    Además de la larga —/central-cordoba-sde— se registra la corta cuando no
+    hay con quién confundirla: /central-cordoba llega igual. Pero
+    /estudiantes no, porque hay dos en Primera y no sabríamos a cuál llevar.
+    """
+    rutas = {}
+    cortas = {}
+    for nombre in CLUBES_INFO:
+        rutas[_slug(nombre)] = nombre
+        base = _slug(re.sub(r"\s*\([^)]*\)", "", nombre))
+        if base and base != _slug(nombre):
+            cortas.setdefault(base, []).append(nombre)
+    for corta, duenos in cortas.items():
+        if len(duenos) == 1 and corta not in rutas:
+            rutas[corta] = duenos[0]
+    return rutas
+
+
+RUTAS_CLUB = _rutas_de_club()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -4530,7 +5004,10 @@ def juntar_stats(lid, limite=15):
         if g.get("status") != "FIN" or not g.get("liveId"):
             continue
         guardado, _ = almacen.leer("stats:%s:%s" % (lid, g["liveId"]))
-        if guardado is None:
+        # Los guardados antes de que empezáramos a anotar los goles no
+        # sirven para la efectividad ni la solidez: se vuelven a pedir.
+        sin_goles = bool(guardado) and (guardado.get("h") or {}).get("gf") is None
+        if guardado is None or sin_goles:
             faltan.append(g)
     hechos = 0
     for g in faltan[:limite]:
@@ -4546,10 +5023,15 @@ def rescatar_todo():
     """
     Va llenando la base en segundo plano, sin que nadie tenga que pedirlo.
 
-    Primero recupera los partidos que 365scores ya no muestra —fases de
-    grupos jugadas hace meses, rondas viejas de la Copa Argentina— y después
-    busca los goleadores de esos partidos. Cada vuelta guarda dónde quedó,
-    así que si el servidor se reinicia sigue desde ahí y no vuelve a empezar.
+    Recorre el calendario de cada torneo para los dos lados. Hacia atrás
+    recupera lo que 365scores ya sacó de la ventana —la fase de grupos de la
+    Libertadores, las rondas viejas de la Copa Argentina—; hacia adelante
+    trae lo que todavía no entró, que es lo que le pasa a la Premier, la
+    Serie A y la Bundesliga cuando arrancan: la ventana muestra dos fechas y
+    el torneo tiene treinta y ocho.
+
+    Después busca los goleadores de esos partidos. Cada vuelta guarda dónde
+    quedó, así que si el servidor se reinicia sigue desde ahí.
     """
     time.sleep(20)          # que la página arranque tranquila primero
     # Las páginas viejas ya no se guardan: las que quedaron de antes ocupan
@@ -4562,16 +5044,29 @@ def rescatar_todo():
     for vuelta in range(1, 13):
         pendientes, goles_pendientes = 0, 0
         for lid, cfg in LIGAS.items():
+            for direccion, como in ((-1, "atrás"), (1, "adelante")):
+                try:
+                    r = caminar_fixture(cfg["sc"], direccion, paginas=20)
+                    if not r.get("listo"):
+                        pendientes += 1
+                    if r.get("nuevos"):
+                        print("  · %-18s +%d partidos hacia %s (total %d)"
+                              % (cfg["nombre"], r["nuevos"], como,
+                                 r.get("total", 0)), flush=True)
+                except Exception:
+                    pass
+                time.sleep(2)
+            # cuántas fechas debería tener: si faltan, se avisa en el log
             try:
-                r = rescatar_historico(cfg["sc"], paginas=20)
-                if not r.get("listo"):
-                    pendientes += 1
-                if r.get("nuevos"):
-                    print("  · %-18s +%d partidos viejos (total %d)"
-                          % (cfg["nombre"], r["nuevos"], r.get("total", 0)), flush=True)
+                tope = fechas_del_torneo(cfg["sc"])
+                if tope and not cfg.get("copa"):
+                    hay, _ = almacen.leer("fixture:%s" % cfg["sc"])
+                    vistas = {m.get("round") for m in (hay or []) if m.get("round")}
+                    if vistas and max(vistas) < tope:
+                        print("  · %-18s van %d de %d fechas"
+                              % (cfg["nombre"], len(vistas), tope), flush=True)
             except Exception:
                 pass
-            time.sleep(2)
         for lid in LIGAS:
             try:
                 n = juntar_goles(lid, limite=20)

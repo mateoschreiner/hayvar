@@ -230,6 +230,22 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
   font-weight:700;margin:12px 0 6px}
 .cuadro-et:first-child{margin-top:0}
 
+/* ── la serie: los dos partidos de una llave ── */
+.serie-p{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  margin-bottom:10px;cursor:pointer;transition:border-color .12s}
+.serie-p:hover{border-color:var(--acc)}
+.serie-p .cab{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
+  margin-bottom:7px}
+.serie-p .cab b{font-weight:800;color:var(--txt)}
+.serie-p .m-fila{grid-template-columns:46px 1fr 52px 1fr}
+.serie-p .side{min-width:0}
+.serie-p .side.away{text-align:right}
+.serie-p .side .tn{font-size:13px;font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;display:block}
+.serie-p .m-goles{margin:5px 0 0;font-size:10.5px}
+.serie-p .ver{margin-top:7px;font-size:10.5px;color:var(--acc);font-weight:700}
+
 .match{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer}
 .m-fila{display:grid;grid-template-columns:56px 1fr 50px 1fr;align-items:center;gap:8px}
 .m-extra:empty{display:none}
@@ -629,7 +645,8 @@ const App=(()=>{
   const S={round:null,rounds:[],games:[],tab:'A',onlyLive:false,liga:'home',emblemas:{},current:null,
            homeDate:new Date(),weekStart:null,home:null,club:null,
            standings:null,annual:null,promedios:null,scorers:null,otra:null,
-           scores:{},detalles:{},detallesDe:null,timer:null,vivoTimer:null,failures:0};
+           scores:{},detalles:{},detallesDe:null,detTimer:null,series:{},
+           timer:null,vivoTimer:null,failures:0};
 
   // link=true convierte el escudo en un enlace al sitio oficial del club
   const crest=(t,px,link)=>{
@@ -775,8 +792,10 @@ const App=(()=>{
       if(!m) return `<div style="padding:7px 0;color:var(--txt2);font-size:12px">
         <span style="font-size:10px;text-transform:uppercase;letter-spacing:.4px">${rotulo}</span><br>Sin datos</div>`;
       const d=new Date(m.start);
+      // en las copas la ronda tiene nombre (Octavos, Cuartos), no número
+      const ronda=m.ronda?etapaCorta(m.ronda):`Fecha ${m.round??''}`;
       const cuando=m.status==='LIVE'?`<b style="color:var(--live)">${m.minute??''}' en vivo</b>`
-        :m.status==='FIN'?`Fecha ${m.round??''}`
+        :m.status==='FIN'?ronda
         :`${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth()+1} · ${hhmm(m.start)}`;
       const marcador=m.gh!=null?`<b style="font-size:14px">${m.gh}-${m.ga}</b>`
         :'<span style="color:var(--txt2);font-size:12px">vs</span>';
@@ -1049,10 +1068,14 @@ const App=(()=>{
     // colgado al principio de la línea siguiente, lejos del nombre.
     // La tanda de penales no son goles del partido: se cuentan aparte y se
     // muestran como "Penales 4-2", que es como se lee en cualquier lado.
+    // el resultado de la tanda viene calculado del servidor; si no, se cuenta
+    // acá con los goles del minuto 120 en adelante
     const tanda=(d.goles||[]).filter(g=>g.penales&&!g.anulado);
-    const penales=tanda.length
-      ? `Penales ${tanda.filter(g=>g.side==='h').length}-${tanda.filter(g=>g.side==='a').length}`
-      : '';
+    const penales=d.penales
+      ? `Penales ${d.penales.h}-${d.penales.a}`
+      : (tanda.length
+          ? `Penales ${tanda.filter(g=>g.side==='h').length}-${tanda.filter(g=>g.side==='a').length}`
+          : '');
     const lado=s=>(d.goles||[]).filter(g=>g.side===s&&!g.penales).map(g=>{
       const txt=`${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`;
       return `<span class="gol">${g.anulado
@@ -1100,6 +1123,13 @@ const App=(()=>{
             : `/api/detalles?id=${S.liga}&round=${S.round??''}`);
       const d=await get(url);
       Object.assign(S.detalles,d.detalles||{});
+      // Si el servidor avisa que quedaron partidos sin traer —los grupos de
+      // una copa son casi cien— se vuelve a pedir en unos segundos hasta
+      // completar, en vez de dejar la mitad de la lista sin goleadores.
+      if(d.faltan>0){
+        clearTimeout(S.detTimer);
+        S.detTimer=setTimeout(()=>{ S.detallesDe=null; cargarDetalles(); },4000);
+      }
     }catch(e){ return; }
     // se repintan sólo los bloques de extras, sin tocar el resto
     document.querySelectorAll('.match[data-id]').forEach(fila=>{
@@ -1882,6 +1912,53 @@ const App=(()=>{
     }
   }
 
+  /* ── la serie completa ───────────────────────────────────────────────
+     Una llave son dos partidos. Al tocarla se abre la serie: el global
+     arriba, la ida y la vuelta con sus goles como en la portada, y cada
+     una se puede abrir para verla en detalle.                          */
+  const serieId=k=>k.equipos.map(e=>e.team?sinTildes(e.team.canon||e.team.name):'?').join('|');
+
+  function drawSerie(id){
+    const k=S.series[id]; if(!k) return;
+    const [a,v]=k.equipos;
+    const nom=e=>e.team?esc(e.team.canon||e.team.name):'Por definir';
+    const pen=i=>k.penales?` <i style="font-size:11px;color:rgba(255,255,255,.65)">(${k.penales[i]})</i>`:'';
+    const filas=k.partidos.map(p=>{
+      const d=p.start?new Date(p.start):null;
+      const det=S.detalles[p.id]||{};
+      const lado=s=>((det.goles||[]).filter(g=>g.side===s&&!g.penales)
+        .map(g=>`<span class="gol">${g.anulado
+          ? `<span class="gol-anulado">${esc(g.player.split(' ').slice(-1)[0])} ${g.min}'</span>`
+          : `${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`}</span>`).join(''));
+      return `<div class="serie-p" onclick="App.openMatch('${js(p.id)}')">
+        <div class="cab"><b>${esc(p.tramo||'Partido')}</b>
+          <span>${d?`${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`:''}${p.gh==null?'':' · Finalizado'}</span></div>
+        <div class="m-fila">
+          <div class="m-time">${d?hhmm(p.start):''}</div>
+          <div class="side"><span class="tn">${nom(a)}</span></div>
+          <div class="m-score${p.gh==null?' pend':''}">${p.gh==null?'vs':p.gh+'-'+p.ga}</div>
+          <div class="side away"><span class="tn">${nom(v)}</span></div>
+        </div>
+        <div class="m-goles"><span>${lado('h')}</span><span>${lado('a')}</span></div>
+        <div class="ver">Ver el partido en detalle →</div></div>`;
+    }).join('');
+
+    $('#ov').classList.add('show'); document.body.style.overflow='hidden';
+    $('#modalBox').innerHTML=`
+      <div class="mhead">
+        <div class="top"><span>La serie</span>
+          <button class="x" onclick="App.closeModal()">×</button></div>
+        <div class="mscore">
+          <div class="t">${a.team?crest(a.team,46,true):''}<span>${nom(a)}</span></div>
+          <div class="sc"><div class="n">${a.goles==null?'– –':a.goles+' - '+v.goles}</div>
+            ${k.penales?`<div class="pen-cab">${k.penales[0]} - ${k.penales[1]} en penales</div>`:''}
+            <div class="s">${k.cerrada?'Global':'En juego'}</div></div>
+          <div class="t">${v.team?crest(v.team,46,true):''}<span>${nom(v)}</span></div>
+        </div>
+      </div>
+      <div class="mbody">${filas||'<div class="empty">Sin partidos cargados.</div>'}</div>`;
+  }
+
   function cuadroLlaves(){
     // el cuadro arranca en la primera ronda eliminatoria que tenga datos:
     // en la Copa Argentina eso son los 32avos
@@ -2043,9 +2120,11 @@ const App=(()=>{
             cajas+=`<div class="brk vacia" title="Clasificado, cruce por jugarse"
               style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }else{
-            const ultimo=k.partidos[k.partidos.length-1];
             const cuando=k.partidos.map(p=>(p.tramo||'')+(p.gh!=null?` ${p.gh}-${p.ga}`:'')).join(' · ');
-            cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.openMatch('${js(ultimo.id)}')"
+            // al clickear se abre la serie, no un partido suelto: primero se
+            // ven la ida y la vuelta y desde ahí se elige cuál mirar
+            S.series[serieId(k)]=k;
+            cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.serie('${js(serieId(k))}')"
               style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }
         }
@@ -2423,6 +2502,7 @@ const App=(()=>{
     grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
     // cambiar de fase en los torneos que la tienen (Federal A)
     fase(n){ S.fase=n; S.round=null; drawRounds(); pintarFecha(); },
+    serie(id){ drawSerie(id); },
     // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
     // que se redibuja más chico
     correrCuadro(d){

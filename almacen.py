@@ -261,6 +261,13 @@ def estado():
             "mas_nuevo": round(time.time() - nuevo) if nuevo else None}
 
 
+def claves():
+    """Todas las claves guardadas. Para poder mirar qué hay adentro."""
+    with _lock:
+        c = _con()
+        return [f[0] for f in c.execute("SELECT clave FROM datos").fetchall()]
+
+
 def limpiar(mas_viejo_que=60 * 60 * 24 * 90):
     """Borra lo que ya no le sirve a nadie. Por defecto, 90 días."""
     with _lock:

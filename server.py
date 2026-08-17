@@ -858,10 +858,11 @@ def side(c):
         "short": c.get("symbolicName") or "",
         "logo": logo(c),
         "score": None if sc in (None, -1) else int(sc),
-        # En las copas, 365scores dice directamente quién clasificó. Es más
-        # confiable que sumar los goles de la serie: contempla los penales,
-        # el gol de visitante y todo lo que el reglamento diga ese año.
-        "pasa": bool(c.get("isQualified") or c.get("toQualify")),
+        # En las copas, 365scores dice quién clasificó. Ojo con el campo:
+        # `isQualified` es definitivo, `toQualify` es provisional —marca al
+        # que va ganando la serie—. Usando los dos, el cuadro daba por
+        # clasificado al que ganó la ida antes de que se jugara la vuelta.
+        "pasa": bool(c.get("isQualified")),
     }
 
 
@@ -942,14 +943,21 @@ def all_games(ttl=25):
     # esto, las fechas anteriores se quedaban sin el id de 365scores y por
     # eso no mostraban ni goleadores ni canal, ni abrían el detalle.
     try:
-        historico = _sc_fixture(COMPETITION)
+        # sólo el Clausura: el acumulado también tiene los partidos del
+        # Apertura y, sin filtrar, un Argentinos–Huracán de aquel torneo se
+        # le pegaba a la fecha 16 del Clausura y la daba por jugada.
+        historico = [x for x in _sc_fixture(COMPETITION)
+                     if STAGE in norm(x.get("stage"))]
     except Exception:
         historico = []
 
-    for lv in list(historico) + live_games(ttl):
+    for lv in historico + live_games(ttl):
         hc = match_team(lv["home"].get("name")) or lv["home"].get("canon")
         ac = match_team(lv["away"].get("name")) or lv["away"].get("canon")
-        m = idx.get((lv["round"], hc, ac)) or idx.get((None, hc, ac))
+        # con la fecha del torneo primero; el comodín sólo si no hay otra
+        m = idx.get((lv["round"], hc, ac))
+        if not m and lv.get("round") is None:
+            m = idx.get((None, hc, ac))
         if not m:
             continue
         for side_key in ("home", "away"):
@@ -2218,7 +2226,10 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
     tv = limpiar_tv([t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")])
     if tv:
         almacen.guardar("tv:%s:%s" % (liga, game_id), tv)
-    return {"tv": tv, "goles": goles}
+    tanda = [x for x in goles if x.get("penales") and not x.get("anulado")]
+    pen = ({"h": sum(1 for x in tanda if x["side"] == "h"),
+            "a": sum(1 for x in tanda if x["side"] == "a")} if tanda else None)
+    return {"tv": tv, "goles": goles, "penales": pen}
 
 
 def limpiar_tv(canales):
@@ -2289,17 +2300,20 @@ def api_detalles(q):
             continue
         guardado, _ = almacen.leer("goles:%s:%s" % (x, g["liveId"]))
         tv, _ = almacen.leer("tv:%s:%s" % (x, g["liveId"]))
+        pen, _ = almacen.leer("pen:%s:%s" % (x, g["liveId"]))
         if guardado is None:
             pendientes.append((x, g))
         else:
             salida[str(g["id"])] = {
                 "tv": tv or [],
+                "penales": pen,
                 "goles": [{"player": q["j"], "equipo": q.get("e") or "",
                            "min": q.get("m"), "added": 0,
                            "side": q.get("s") or "h", "sub": "",
                            "anulado": False, "penales": False}
                           for q in guardado],
             }
+    faltan = max(0, len(pendientes) - TOPE)
     pendientes = pendientes[:TOPE]
 
     # Cada partido es un pedido a 365scores. De a uno, una fecha entera son
@@ -2323,8 +2337,13 @@ def api_detalles(q):
                 if gid:
                     salida[gid] = det
 
+    # `faltan` le dice a la página que todavía queda para traer: en vez de
+    # dejar la mitad de los partidos sin goleadores, vuelve a pedir en unos
+    # segundos y se completa sola. Los grupos de la Libertadores tienen casi
+    # cien partidos y no entran en un solo pedido.
     return {"detalles": salida, "consultados": len(pendientes),
-            "sinDetalle": len(pares) - len(pendientes)}
+            "faltan": faltan,
+            "sinDetalle": len(pares) - len(con_id)}
 
 
 def fecha_actual(rounds, por_fecha):
@@ -2481,8 +2500,13 @@ def armar_llaves(games, etapas, liga_id=""):
     for et in etapas:
         if not del_cuadro(et):
             continue
+        series = (por_etapa.get(et) or {})
+        # ¿esta ronda es a ida y vuelta? Lo dice la ronda entera, no cada
+        # llave: si a una le falta la vuelta por cargar, no está terminada
+        # aunque tengamos su único partido jugado.
+        por_serie = max((len(v) for v in series.values()), default=1)
         llaves = []
-        for partidos in (por_etapa.get(et) or {}).values():
+        for partidos in series.values():
             partidos.sort(key=lambda x: x.get("start") or "")
             # el global se cuenta desde el lado del local de la ida
             uno = partidos[0]
@@ -2497,7 +2521,8 @@ def armar_llaves(games, etapas, liga_id=""):
                     ga, gb = ga + p["gh"], gb + p["ga"]
                 else:
                     ga, gb = ga + p["ga"], gb + p["gh"]
-            cerrada = jugados == len(partidos) and jugados > 0
+            cerrada = (jugados == len(partidos) and jugados > 0
+                       and len(partidos) >= por_serie)
             posiciones = [p.get("slot") for p in partidos if p.get("slot")]
 
             # Quién pasó lo dice la fuente, no la suma de goles: una serie
@@ -2511,8 +2536,11 @@ def armar_llaves(games, etapas, liga_id=""):
                             return True
                 return False
 
+            # nadie pasa hasta que la serie esté terminada
             pasa_a, pasa_b = clasifico(a["name"]), clasifico(b["name"])
-            if not (pasa_a or pasa_b) and cerrada and ga != gb:
+            if not cerrada:
+                pasa_a = pasa_b = False
+            elif not (pasa_a or pasa_b) and ga != gb:
                 pasa_a, pasa_b = ga > gb, gb > ga
 
             # el resultado de la tanda, si la hubo, para mostrarlo al lado
@@ -2799,27 +2827,38 @@ def api_liga_games(q):
     # primero una y después la otra.
     fases_liga = []
     if not cfg.get("copa"):
+        # La fase de un partido se identifica por su número y, si no lo trae
+        # o si todos comparten el mismo, por el nombre. El Federal A llegó a
+        # tener las dos fases con el mismo número y volvían a mezclarse.
+        def clave_fase(g):
+            sn = g.get("stageNum")
+            nom = (g.get("stage") or "").strip()
+            return (sn if sn is not None else -1, nom)
+
         por_stage = {}
         for g in games:
-            sn = g.get("stageNum")
-            if sn is None:
+            k = clave_fase(g)
+            if k == (-1, ""):
                 continue
-            por_stage.setdefault(sn, {"nombres": {}, "rounds": set()})
-            nom = (g.get("stage") or "").strip()
-            if nom:
-                por_stage[sn]["nombres"][nom] = por_stage[sn]["nombres"].get(nom, 0) + 1
+            d = por_stage.setdefault(k, {"rounds": set(), "primero": "9999"})
             if g.get("round"):
-                por_stage[sn]["rounds"].add(g["round"])
+                d["rounds"].add(g["round"])
+            ini = g.get("start") or "9999"
+            if ini < d["primero"]:
+                d["primero"] = ini
+
         if len(por_stage) > 1:
-            for sn in sorted(por_stage):
-                d = por_stage[sn]
-                nombre = (max(d["nombres"], key=d["nombres"].get)
-                          if d["nombres"] else "Fase %s" % sn)
-                if d["rounds"]:
-                    fases_liga.append({"num": sn, "nombre": nombre,
-                                       "rounds": sorted(d["rounds"])})
+            orden = sorted(por_stage, key=lambda k: (k[0], por_stage[k]["primero"]))
+            numero = {k: i + 1 for i, k in enumerate(orden)}
+            for k in orden:
+                d = por_stage[k]
+                if not d["rounds"]:
+                    continue
+                fases_liga.append({"num": numero[k],
+                                   "nombre": k[1] or "Fase %s" % k[0],
+                                   "rounds": sorted(d["rounds"])})
             for g in games:
-                g["fase"] = g.get("stageNum")
+                g["fase"] = numero.get(clave_fase(g))
 
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})
@@ -3601,6 +3640,53 @@ def api_ligas(q):
     return {"ligas": out}
 
 
+def api_contenido(q):
+    """
+    Qué hay guardado en la base, contado por tipo de cosa.
+
+    /api/contenido            → el resumen
+    /api/contenido?ver=goles  → las claves de ese grupo, para espiar
+
+    La base guarda todo bajo una clave de texto: "fixture:72" es el
+    calendario de la Liga Profesional, "goles:lib:4712799" los autores de
+    los goles de un partido. Acá se agrupan por el prefijo.
+    """
+    try:
+        claves = almacen.claves()
+    except Exception as e:
+        return {"error": str(e)}
+
+    grupos = {}
+    for k in claves:
+        pref = k.split(":", 1)[0] if ":" in k else k
+        grupos[pref] = grupos.get(pref, 0) + 1
+
+    nombres = {
+        "fixture": "calendarios de cada torneo",
+        "goles": "autores de los goles, partido por partido",
+        "tv": "canal de cada partido",
+        "pen": "definiciones por penales",
+        "pj": "partidos jugados por jugador",
+        "paso": "clubes por los que pasó cada jugador",
+        "hist": "hasta dónde llegó el rescate de partidos viejos",
+        "dffx": "fixtures de AFA",
+        "pag": "páginas del histórico de 365scores",
+        "laliga": "jornadas de LaLiga",
+        "sc": "respuestas de 365scores",
+    }
+
+    ver = (q.get("ver") or [""])[0].strip()
+    detalle = None
+    if ver:
+        detalle = sorted(k for k in claves if k.split(":", 1)[0] == ver)[:200]
+
+    return {"base": almacen.estado(),
+            "grupos": [{"tipo": t, "cantidad": n, "que_es": nombres.get(t, "")}
+                       for t, n in sorted(grupos.items(), key=lambda x: -x[1])],
+            "verDetalle": detalle,
+            "como": "Agregá ?ver=goles (o el tipo que quieras) para ver las claves."}
+
+
 def api_competencias(q):
     """
     Busca torneos en 365scores y devuelve el número con el que los identifica.
@@ -3655,9 +3741,13 @@ def api_competencias(q):
 
 # Palabras que no distinguen a un club de otro: "Racing" y "Racing Club" son
 # el mismo, "Racing" y "Racing de Córdoba" no.
-_RELLENO = {"club", "atletico", "atletica", "asociacion", "asoc", "deportivo",
-            "esgrima", "sportivo", "social", "cultural",
-            "fc", "cf", "ac", "sc", "cd", "ca", "sad", "afc", "cfc"}
+# Sólo formas jurídicas y palabras que ningún club usa para diferenciarse.
+# Ojo con "sportivo", "deportivo" y "atlético": parecen genéricas pero no lo
+# son —Sportivo Belgrano no es Belgrano, y Atlético Tucumán no es Tucumán—.
+# "Esgrima" sí, porque los cuatro Gimnasia del país son "Gimnasia y Esgrima"
+# y lo que los distingue es la ciudad.
+_RELLENO = {"club", "esgrima", "fc", "cf", "ac", "sc", "cd", "ca", "sad",
+            "afc", "cfc"}
 
 
 def mismo_club(nombre, canon):
@@ -3680,8 +3770,21 @@ def mismo_club(nombre, canon):
     ta, tb = _tokens(nombre), _tokens(canon)
     if not ta or not tb or not (ta & tb):
         return False
-    # si no sobra nada, son idénticos una vez expandidas las abreviaturas
-    return (ta ^ tb) <= _RELLENO
+    if not ((ta ^ tb) <= _RELLENO):
+        return False
+
+    # Y una vuelta más: _tokens descarta por su cuenta algunas palabras
+    # —"Sportivo Belgrano" y "Belgrano" le dan el mismo token— y ahí el modo
+    # club mostraba partidos del Federal A creyendo que era Belgrano de
+    # Córdoba. Se comparan también las palabras que quedaron afuera,
+    # ignorando las cortas, que son abreviaturas ya expandidas.
+    def descartadas(texto, tokens):
+        # sin paréntesis ni puntos: "(LP)" no es una palabra que distinga
+        limpio = re.sub(r"[^\w\s]", " ", norm(texto))
+        return {p for p in limpio.split()
+                if p not in tokens and len(p) > 3}
+
+    return (descartadas(nombre, ta) ^ descartadas(canon, tb)) <= _RELLENO
 
 
 def api_club(q):
@@ -3697,8 +3800,10 @@ def api_club(q):
     # Todas las competencias, no sólo la liga: si el club juega la Copa
     # Argentina el miércoles y la liga el domingo, el próximo partido es el
     # del miércoles. Antes sólo se miraba la Liga Profesional.
+    # El femenino queda afuera por ahora: el modo club es de los planteles
+    # masculinos y mezclarlos confunde. Se saca de acá y listo.
     suyos, err = [], None
-    for lid in LIGAS:
+    for lid in (l for l in LIGAS if l != "fem"):
         try:
             juegos = (all_games(ttl=120) if lid == "lpf"
                       else api_liga_games({"id": [lid]}).get("games", []))
@@ -3709,7 +3814,10 @@ def api_club(q):
             lados = [m["home"].get("canon"), m["away"].get("canon"),
                      m["home"].get("name"), m["away"].get("name")]
             if any(mismo_club(x, canon) for x in lados if x):
-                suyos.append(dict(m, liga=lid, ligaNombre=LIGAS[lid]["nombre"]))
+                # en las copas la ronda tiene nombre, no número de fecha
+                etapa = m.get("etapa") or m.get("stage") or ""
+                suyos.append(dict(m, liga=lid, ligaNombre=LIGAS[lid]["nombre"],
+                                  ronda=etapa if LIGAS[lid].get("copa") else None))
 
     if not suyos and err:
         return {"error": err, "club": canon}
@@ -3795,6 +3903,7 @@ ROUTES = {
     "/api/clubes": api_clubes,
     "/api/club": api_club,
     "/api/competencias": api_competencias,
+    "/api/contenido": api_contenido,
     "/api/historico": api_historico,
     "/api/liga": api_liga,
     "/api/liga/games": api_liga_games,

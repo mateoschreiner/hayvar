@@ -259,6 +259,11 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cl-jug .pj{font-size:10.5px;color:var(--txt3)}
 .cl-puesto{grid-column:1/-1;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
   color:var(--txt3);font-weight:800;margin:10px 0 2px}
+/* cómo viene el equipo en ese torneo, al lado del nombre de la competencia */
+.cl-pos{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;
+  padding:0 16px 10px;font-size:12px;color:var(--txt2)}
+.cl-pos b{color:var(--txt);font-weight:800}
+.cl-pos .form{display:flex;gap:3px}
 /* las camisetas: giran al tocarlas */
 .kits{display:flex;gap:18px;padding:4px 16px 18px;flex-wrap:wrap;justify-content:center}
 .kit{width:150px;text-align:center}
@@ -767,7 +772,8 @@ const App=(()=>{
                   ['pbm','Primera B Metro',1],['fa','Federal A',1],
                   ['ca','Copa Argentina',1]]],
     ['Internacional',[['lib','Libertadores',1],['sud','Sudamericana',1],['ucl','Champions',0]]],
-    ['Europa',[['laliga','LaLiga',1],['pre','Premier League',0],['sa','Serie A',0],['bun','Bundesliga',0]]],
+    ['Europa',[['laliga','LaLiga',1],['premier','Premier League',1],
+               ['seriea','Serie A',1],['bundesliga','Bundesliga',1]]],
     ['Fútbol femenino',[['fem','Primera División Argentina',1]]]
   ];
 
@@ -839,14 +845,71 @@ const App=(()=>{
       <path d="${cuerpo}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="2"/></svg>`;
   }
 
+  /* El radar del club: su promedio contra el de toda la liga. Un dato
+     suelto no dice nada —doce remates por partido puede ser mucho o poco—;
+     comparado con el promedio, sí. El polígono gris es la liga. */
+  function radarClub(r,d){
+    if(!r||!r.ejes||!r.ejes.length) return `<div class="cl-sec">Cómo juega</div>
+      <div class="note" style="padding:0 16px 14px">Todavía sin estadísticas
+      suficientes: se juntan solas partido a partido.</div>`;
+    const N=r.ejes.length, R=76, CX=105, CY=100;
+    const punto=(i,rad)=>{const a=-Math.PI/2+i*2*Math.PI/N;
+      return [CX+Math.cos(a)*rad, CY+Math.sin(a)*rad];};
+    // el promedio de la liga es el 100%: el club se dibuja relativo a eso
+    const poly=f=>r.ejes.map((e,i)=>punto(i,
+      Math.max(14,Math.min(R*1.25, R*f(e)/100))).map(n=>n.toFixed(1)).join(',')).join(' ');
+    const rejilla=[1,.66,.33].map(f=>`<polygon points="${r.ejes.map((_,i)=>
+      punto(i,R*f).map(n=>n.toFixed(1)).join(',')).join(' ')}" fill="none"
+      stroke="var(--line)" stroke-width="1"/>`).join('');
+    const ejes=r.ejes.map((_,i)=>{const [x,y]=punto(i,R);
+      return `<line x1="${CX}" y1="${CY}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"
+        stroke="var(--line)" stroke-width="1"/>`;}).join('');
+    const rot=r.ejes.map((e,i)=>{const [x,y]=punto(i,R+16);
+      const an=Math.abs(x-CX)<6?'middle':(x>CX?'start':'end');
+      return `<text x="${x.toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="${an}"
+        font-size="9" font-weight="700" fill="var(--txt2)"
+        style="text-transform:uppercase;letter-spacing:.4px">${esc(e.eje)}</text>`;}).join('');
+    const col=(d.primary&&claro(d.primary))?d.accent:(d.primary||'#2f6fed');
+    return `<div class="cl-sec">Cómo juega
+      <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt3)">
+        · promedio de ${r.partidos} partidos en la liga</span></div>
+      <div class="radar-wrap" style="padding:0 16px 14px">
+        <svg viewBox="0 0 210 200" class="radar">${rejilla}${ejes}
+          <polygon points="${poly(()=>100)}" fill="var(--txt3)" fill-opacity=".18"
+            stroke="var(--txt3)" stroke-width="1.5"/>
+          <polygon points="${poly(e=>e.indice)}" fill="${col}" fill-opacity=".26"
+            stroke="${col}" stroke-width="2"/>
+          ${rot}</svg>
+        <div class="radar-nums">
+          ${r.ejes.map(e=>`<div><div class="rn">
+            <b style="color:${col}">${e.club}</b><span>${esc(e.eje)}</span>
+            <b style="color:var(--txt3)">${e.liga}</b></div>
+            <div class="rn-barra"><i style="width:${Math.min(100,e.indice/2)}%;background:${col}"></i>
+              <i style="width:${Math.max(0,100-e.indice/2)}%;background:var(--line)"></i></div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="note" style="padding:0 16px 14px">El polígono gris es el promedio
+      de la Liga Profesional. El de color, ${esc(d.club)}.</div>`;
+  }
+
   // el fixture del club, una sección por competencia
   function fixtureHtml(bloques){
     if(!bloques||!bloques.length) return '';
-    return bloques.map(b=>`
-      <div class="cl-sec">${esc(b.nombre)}
+    return bloques.map(b=>{
+      const p=b.posicion;
+      // en la liga, al lado del nombre va cómo viene el equipo
+      const resumen=p?`<div class="cl-pos">
+          <span><b>${p.pos}°</b> de ${p.de}${p.zona?' · '+esc(p.zona):''}</span>
+          <span><b>${p.pts}</b> pts en ${p.pj} partidos</span>
+          ${p.form&&p.form.length?`<span class="form">${p.form.slice(-5)
+            .map(f=>`<b class="${f}">${f}</b>`).join('')}</span>`:''}
+        </div>`:'';
+      return `<div class="cl-sec">${esc(b.nombre)}
         <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt3)">
           · ${b.games.length} partido${b.games.length===1?'':'s'}</span></div>
-      ${b.games.map(matchRow).join('')}`).join('');
+        ${resumen}${b.games.map(matchRow).join('')}`;
+    }).join('');
   }
 
   function drawClub(){
@@ -889,15 +952,18 @@ const App=(()=>{
         ${dato('Sitio oficial', d.sitio?`<a href="${esc(d.sitio)}" target="_blank" rel="noopener">Entrar ↗</a>`:'')}
       </div>
       ${kitHtml?`<div class="cl-sec">Camisetas</div><div class="kits">${kitHtml}</div>`:''}
-      <div class="cl-sec">Plantel</div>
-      ${plantel?`<div class="cl-plantel">${plantel}</div>
-        <div class="note" style="padding:0 16px 14px">Armado con los jugadores que
-        aparecieron en las formaciones. Puede faltar alguno que todavía no jugó.</div>`
-      :`<div class="note" style="padding:0 16px 14px">Todavía sin datos: se arma solo
-        a medida que el servidor lee las formaciones de cada partido.</div>`}
+      ${radarClub(d.radar,d)}
       ${fixtureHtml(d.fixture)}`;
 
-    $('#right').innerHTML=`<div class="globo">${bloqueClubDe(p,d)}</div>`;
+    // el plantel va a la derecha, abajo del último y el próximo
+    $('#right').innerHTML=`<div class="globo">${bloqueClubDe(p,d)}</div>
+      <div class="globo"><div class="cl-sec">Plantel</div>
+        ${plantel?`<div class="cl-plantel" style="grid-template-columns:1fr">${plantel}</div>
+          <div class="note" style="padding:0 16px 14px">Armado con los jugadores que
+          aparecieron en las formaciones. Puede faltar alguno que todavía no jugó.</div>`
+        :`<div class="note" style="padding:0 16px 14px">Todavía sin datos: se arma solo
+          a medida que el servidor lee las formaciones de cada partido.</div>`}
+      </div>`;
     const caja=$('#right').parentElement; if(caja) caja.classList.add('sin-caja');
     $('#tabs').innerHTML='';
   }
@@ -1363,7 +1429,7 @@ const App=(()=>{
       <th>Pts</th><th>PJ</th><th>GF</th><th>GC</th><th>DIF</th><th style="width:80px">Últimos</th>
     </tr></thead><tbody>${rows.map(r=>{
       const zc=r.pos<=8?'z-play':'';
-      return `<tr style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
+      return `<tr class="${r.pos<=8?'fila-avanza':''}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.pts}</td><td>${r.pj}</td>
         <td style="color:var(--txt2)">${r.gf}</td><td style="color:var(--txt2)">${r.gc}</td>
@@ -1406,7 +1472,8 @@ const App=(()=>{
       const tit=r.descendiendo?'Hoy desciende'
         :r.enRiesgo?`Puede ser alcanzado — le quedan ${r.restantes} partidos (peor promedio posible: ${r.promMin.toFixed(3)})`
         :`Matemáticamente salvado (peor promedio posible: ${r.promMin.toFixed(3)})`;
-      return `<tr title="${esc(tit)}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
+      return `<tr class="${r.descendiendo?'fila-desciende':r.enRiesgo?'fila-repechaje':''}"
+        title="${esc(tit)}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.prom.toFixed(3)}</td><td>${r.pts}</td><td>${r.pj}</td>
         <td style="color:var(--txt2)">${r.p2024??'—'}</td><td style="color:var(--txt2)">${r.p2025??'—'}</td>
@@ -1427,7 +1494,10 @@ const App=(()=>{
       <th style="width:26px"></th><th class="l">Equipo</th><th>Pts</th><th>PJ</th><th>GF</th><th>GC</th><th>DIF</th>
     </tr></thead><tbody>${rows.map(r=>{
       const c=COPA[r.copa];
-      return `<tr${r.copaTexto?` title="${esc(r.copaTexto)}"`:''} style="${estiloClub(r.team.name)}">
+      const FCOPA={libertadores:'fila-final',sudamericana:'fila-avanza',
+                   campeon:'fila-repechaje',desciende:'fila-desciende'};
+      return `<tr class="${FCOPA[r.copa]||''}"${r.copaTexto?` title="${esc(r.copaTexto)}"`:''}
+        style="${estiloClub(r.team.name)}">
         <td class="pos">${c?`<span class="zone ${c[0]}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.pts}</td><td>${r.pj}</td>

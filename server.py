@@ -481,6 +481,33 @@ LIGAS = {
             "desciende": (-3, -1),
         },
     },
+    # ── Europa ───────────────────────────────────────────────────────────
+    # Los números salen de /api/competencias: ojo que hay una Bundesliga de
+    # Austria y varias "Serie A" en otros países.
+    "premier": {
+        "nombre": "Premier League", "torneo": "Temporada 2026-27",
+        "base": None, "pages": {}, "propia": False, "sc": 7, "pais": "Inglaterra",
+        "anual": False,
+        # 4 a Champions, 5° a Europa League, 6° a Conference, 3 descienden
+        "zonas_de": {"champions": (1, 4), "europa": (5, 5),
+                     "conference": (6, 6), "desciende": (-3, -1)},
+    },
+    "seriea": {
+        "nombre": "Serie A", "torneo": "Temporada 2026-27",
+        "base": None, "pages": {}, "propia": False, "sc": 17, "pais": "Italia",
+        "anual": False,
+        "zonas_de": {"champions": (1, 4), "europa": (5, 5),
+                     "conference": (6, 6), "desciende": (-3, -1)},
+    },
+    "bundesliga": {
+        # 18 equipos: los dos últimos bajan y el 16° juega la promoción
+        "nombre": "Bundesliga", "torneo": "Temporada 2026-27",
+        "base": None, "pages": {}, "propia": False, "sc": 25, "pais": "Alemania",
+        "anual": False,
+        "zonas_de": {"champions": (1, 4), "europa": (5, 5),
+                     "conference": (6, 6), "repechaje": (-3, -3),
+                     "desciende": (-2, -1)},
+    },
     # ── Copas ────────────────────────────────────────────────────────────
     # Los números salen de /api/competencias, no de la memoria: 365scores
     # tiene 799 torneos cargados y varios se llaman parecido (está la
@@ -1485,6 +1512,14 @@ def api_match(q):
         t = (na + nb) or 1
         stats.append({"label": k, "h": hs.get(k, "0"), "a": as_.get(k, "0"),
                       "hp": na / t * 100, "ap": nb / t * 100})
+
+    # se guardan para poder promediarlas después por equipo y por liga
+    if orden:
+        anotar_stats((q.get("liga") or ["lpf"])[0], gid,
+                     out["home"].get("canon") or out["home"]["name"],
+                     out["away"].get("canon") or out["away"]["name"],
+                     {k: _num(hs.get(k)) for k in orden},
+                     {k: _num(as_.get(k)) for k in orden})
 
     # formaciones: los titulares vienen por id, el nombre está en members
     # titulares y suplentes; el nombre y el número salen de `members`
@@ -3432,6 +3467,93 @@ def anotar_paso(nombre, club, liga, escudo=None):
     almacen.guardar(clave, hist)
 
 
+# Los cinco ejes del gráfico. Los nombres son los que usa 365scores.
+EJES_RADAR = [
+    ("Posesión", ["posesion de balon", "posesion"]),
+    ("Remates", ["total remates", "remates"]),
+    ("Al arco", ["remates al arco", "tiros al arco"]),
+    ("Chances", ["grandes chances", "ocasiones claras"]),
+    ("Córners", ["saques de esquina", "corners", "tiros de esquina"]),
+]
+
+
+def anotar_stats(liga, game_id, local, visita, vals_h, vals_a):
+    """
+    Guarda las estadísticas de un partido, por equipo.
+
+    Sin esto no se puede promediar nada: hoy se piden para mostrar el
+    gráfico de un partido y se tiran. Guardándolas, el promedio de un
+    equipo y el de toda la liga salen de la base, sin pedir nada.
+    """
+    if not game_id or not (vals_h or vals_a):
+        return
+    almacen.guardar("stats:%s:%s" % (liga, game_id),
+                    {"h": {"eq": local, "v": vals_h},
+                     "a": {"eq": visita, "v": vals_a}})
+    idx, _ = almacen.leer("statsidx:%s" % liga)
+    idx = idx or []
+    if str(game_id) not in idx:
+        almacen.guardar("statsidx:%s" % liga, (idx + [str(game_id)])[-500:])
+
+
+def _buscar_eje(vals, claves):
+    """El valor de un eje, tolerando cómo lo escriba la fuente."""
+    for k, v in vals.items():
+        n = norm(k)
+        if any(n == c for c in claves):
+            return v
+    for k, v in vals.items():
+        n = norm(k)
+        if any(c in n for c in claves):
+            return v
+    return None
+
+
+def radar_promedio(liga, club):
+    """
+    El promedio del club contra el promedio de toda la liga, eje por eje.
+
+    Es la única forma de que el gráfico signifique algo: doce remates por
+    partido no dicen nada hasta que sabés que la liga promedia ocho.
+    """
+    idx, _ = almacen.leer("statsidx:%s" % liga)
+    if not idx:
+        return None
+    suma_club = {e: [0.0, 0] for e, _ in EJES_RADAR}
+    suma_liga = {e: [0.0, 0] for e, _ in EJES_RADAR}
+
+    for gid in idx:
+        d, _ = almacen.leer("stats:%s:%s" % (liga, gid))
+        if not d:
+            continue
+        for lado in ("h", "a"):
+            eq = (d.get(lado) or {}).get("eq") or ""
+            vals = (d.get(lado) or {}).get("v") or {}
+            propio = mismo_club(eq, club)
+            for eje, claves in EJES_RADAR:
+                v = _buscar_eje(vals, claves)
+                if v is None:
+                    continue
+                suma_liga[eje][0] += v
+                suma_liga[eje][1] += 1
+                if propio:
+                    suma_club[eje][0] += v
+                    suma_club[eje][1] += 1
+
+    partidos = max(suma_club[e][1] for e, _ in EJES_RADAR)
+    if not partidos:
+        return None
+
+    ejes = []
+    for eje, _ in EJES_RADAR:
+        c = suma_club[eje][0] / suma_club[eje][1] if suma_club[eje][1] else 0
+        l = suma_liga[eje][0] / suma_liga[eje][1] if suma_liga[eje][1] else 0
+        ejes.append({"eje": eje, "club": round(c, 1), "liga": round(l, 1),
+                     # cuánto por encima o por debajo del promedio, en %
+                     "indice": round((c / l * 100) if l else 100)})
+    return {"partidos": partidos, "ejes": ejes}
+
+
 def anotar_plantel(club, ficha, titular, dia):
     """
     Arma el plantel de un club con los que fueron apareciendo en las
@@ -3709,8 +3831,8 @@ def partidazo_del_dia(bloques):
 # Emblemas: sólo de las ligas que efectivamente andan. Las que están en
 # "pronto" van sin escudo: poner uno estimado quedaba mal y confundía.
 EMBLEMAS = {"lpf": 72, "nacional": 419, "pbm": 5077, "fa": 5078,
-            "fem": 6224, "laliga": 11,
-            "lib": 102, "sud": 389, "ca": 640}
+            "fem": 6224, "laliga": 11, "premier": 7, "seriea": 17,
+            "bundesliga": 25, "lib": 102, "sud": 389, "ca": 640}
 
 
 def api_ligas(q):
@@ -4032,14 +4154,40 @@ def api_club_info(q):
             continue
         suyos.sort(key=lambda m: m.get("start") or "")
         orden.append(lid)
+
+        # dónde está el club en ese torneo: zona, puesto, puntos y los
+        # últimos cinco. En las copas no hay tabla, así que queda vacío.
+        posicion = None
+        if not LIGAS[lid].get("copa"):
+            try:
+                zonas = (api_standings({"live": ["1"]}).get("zones", [])
+                         if lid == "lpf" else _sc_standings(LIGAS[lid]["sc"]))
+                for z in zonas:
+                    for i, r in enumerate(z.get("rows") or [], 1):
+                        nom = r.get("canon") or r["team"]["name"]
+                        if mismo_club(nom, canon):
+                            posicion = {"zona": z.get("name"),
+                                        "pos": r.get("pos") or i,
+                                        "pts": r.get("pts"), "pj": r.get("pj"),
+                                        "form": r.get("form") or [],
+                                        "de": len(z.get("rows") or [])}
+                            break
+                    if posicion:
+                        break
+            except Exception:
+                pass
+
         fixture[lid] = {"nombre": LIGAS[lid]["nombre"],
                         "copa": bool(LIGAS[lid].get("copa")),
+                        "posicion": posicion,
                         "games": suyos}
 
     return {
         "club": canon,
         "escudo": escudo,
         "fixture": [dict(fixture[l], liga=l) for l in orden],
+        # el radar promedio, sólo de la liga: en copa son pocos partidos
+        "radar": radar_promedio("lpf", canon),
         "primary": colores[0] if colores else None,
         "accent": colores[1] if colores else None,
         "var": "#111111" if canon in VAR_NEGRO else (colores[1] if colores else None),
@@ -4311,6 +4459,30 @@ def juntar_goles(lid, limite=25):
     return hechos
 
 
+def juntar_stats(lid, limite=15):
+    """Trae las estadísticas de los partidos que todavía no las tienen."""
+    try:
+        juegos = (all_games(ttl=600) if lid == "lpf"
+                  else api_liga_games({"id": [lid]}).get("games", []))
+    except Exception:
+        return 0
+    faltan = []
+    for g in juegos:
+        if g.get("status") != "FIN" or not g.get("liveId"):
+            continue
+        guardado, _ = almacen.leer("stats:%s:%s" % (lid, g["liveId"]))
+        if guardado is None:
+            faltan.append(g)
+    hechos = 0
+    for g in faltan[:limite]:
+        try:
+            api_match({"id": [str(g["liveId"])], "liga": [lid]})
+            hechos += 1
+        except Exception:
+            continue
+    return hechos
+
+
 def rescatar_todo():
     """
     Va llenando la base en segundo plano, sin que nadie tenga que pedirlo.
@@ -4350,6 +4522,16 @@ def rescatar_todo():
             except Exception:
                 pass
             time.sleep(2)
+
+        # las estadísticas de la Liga Profesional, para el gráfico promedio
+        try:
+            n = juntar_stats("lpf", limite=15)
+            if n:
+                goles_pendientes += 1
+                print("  · %-18s estadísticas de %d partidos"
+                      % ("Liga Profesional", n), flush=True)
+        except Exception:
+            pass
         # se corta cuando no queda historia por traer ni goles por buscar
         if not pendientes and not goles_pendientes:
             print("  Historia completa: no queda nada por traer\n", flush=True)

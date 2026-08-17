@@ -27,9 +27,29 @@ import threading
 import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-# Se puede mover con HAYVAR_DB. Sirve para hostings donde la carpeta del
-# código es de sólo lectura y hay que escribir en otro lado.
-RUTA = os.environ.get("HAYVAR_DB") or os.path.join(AQUI, "hayvar.db")
+
+
+def _donde_guardar():
+    """
+    Dónde vive la base.
+
+    El orden importa. En un hosting, la carpeta del código se borra y se
+    vuelve a crear en cada publicación: si la base vive ahí, cada deploy
+    arranca de cero y hay que volver a descargar meses de partidos. Por eso
+    se busca primero un disco persistente montado aparte —Render y compañía
+    los montan en /var/data o /data— y recién después se usa la carpeta del
+    proyecto, que sirve para trabajar en la compu de uno.
+    """
+    puesto = os.environ.get("HAYVAR_DB")
+    if puesto:
+        return puesto
+    for disco in ("/var/data", "/data"):
+        if os.path.isdir(disco) and os.access(disco, os.W_OK):
+            return os.path.join(disco, "hayvar.db")
+    return os.path.join(AQUI, "hayvar.db")
+
+
+RUTA = _donde_guardar()
 
 _lock = threading.Lock()
 _local = threading.local()
@@ -254,8 +274,16 @@ def estado():
         tam = 0 if EN_MEMORIA else os.path.getsize(RUTA)
     except OSError:
         tam = 0
+    # ¿el archivo sobrevive a una publicación? Sólo si está en un disco
+    # montado aparte; la carpeta del código se borra en cada deploy.
+    persistente = EN_MEMORIA is False and not RUTA.startswith(AQUI)
     return {"archivo": ":memory:" if EN_MEMORIA else RUTA,
             "en_memoria": EN_MEMORIA, "motivo": MOTIVO_MEMORIA or None,
+            "sobrevive_al_deploy": persistente,
+            "aviso": None if persistente or EN_MEMORIA else
+                     ("La base vive en la carpeta del código y se borra en "
+                      "cada publicación. Montá un disco en /var/data para "
+                      "que se conserve."),
             "bytes": tam, "entradas": n, "pedidos_hoy": pedidos_hoy(),
             "mas_viejo": round(time.time() - viejo) if viejo else None,
             "mas_nuevo": round(time.time() - nuevo) if nuevo else None}

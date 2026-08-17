@@ -208,10 +208,12 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
   background:var(--card);cursor:pointer;transition:border-color .12s}
 .brk:hover{border-color:var(--acc)}
 .brk.vacia{background:var(--bg);border-style:dashed;cursor:default}
-.brk .eq{display:flex;align-items:center;gap:6px;padding:0 7px;height:23px;font-size:11.5px}
+.brk{--fila:23px;--fs:11.5px}
+.brk .eq{display:flex;align-items:center;gap:6px;padding:0 7px;
+  height:var(--fila);font-size:var(--fs)}
 .brk .eq+.eq{border-top:1px solid var(--line)}
 .brk .eq .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.brk .eq b{font-weight:800;font-variant-numeric:tabular-nums;font-size:11.5px}
+.brk .eq b{font-weight:800;font-variant-numeric:tabular-nums;font-size:var(--fs)}
 .brk .eq.pasa{background:rgba(47,111,237,.10)}
 .brk .eq.pasa .tn{font-weight:700}
 .brk .eq.cae .tn,.brk .eq.cae b{color:var(--txt3)}
@@ -227,11 +229,15 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .m-extra:empty{display:none}
 .m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 0 64px;
   font-size:11px;color:var(--txt2);line-height:1.5}
+/* cada gol entero, para que no se parta por la mitad al cortar el renglón */
+.m-goles .gol{display:inline-block;white-space:nowrap}
+.m-goles .gol:not(:last-child)::after{content:"·";margin:0 5px;color:var(--txt3)}
 /* gol anulado por el VAR: se ve, pero se nota que no contó */
 .gol-anulado{text-decoration:line-through;text-decoration-thickness:1px;
   color:var(--txt3);opacity:.85}
-.gol-anulado::after{content:" VAR";font-size:8.5px;font-weight:800;letter-spacing:.4px;
-  color:var(--red);text-decoration:none;display:inline-block;vertical-align:1px}
+.gol-anulado::after{content:"VAR";font-size:8px;font-weight:800;letter-spacing:.3px;
+  color:var(--red);text-decoration:none;display:inline-block;vertical-align:1px;
+  margin-left:3px}
 .m-goles span:last-child{text-align:right;padding-right:56px}
 .m-tv{margin:3px 0 0 64px;font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px}
 .m-tv::before{content:"▶ ";font-size:8px;vertical-align:1px}
@@ -926,7 +932,8 @@ const App=(()=>{
      acortan a lo que cualquiera diría en voz alta. */
   // Ojo con el orden: "32avos de final" también contiene "final", así que
   // las rondas específicas tienen que probarse antes que la final.
-  const ETAPA_CORTA=[[/fase de grupos|group/i,'Grupos'],[/repechaje|playoff/i,'Repechaje'],
+  const ETAPA_CORTA=[[/fase de grupos|group/i,'Grupos'],
+    [/repechaje|play.?off|pre.?octavos/i,'Pre octavos'],
     [/primera fase|preliminar|previa|fase 1|fase 2|fase 3/i,'Previa'],
     [/64avos|sesentaicuatroavos|round of 128/i,'64avos'],
     [/32avos|treintaidosavos|treintaydosavos|round of 64/i,'32avos'],
@@ -980,12 +987,15 @@ const App=(()=>{
     if(!d) return '<div class="m-extra"></div>';
     // el gol anulado se muestra igual —es parte de lo que pasó— pero tachado
     // y en gris, para que no se confunda con los que valieron
+    // Cada gol es un bloque propio y el separador va pegado al anterior. Si
+    // se escribía " · " suelto, al cortarse el renglón el punto quedaba
+    // colgado al principio de la línea siguiente, lejos del nombre.
     const lado=s=>(d.goles||[]).filter(g=>g.side===s).map(g=>{
       const txt=`${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`;
-      return g.anulado
-        ? `<span class="gol-anulado" title="Gol anulado">${txt}</span>`
-        : txt;
-    }).join(' · ');
+      return `<span class="gol">${g.anulado
+        ? `<span class="gol-anulado" title="Gol anulado por el VAR">${txt}</span>`
+        : txt}</span>`;
+    }).join('');
     const gh=lado('h'), ga=lado('a');
     const tv=(d.tv||[]).join(' · ');
     return `<div class="m-extra">
@@ -1802,8 +1812,14 @@ const App=(()=>{
     const chico=window.innerWidth<=600;
     // cuántas llaves tiene la primera columna decide el tamaño: ocho entran
     // holgadas, dieciséis apretadas, treinta y dos sólo con el escudo
-    const primeras=Math.max(bloques[0].llaves.length,
-      bloques[0].llaves.reduce((m,k)=>Math.max(m,k.slot||0),0))||1;
+    const primerRotulo=bloques[0].etapa;
+    const primeras=(function(){
+      const t=[[/64avos|sesentaicuatro/i,64],[/32avos|treintaidos|treintaydos/i,32],
+        [/16avos|dieciseis|diecis[eé]is/i,16],[/octavos|round of 16/i,8],
+        [/cuartos|quarter/i,4],[/semi/i,2],[/final/i,1]];
+      for(const [re,n] of t) if(re.test(primerRotulo||'')) return n;
+      return Math.max(1,bloques[0].llaves.length);
+    })();
     const nivel=Math.max(0,Math.min(2,Math.round(Math.log2(primeras/8))));
     const M=[{an:chico?134:150,alto:48,hueco:chico?10:12,sep:chico?26:34,corto:false},
              {an:chico?104:118,alto:38,hueco:8,sep:chico?20:26,corto:true},
@@ -1814,9 +1830,22 @@ const App=(()=>{
        —365scores numera cada llave con su lugar, así que si los octavos van
        del 1 al 8, son ocho aunque falte publicar alguno— y de ahí cada
        ronda tiene la mitad. */
-    const tope=b=>b.llaves.reduce((m,k)=>Math.max(m,k.slot||0),0);
-    const cupos=[Math.max(bloques[0].llaves.length,tope(bloques[0]))||1];
-    for(let c=1;c<bloques.length;c++) cupos.push(Math.max(1,Math.ceil(cupos[c-1]/2)));
+    /* El tamaño de cada ronda lo dice su nombre, no los partidos que
+       tengamos cargados: unos octavos son ocho llaves aunque falte publicar
+       la mitad. Deducirlo de los datos rompía el cuadro —los 32avos con
+       veinte partidos cargados daban veinte lugares y los cruces con los
+       16avos dejaban de coincidir. */
+    const TAMANO=[[/64avos|sesentaicuatro/i,64],[/32avos|treintaidos|treintaydos/i,32],
+      [/16avos|dieciseis|diecis[eé]is/i,16],[/octavos|round of 16/i,8],
+      [/cuartos|quarter/i,4],[/semi/i,2],[/final/i,1]];
+    const porNombre=n=>{ for(const [re,t] of TAMANO) if(re.test(n||'')) return t; return 0; };
+    const cupos=bloques.map(b=>porNombre(b.etapa));
+    // lo que no se reconozca se completa mirando a los vecinos
+    for(let c=bloques.length-2;c>=0;c--)
+      if(!cupos[c]) cupos[c]=Math.max(1,(cupos[c+1]||1)*2);
+    for(let c=1;c<bloques.length;c++)
+      if(!cupos[c]) cupos[c]=Math.max(1,Math.ceil(cupos[c-1]/2));
+    if(!cupos[0]) cupos[0]=Math.max(1,bloques[0].llaves.length);
 
     /* Los lugares de cada ronda. Si una serie ya se definió y el fixture de
        la ronda siguiente todavía no salió, igual se anota al que pasó: es lo
@@ -1835,25 +1864,46 @@ const App=(()=>{
       return fila;
     });
     for(let c=0;c<slots.length-1;c++){
+      const unoAuno=cupos[c]===cupos[c+1];
       for(let j=0;j<slots[c+1].length;j++){
         if(slots[c+1][j]) continue;
-        const g1=ganador(slots[c][2*j]), g2=ganador(slots[c][2*j+1]);
+        const g1=ganador(slots[c][unoAuno?j:2*j]),
+              g2=unoAuno?null:ganador(slots[c][2*j+1]);
         if(!g1&&!g2) continue;
         slots[c+1][j]={provisional:true,cerrada:false,partidos:[],
           equipos:[{team:g1,goles:null,pasa:false},{team:g2,goles:null,pasa:false}]};
       }
     }
-    const ancho=bloques.length*(AN+SEP)-SEP, alto=cupos[0]*paso-HUECO;
+    /* Las alturas se calculan columna por columna en vez de con una
+       fórmula. La mayoría de las rondas tiene la mitad de llaves que la
+       anterior, pero no todas: el pre octavos de la Sudamericana tiene las
+       mismas ocho que los octavos, porque los ocho ganadores se suman a los
+       ocho que ya estaban clasificados. Ahí la línea va derecho, uno a uno. */
+    const ys=[];
+    for(let c=0;c<bloques.length;c++){
+      if(c===0){ ys.push(Array.from({length:cupos[0]},(_,i)=>i*paso)); continue; }
+      const prev=ys[c-1];
+      if(cupos[c]===cupos[c-1]) ys.push(prev.slice());
+      else ys.push(Array.from({length:cupos[c]},(_,i)=>{
+        const a=prev[Math.min(2*i,prev.length-1)], b=prev[Math.min(2*i+1,prev.length-1)];
+        return (a+b)/2;
+      }));
+    }
+    const ancho=bloques.length*(AN+SEP)-SEP;
+    const alto=Math.max(...ys.map(f=>f[f.length-1]))+ALTO;
     const x=c=>c*(AN+SEP);
-    const y=(c,i)=>i*paso*Math.pow(2,c)+(Math.pow(2,c)-1)*paso/2;
-    const centro=(c,i)=>y(c,i)+ALTO/2;
+    const y=(c,i)=>ys[c][i];
+    const centro=(c,i)=>ys[c][i]+ALTO/2;
 
     let cajas='', lineas='';
     bloques.forEach((b,c)=>{
       cajas+=`<div class="brk-et" style="left:${x(c)}px;top:0">${esc(etapaCorta(b.etapa))}</div>`;
       for(let i=0;i<cupos[c];i++){
         const k=slots[c][i], top=y(c,i)+TOPE;
-        const pos=`left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px`;
+        // la altura de cada renglón sale de la caja: si no, al achicar el
+        // cuadro los nombres quedaban cortados por la mitad
+        const pos=`left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px;`
+          +`--fila:${(ALTO-2)/2}px;--fs:${nivel===2?9.5:nivel===1?10.5:11.5}px`;
         const porDefinir='<div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div>';
         if(!k){
           cajas+=`<div class="brk vacia" style="${pos}">${porDefinir}${porDefinir}</div>`;
@@ -1878,10 +1928,13 @@ const App=(()=>{
         }
         // la línea hacia el cruce siguiente: sale, dobla y entra
         if(c<bloques.length-1){
-          const yi=centro(c,i)+TOPE, yh=centro(c+1,Math.floor(i/2))+TOPE;
-          const xm=x(c)+AN+SEP/2;
-          lineas+=`<path d="M${x(c)+AN} ${yi}H${xm}V${yh}H${x(c+1)}" fill="none"
-            stroke="var(--line)" stroke-width="1.5"/>`;
+          const destino=(cupos[c]===cupos[c+1])?i:Math.floor(i/2);
+          if(destino<cupos[c+1]){
+            const yi=centro(c,i)+TOPE, yh=centro(c+1,destino)+TOPE;
+            const xm=x(c)+AN+SEP/2;
+            lineas+=`<path d="M${x(c)+AN} ${yi}H${xm}V${yh}H${x(c+1)}" fill="none"
+              stroke="var(--line)" stroke-width="1.5"/>`;
+          }
         }
       }
     });

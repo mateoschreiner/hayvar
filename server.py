@@ -858,6 +858,10 @@ def side(c):
         "short": c.get("symbolicName") or "",
         "logo": logo(c),
         "score": None if sc in (None, -1) else int(sc),
+        # En las copas, 365scores dice directamente quién clasificó. Es más
+        # confiable que sumar los goles de la serie: contempla los penales,
+        # el gol de visitante y todo lo que el reglamento diga ese año.
+        "pasa": bool(c.get("isQualified") or c.get("toQualify")),
     }
 
 
@@ -1974,6 +1978,105 @@ def sort_rows_simple(rows):
     for i, r in enumerate(rows, 1):
         r["pos"] = i
     return rows
+
+
+def fetch_ruta(ruta, ttl=86400):
+    """
+    Pide una dirección de 365scores tal cual viene, sin rearmar los
+    parámetros. La usa el rescate de partidos viejos, porque el paginado
+    devuelve la dirección de la página anterior ya armada.
+    """
+    url = ruta if ruta.startswith("http") else "https://webws.365scores.com" + ruta
+
+    def ir_a_la_fuente():
+        req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+        with urlopen(req, timeout=25) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    datos, _ = almacen.con_respaldo("pag:" + url, ir_a_la_fuente,
+                                    max_edad=ttl, tag="365/paginado")
+    return datos or {}
+
+
+def rescatar_historico(comp, paginas=25):
+    """
+    Recupera los partidos que ya no entran en la ventana de 365scores.
+
+    La ventana muestra lo de ahora y poco más, así que la fase de grupos de
+    la Libertadores —jugada meses atrás— no aparece nunca. Pero la respuesta
+    trae un `paging.previousPage`: una dirección a la página anterior. Yendo
+    hacia atrás de a una se recorre el torneo entero.
+
+    Se guarda dónde quedó, así cada vuelta sigue desde ahí en lugar de
+    empezar de cero, y cuando ya no hay página anterior se marca terminado y
+    no se vuelve a pedir.
+    """
+    estado, _ = almacen.leer("hist:%s" % comp)
+    estado = estado or {}
+    if estado.get("listo"):
+        return {"comp": comp, "estado": "ya estaba completo",
+                "rescatados": estado.get("total", 0)}
+
+    ruta = estado.get("siguiente")
+    if not ruta:
+        try:
+            data = fetch("games/fixtures", {"competitions": comp}, ttl=300)
+        except Exception as e:
+            return {"comp": comp, "error": str(e)}
+        ruta = ((data.get("paging") or {}).get("previousPage") or "")
+
+    clave = "fixture:%s" % comp
+    guardado, _ = almacen.leer(clave)
+    acumulado = {str(m["id"]): m for m in (guardado or [])}
+    antes = len(acumulado)
+
+    vueltas, listo = 0, False
+    while ruta and vueltas < paginas:
+        try:
+            data = fetch_ruta(ruta)
+        except Exception:
+            break
+        vueltas += 1
+        juegos = data.get("games") or []
+        for g in juegos:
+            m = map_game(g)
+            m["liveId"] = g.get("id")
+            m["temporada"] = g.get("seasonNum")
+            m["zone"], m["interzonal"] = None, False
+            for s in ("home", "away"):
+                m[s]["canon"] = m[s]["name"]
+            acumulado.setdefault(str(m["id"]), m)
+        siguiente = (data.get("paging") or {}).get("previousPage")
+        if not siguiente or siguiente == ruta:
+            listo = True
+            ruta = None
+            break
+        ruta = siguiente
+
+    almacen.guardar(clave, list(acumulado.values()))
+    almacen.guardar("hist:%s" % comp,
+                    {"siguiente": ruta, "listo": listo,
+                     "total": len(acumulado)})
+    return {"comp": comp, "paginas": vueltas, "listo": listo,
+            "nuevos": len(acumulado) - antes, "total": len(acumulado)}
+
+
+def api_historico(q):
+    """
+    Trae los partidos viejos de un torneo. /api/historico?id=lib
+    Se puede repetir: cada vez sigue desde donde quedó.
+    """
+    lid = (q.get("id") or ["lib"])[0]
+    cfg = LIGAS.get(lid)
+    if not cfg:
+        return {"error": "liga desconocida: %s" % lid}
+    paginas = _int((q.get("paginas") or ["25"])[0], 25)
+    r = rescatar_historico(cfg["sc"], max(1, min(80, paginas)))
+    r["liga"] = cfg["nombre"]
+    if not r.get("listo"):
+        r["nota"] = ("Todavía queda historia por traer: volvé a entrar para "
+                     "seguir desde acá.")
+    return r
 
 
 def _sc_fixture(comp, ttl=120):

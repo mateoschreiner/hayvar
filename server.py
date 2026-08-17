@@ -2456,7 +2456,7 @@ def marcar_ida_vuelta(games):
         partidos[1]["tramo"] = "Vuelta"
 
 
-def armar_llaves(games, etapas):
+def armar_llaves(games, etapas, liga_id=""):
     """
     Agrupa el fixture en series para dibujar el cuadro.
 
@@ -2499,13 +2499,37 @@ def armar_llaves(games, etapas):
                     ga, gb = ga + p["ga"], gb + p["gh"]
             cerrada = jugados == len(partidos) and jugados > 0
             posiciones = [p.get("slot") for p in partidos if p.get("slot")]
+
+            # Quién pasó lo dice la fuente, no la suma de goles: una serie
+            # puede terminar 1-1 y resolverse por penales, y ahí sumando no
+            # hay ganador. Boca pasaba y el cuadro no lo marcaba.
+            def clasifico(nombre):
+                for p in partidos:
+                    for lado in ("home", "away"):
+                        if (norm(p[lado]["name"]) == norm(nombre)
+                                and p[lado].get("pasa")):
+                            return True
+                return False
+
+            pasa_a, pasa_b = clasifico(a["name"]), clasifico(b["name"])
+            if not (pasa_a or pasa_b) and cerrada and ga != gb:
+                pasa_a, pasa_b = ga > gb, gb > ga
+
+            # el resultado de la tanda, si la hubo, para mostrarlo al lado
+            penales = None
+            for p in partidos:
+                guardado, _ = almacen.leer("pen:%s:%s" % (liga_id, p["id"]))
+                if guardado:
+                    mismo = norm(p["home"]["name"]) == norm(a["name"])
+                    penales = ([guardado["h"], guardado["a"]] if mismo
+                               else [guardado["a"], guardado["h"]])
+
             llaves.append({
                 "slot": min(posiciones) if posiciones else None,
+                "penales": penales,
                 "equipos": [
-                    {"team": a, "goles": ga if jugados else None,
-                     "pasa": bool(cerrada and ga > gb)},
-                    {"team": b, "goles": gb if jugados else None,
-                     "pasa": bool(cerrada and gb > ga)},
+                    {"team": a, "goles": ga if jugados else None, "pasa": pasa_a},
+                    {"team": b, "goles": gb if jugados else None, "pasa": pasa_b},
                 ],
                 "partidos": [{"id": p["id"], "start": p.get("start"),
                               "tramo": p.get("tramo"), "status": p.get("status"),
@@ -2808,7 +2832,7 @@ def api_liga_games(q):
     sin_zona = sorted({g[s]["name"] for g in games for s in ("home", "away")
                        if not g["zone"]})
     # el cuadro se arma antes de filtrar por etapa: necesita el torneo entero
-    llaves = armar_llaves(games, etapas) if cfg.get("copa") else None
+    llaves = armar_llaves(games, etapas, lid) if cfg.get("copa") else None
 
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]
@@ -3374,6 +3398,13 @@ def anotar_goles(liga, game_id, goles):
                for g in goles
                if g.get("player") and not g.get("anulado") and not g.get("penales")]
     almacen.guardar("goles:%s:%s" % (liga, game_id), limpios)
+
+    # la tanda, aparte: sirve para mostrar quién pasó en el cuadro
+    tanda = [g for g in goles if g.get("penales") and not g.get("anulado")]
+    if tanda:
+        almacen.guardar("pen:%s:%s" % (liga, game_id),
+                        {"h": sum(1 for g in tanda if g.get("side") == "h"),
+                         "a": sum(1 for g in tanda if g.get("side") == "a")})
     indice, _ = almacen.leer("golesidx:%s" % liga)
     indice = indice or []
     if str(game_id) not in indice:

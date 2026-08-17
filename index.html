@@ -144,6 +144,9 @@ aside a.off:hover{background:transparent}
 aside .pill{margin-left:auto;flex:none;font-size:9px;text-transform:uppercase;letter-spacing:.4px;
   background:var(--line);color:var(--txt2);padding:1px 5px;border-radius:8px}
 aside .sep{height:1px;background:var(--line);margin:6px 0}
+/* El emblema de la Sudamericana es blanco y sobre el fondo claro del modo
+   día desaparece. Se invierte sólo ahí; de noche se ve bien como viene. */
+html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .lgimg{width:18px;height:18px;flex:none;object-fit:contain;display:inline-flex;
   align-items:center;justify-content:center;font-size:12px;color:var(--txt3)}
 /* separador entre los dos tiempos */
@@ -214,6 +217,9 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .brk .eq+.eq{border-top:1px solid var(--line)}
 .brk .eq .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brk .eq b{font-weight:800;font-variant-numeric:tabular-nums;font-size:var(--fs)}
+/* el resultado de la tanda, chiquito al lado del global */
+.brk .eq .pen{font-style:normal;font-weight:700;font-size:9px;color:var(--txt3);
+  margin-left:2px}
 .brk .eq.pasa{background:rgba(47,111,237,.10)}
 .brk .eq.pasa .tn{font-weight:700}
 .brk .eq.cae .tn,.brk .eq.cae b{color:var(--txt3)}
@@ -692,7 +698,7 @@ const App=(()=>{
     el.innerHTML=LIGAS.map(([grupo,items])=>
       (grupo?`<h4>${esc(grupo)}</h4>`:'')+items.map(([id,nombre,activa])=>
         activa
-          ? `<a class="${S.liga===id?'on':''}" onclick="App.liga('${id}')">${id==='home'?'<span class="lgimg">◎</span>':emb(id)}<span class="nm">${esc(nombre)}</span></a>`
+          ? `<a class="${S.liga===id?'on':''} lg-${id}" onclick="App.liga('${id}')">${id==='home'?'<span class="lgimg">◎</span>':emb(id)}<span class="nm">${esc(nombre)}</span></a>`
           : `<a class="off" title="Todavía no disponible"><span class="nm">${esc(nombre)}</span><span class="pill">pronto</span></a>`
       ).join('')+'<div class="sep"></div>').join('');
   }
@@ -966,9 +972,10 @@ const App=(()=>{
     [/repechaje|play.?off|pre.?octavos/i,'Pre octavos'],
     // las previas se numeran: en la Libertadores son tres y "Previa" a secas
     // las dejaba a las tres iguales
-    [/fase 3|tercera fase/i,'Previa 3'],
-    [/fase 2|segunda fase/i,'Previa 2'],
-    [/fase 1|primera fase|preliminar|previa/i,'Fase previa'],
+    [/fase 3|tercera fase/i,'Fase previa 3'],
+    [/fase 2|segunda fase/i,'Fase previa 2'],
+    [/fase 1|primera fase/i,'Fase previa 1'],
+    [/preliminar|previa/i,'Fase previa'],
     [/64avos|sesentaicuatroavos|round of 128/i,'64avos'],
     [/32avos|treintaidosavos|treintaydosavos|round of 64/i,'32avos'],
     [/16avos|dieciseisavos|diecis[eé]isavos|round of 32/i,'16avos'],
@@ -2024,19 +2031,22 @@ const App=(()=>{
           const [a,v]=k.equipos;
           // apretado, el nombre completo no entra: va la sigla del club
           const rotulo=t=>M.corto?(t.short||t.canon||t.name):(t.canon||t.name);
-          const lado=(e,otro)=>!e.team?porDefinir
-            :`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}"
+          // el resultado de la tanda va entre paréntesis al lado del global
+          const pen=i=>k.penales?`<i class="pen">(${k.penales[i]})</i>`:'';
+          const lado=(e,otro,i)=>!e.team?porDefinir
+            :`<div class="eq ${e.pasa?'pasa':(otro.pasa?'cae':'')}"
+                style="${estiloClub(e.team.canon||e.team.name)}"
                 title="${esc(e.team.canon||e.team.name)}">
               ${crest(e.team,M.corto?13:15)}<span class="tn">${esc(rotulo(e.team))}</span>
-              <b>${e.goles==null?'–':e.goles}</b></div>`;
+              <b>${e.goles==null?'–':e.goles}${pen(i)}</b></div>`;
           if(k.provisional){
             cajas+=`<div class="brk vacia" title="Clasificado, cruce por jugarse"
-              style="${pos}">${lado(a,v)}${lado(v,a)}</div>`;
+              style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }else{
             const ultimo=k.partidos[k.partidos.length-1];
             const cuando=k.partidos.map(p=>(p.tramo||'')+(p.gh!=null?` ${p.gh}-${p.ga}`:'')).join(' · ');
             cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.openMatch('${js(ultimo.id)}')"
-              style="${pos}">${lado(a,v)}${lado(v,a)}</div>`;
+              style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }
         }
         // la línea hacia el cruce siguiente: sale, dobla y entra
@@ -2080,7 +2090,8 @@ const App=(()=>{
     return `<div style="padding:0 14px 12px">
       <div class="cuadro-et">Goleadores</div>
       ${rows.slice(0,10).map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;
-          padding:5px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px"
+          padding:5px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px;
+          ${estiloClub(r.team.canon||r.team.name)}"
           onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
         <span style="color:var(--txt3);width:14px;font-size:11px">${i+1}</span>
         ${crest(r.team,18)}

@@ -230,8 +230,9 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 /* los goles quedan bajo el nombre de cada equipo: los del local arrancan
    donde arranca su nombre y los del visitante terminan donde termina el suyo */
 .m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 64px 0 64px;
-  font-size:11px;color:var(--txt2);line-height:1.5}
-.m-goles span:last-child{text-align:right}
+  font-size:11px;color:var(--txt2);line-height:1.55}
+.m-goles>span{min-width:0}
+.m-goles>span:last-child{text-align:right}
 /* La tanda va justo abajo del marcador, no en el medio de la fila: se repite
    la misma grilla del partido y se la mete en la columna del resultado. */
 .m-pen{display:grid;grid-template-columns:56px 1fr 50px 1fr;gap:8px;margin:3px 0 0}
@@ -252,9 +253,10 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .pen-pat.no .tic{color:var(--red)}
 .pen-pat.no .nm{color:var(--txt3);text-decoration:line-through}
 .pen-vacio{color:var(--txt3);font-size:12px}
-/* cada gol entero, para que no se parta por la mitad al cortar el renglón */
-.m-goles .gol{display:inline-block;white-space:nowrap}
-.m-goles .gol:not(:last-child)::after{content:"·";margin:0 5px;color:var(--txt3)}
+/* Un gol por renglón. Puestos al costado con puntitos, los partidos con
+   muchos goles se cortaban en cualquier lado y no se sabía cuál era de
+   quién. Así cada uno se lee solo, y del lado de su equipo. */
+.m-goles .gol{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* gol anulado por el VAR: se ve, pero se nota que no contó */
 .gol-anulado{text-decoration:line-through;text-decoration-thickness:1px;
   color:var(--txt3);opacity:.85}
@@ -778,7 +780,8 @@ const App=(()=>{
           ${marcador}
           <span class="tn" style="font-size:12.5px;flex:1;min-width:0;text-align:right">${esc(m.away.canon||m.away.name)}</span>${crest(m.away,18)}
         </div>
-        <div style="font-size:10.5px;color:var(--txt2);margin-top:2px">${cuando}</div>
+        <div style="font-size:10.5px;color:var(--txt2);margin-top:2px">
+          ${m.ligaNombre?esc(m.ligaNombre)+' · ':''}${cuando}</div>
       </div>`;
     };
     return `<div style="padding:12px 14px;border-bottom:1px solid var(--line)">
@@ -964,7 +967,7 @@ const App=(()=>{
     // las dejaba a las tres iguales
     [/fase 3|tercera fase/i,'Previa 3'],
     [/fase 2|segunda fase/i,'Previa 2'],
-    [/fase 1|primera fase|preliminar|previa/i,'Previa 1'],
+    [/fase 1|primera fase|preliminar|previa/i,'Fase previa'],
     [/64avos|sesentaicuatroavos|round of 128/i,'64avos'],
     [/32avos|treintaidosavos|treintaydosavos|round of 64/i,'32avos'],
     [/16avos|dieciseisavos|diecis[eé]isavos|round of 32/i,'16avos'],
@@ -980,6 +983,22 @@ const App=(()=>{
   function drawRounds(){
     const el=$('#rounds');
     const et=S.etapas;
+    // Torneos por fases (Federal A): primero se elige la fase y después la
+    // fecha, porque cada fase vuelve a numerar desde el uno.
+    const fl=S.fasesLiga;
+    if(fl&&fl.length){
+      const actual=fl.find(f=>f.num===S.fase)||fl[fl.length-1];
+      S.fase=actual.num;
+      const suyas=S.rounds.filter(r=>actual.rounds.includes(r.round));
+      if(!suyas.some(r=>r.round===S.round)&&suyas.length)
+        S.round=suyas[suyas.length-1].round;
+      return void(el.innerHTML=`<span class="lb">Fase</span>`
+        + fl.map(f=>`<button class="${f.num===actual.num?'on':''}"
+             style="padding:0 11px" onclick="App.fase(${f.num})">${esc(f.nombre)}</button>`).join('')
+        + `<span class="lb" style="margin-left:10px">Fecha</span>`
+        + suyas.map(r=>`<button class="${r.round===S.round?'on':''} ${r.live?'playing':''}
+             ${r.round===S.current?'actual':''}" onclick="App.pick(${r.round})">${r.round}</button>`).join(''));
+    }
     const rotulo=r=>et&&et[r-1]?esc(etapaCorta(et[r-1])):r;
     const titulo=r=>et&&et[r-1]?esc(et[r-1])
       :(r===S.current?'Fecha en curso':'');
@@ -1743,7 +1762,10 @@ const App=(()=>{
 
   // agrupa los partidos de la fecha por zona (sirve para cualquier liga)
   function pintarFecha(){
-    const dela=S.games.filter(m=>String(m.round)===String(S.round));
+    // con fases, la fecha 3 de la reválida y la 3 de la primera fase son
+    // distintas: hay que filtrar por las dos cosas
+    const dela=S.games.filter(m=>String(m.round)===String(S.round)
+      && (!S.fasesLiga || S.fase==null || m.fase===S.fase));
     const etapa=S.etapas&&S.etapas[S.round-1];
     if(!dela.length) return $('#matches').innerHTML=`<div class="empty">
       <span class="big">◎</span>${etapa?esc(etapa)+': todavía sin definir.':'Sin partidos para esta fecha.'}</div>`;
@@ -1796,6 +1818,8 @@ const App=(()=>{
     S.current=g.current;
     S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
     S.llaves=g.llaves||null; S.grupoAbierto=null; S.cuadroDesde=null;
+    S.fasesLiga=(g.fasesLiga&&g.fasesLiga.length)?g.fasesLiga:null;
+    if(S.fasesLiga&&!S.fasesLiga.some(f=>f.num===S.fase)) S.fase=null;
     if(S.round==null||!g.rounds.includes(S.round))
       S.round=g.current??g.rounds[g.rounds.length-1]??null;
     $('.tag').textContent=`${d.nombre} · ${d.torneo}`;
@@ -2363,6 +2387,8 @@ const App=(()=>{
     // traer el último y el próximo, y las tablas para pintar la fila
     // plegar y desplegar un grupo en la fase de grupos de las copas
     grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
+    // cambiar de fase en los torneos que la tienen (Federal A)
+    fase(n){ S.fase=n; S.round=null; drawRounds(); pintarFecha(); },
     // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
     // que se redibuja más chico
     correrCuadro(d){

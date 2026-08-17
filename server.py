@@ -937,8 +937,18 @@ def all_games(ttl=25):
         idx[(m["round"], m["home"]["canon"], m["away"]["canon"])] = m
         idx[(None, m["home"]["canon"], m["away"]["canon"])] = m
 
-    for lv in live_games(ttl):
-        hc, ac = lv["home"]["canon"], lv["away"]["canon"]
+    # Primero todo lo que 365scores tenga guardado —incluidos los partidos
+    # viejos que trajo el rescate— y encima lo que está pasando ahora. Sin
+    # esto, las fechas anteriores se quedaban sin el id de 365scores y por
+    # eso no mostraban ni goleadores ni canal, ni abrían el detalle.
+    try:
+        historico = _sc_fixture(COMPETITION)
+    except Exception:
+        historico = []
+
+    for lv in list(historico) + live_games(ttl):
+        hc = match_team(lv["home"].get("name")) or lv["home"].get("canon")
+        ac = match_team(lv["away"].get("name")) or lv["away"].get("canon")
         m = idx.get((lv["round"], hc, ac)) or idx.get((None, hc, ac))
         if not m:
             continue
@@ -2206,6 +2216,8 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
     anotar_goles(liga, game_id, goles)
 
     tv = limpiar_tv([t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")])
+    if tv:
+        almacen.guardar("tv:%s:%s" % (liga, game_id), tv)
     return {"tv": tv, "goles": goles}
 
 
@@ -2264,7 +2276,31 @@ def api_detalles(q):
         pares = [(lid, g) for g in games]
 
     salida = {}
-    pendientes = [(x, g) for x, g in pares if g.get("liveId")][:TOPE]
+    con_id = [(x, g) for x, g in pares if g.get("liveId")]
+
+    # Lo que ya está guardado se sirve de la base: instantáneo y sin pedirle
+    # nada a nadie. Sólo se sale a buscar lo que falta, y de a poco. Antes se
+    # pedía todo cada vez y con el tope de 40 los grupos de la Libertadores
+    # —que tienen casi cien partidos— se quedaban a medias.
+    pendientes = []
+    for x, g in con_id:
+        if g.get("status") == "LIVE":
+            pendientes.append((x, g))
+            continue
+        guardado, _ = almacen.leer("goles:%s:%s" % (x, g["liveId"]))
+        tv, _ = almacen.leer("tv:%s:%s" % (x, g["liveId"]))
+        if guardado is None:
+            pendientes.append((x, g))
+        else:
+            salida[str(g["id"])] = {
+                "tv": tv or [],
+                "goles": [{"player": q["j"], "equipo": q.get("e") or "",
+                           "min": q.get("m"), "added": 0,
+                           "side": q.get("s") or "h", "sub": "",
+                           "anulado": False, "penales": False}
+                          for q in guardado],
+            }
+    pendientes = pendientes[:TOPE]
 
     # Cada partido es un pedido a 365scores. De a uno, una fecha entera son
     # quince idas y vueltas en fila y por eso los goleadores y el canal
@@ -2562,6 +2598,31 @@ def api_liga_games(q):
         m["zone"] = (zona or "").replace("Zona ", "").replace("Grupo ", "") or None
         m["interzonal"] = bool(za and zb and za != zb)
 
+    # El id de 365scores para cada partido del fixture de AFA. Se busca en
+    # todo lo acumulado, no sólo en lo que se juega hoy: si no, las fechas
+    # anteriores quedaban sin goleadores, sin canal y sin poder abrirse.
+    if cfg.get("base"):
+        try:
+            porNombre = {}
+            for x in _sc_fixture(cfg["sc"]):
+                clave = (norm(x["home"]["name"])[:8], norm(x["away"]["name"])[:8])
+                porNombre.setdefault(clave, []).append(x)
+            for m in games:
+                if m.get("liveId"):
+                    continue
+                cand = porNombre.get((norm(m["home"]["name"])[:8],
+                                      norm(m["away"]["name"])[:8]))
+                if not cand:
+                    continue
+                dia = (m.get("start") or "")[:10]
+                elegido = next((x for x in cand if (x.get("start") or "")[:10] == dia),
+                               cand[0] if len(cand) == 1 else None)
+                if elegido:
+                    m["liveId"] = elegido["id"]
+                    m["venue"] = m.get("venue") or elegido.get("venue") or ""
+        except Exception:
+            pass
+
     # partidos en curso
     vivos, jugando = 0, set()
     try:
@@ -2613,23 +2674,47 @@ def api_liga_games(q):
         hay_grupos = bool(meta)
         fases = FASES_COPA.get(lid)
 
-        # ¿el torneo tiene una ronda entre los grupos y los octavos?
-        pre = next((f for f in (fases or []) if rango_etapa(f) == 2), None)
+        # La fase de cada partido la decide `stageNum`, que es el número de
+        # ronda que le pone la propia fuente. Deducirla del nombre no
+        # alcanzaba: las previas y el play-off llegan sin nombre y terminaban
+        # todas mezcladas dentro de la fase de grupos.
+        etiqueta_stage = {}
+        for g in games:
+            sn = g.get("stageNum")
+            crudo = (g.get("stage") or "").strip()
+            if crudo:
+                etiqueta_stage.setdefault(sn, {}).setdefault(crudo, 0)
+                etiqueta_stage[sn][crudo] += 1
+
+        # a cada fase se le pone el nombre que más se repite entre sus partidos
+        nombre_stage = {sn: max(c, key=c.get) for sn, c in etiqueta_stage.items()}
+
+        # las que no traen nombre se completan por orden: la que tiene zonas y
+        # muchos partidos es la de grupos, y el resto va cayendo en la fase
+        # del torneo que corresponda según cuándo se juega
+        stages = sorted({g.get("stageNum") for g in games},
+                        key=lambda s: (s is None, s))
+        libres = [f for f in (fases or [])
+                  if f not in {canonizar_fase(n, fases) for n in nombre_stage.values()}]
+        for sn in stages:
+            if sn in nombre_stage:
+                continue
+            suyos = [g for g in games if g.get("stageNum") == sn]
+            con_zona = sum(1 for g in suyos if g.get("zone"))
+            elegida = None
+            if con_zona and len(suyos) >= 12:
+                elegida = next((f for f in libres if rango_etapa(f) == 1), None)
+            if not elegida and libres:
+                elegida = libres[0]
+            if elegida:
+                nombre_stage[sn] = elegida
+                libres = [f for f in libres if f != elegida]
 
         def nombre_etapa(g):
-            et = (g.get("stage") or "").strip()
+            et = nombre_stage.get(g.get("stageNum")) or (g.get("stage") or "").strip()
             if not et:
-                # 365scores manda estas rondas sin nombre y todas caían en la
-                # fase de grupos. Pero en los grupos nadie juega contra otra
-                # zona: si los dos equipos son de zonas distintas, eso no es
-                # un partido de grupos sino el play-off por los octavos.
-                # Así aparecían Barracas–Santos y Petrolero–Vasco marcados
-                # como "Interzonal" dentro de los grupos.
-                if pre and g.get("interzonal"):
-                    et = pre
-                else:
-                    et = ("Fase de grupos" if (g.get("zone") or hay_grupos)
-                          else "Fase única")
+                et = ("Fase de grupos" if (g.get("zone") or hay_grupos)
+                      else "Fase única")
             return canonizar_fase(et, fases) if fases else et
 
         # Las rondas se ordenan por stageNum, que es el orden real del
@@ -2680,6 +2765,35 @@ def api_liga_games(q):
         # distintas, no una ida y una vuelta
         marcar_ida_vuelta([g for g in games if norm(g["etapa"]) != grupos])
 
+    # Los torneos que no son copa pero se juegan por fases —el Federal A
+    # tiene primera fase y reválida— repiten la numeración de fechas en cada
+    # una. Mezcladas quedaba la fecha 3 de este año al lado de la fecha 3 de
+    # la fase anterior. Se agrupan las fechas por fase para poder elegir
+    # primero una y después la otra.
+    fases_liga = []
+    if not cfg.get("copa"):
+        por_stage = {}
+        for g in games:
+            sn = g.get("stageNum")
+            if sn is None:
+                continue
+            por_stage.setdefault(sn, {"nombres": {}, "rounds": set()})
+            nom = (g.get("stage") or "").strip()
+            if nom:
+                por_stage[sn]["nombres"][nom] = por_stage[sn]["nombres"].get(nom, 0) + 1
+            if g.get("round"):
+                por_stage[sn]["rounds"].add(g["round"])
+        if len(por_stage) > 1:
+            for sn in sorted(por_stage):
+                d = por_stage[sn]
+                nombre = (max(d["nombres"], key=d["nombres"].get)
+                          if d["nombres"] else "Fase %s" % sn)
+                if d["rounds"]:
+                    fases_liga.append({"num": sn, "nombre": nombre,
+                                       "rounds": sorted(d["rounds"])})
+            for g in games:
+                g["fase"] = g.get("stageNum")
+
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})
 
@@ -2698,7 +2812,8 @@ def api_liga_games(q):
     res = {"games": games, "count": len(games), "rounds": rounds, "current": actual,
            "live": vivos, "interzonal": sum(1 for g in games if g["interzonal"]),
            "sinZona": sin_zona, "nombre": cfg["nombre"],
-           "copa": bool(cfg.get("copa")), "etapas": etapas}
+           "copa": bool(cfg.get("copa")), "etapas": etapas,
+           "fasesLiga": fases_liga}
     if llaves is not None:
         res["llaves"] = llaves
     if err:
@@ -3248,8 +3363,11 @@ def anotar_goles(liga, game_id, goles):
     """
     if not game_id:
         return
-    # ni los anulados ni los de la tanda de penales cuentan para la tabla
-    limpios = [{"j": g["player"], "e": g.get("equipo") or "", "m": g.get("min")}
+    # ni los anulados ni los de la tanda de penales cuentan para la tabla.
+    # Se guarda también de qué lado fue cada gol, para poder mostrarlos en la
+    # lista de partidos sin volver a pedir el detalle.
+    limpios = [{"j": g["player"], "e": g.get("equipo") or "", "m": g.get("min"),
+                "s": g.get("side") or "h"}
                for g in goles
                if g.get("player") and not g.get("anulado") and not g.get("penales")]
     almacen.guardar("goles:%s:%s" % (liga, game_id), limpios)
@@ -3511,14 +3629,35 @@ def api_club(q):
         return {"error": "falta el parámetro name"}
     canon = match_team(nombre) or nombre
 
-    try:
-        todos = all_games(ttl=120)
-    except Exception as e:
-        return {"error": str(e), "club": canon}
+    # Todas las competencias, no sólo la liga: si el club juega la Copa
+    # Argentina el miércoles y la liga el domingo, el próximo partido es el
+    # del miércoles. Antes sólo se miraba la Liga Profesional.
+    suyos, err = [], None
+    for lid in LIGAS:
+        try:
+            juegos = (all_games(ttl=120) if lid == "lpf"
+                      else api_liga_games({"id": [lid]}).get("games", []))
+        except Exception as e:
+            err = str(e)
+            continue
+        for m in juegos:
+            lados = (m["home"].get("canon"), m["away"].get("canon"),
+                     m["home"].get("name"), m["away"].get("name"))
+            if canon in lados or emparejar(canon, {norm(x): 1 for x in lados if x}):
+                suyos.append(dict(m, liga=lid, ligaNombre=LIGAS[lid]["nombre"]))
 
-    suyos = [m for m in todos
-             if canon in (m["home"].get("canon"), m["away"].get("canon"))]
-    suyos.sort(key=lambda m: m["start"] or "")
+    if not suyos and err:
+        return {"error": err, "club": canon}
+
+    # el mismo partido puede venir de dos lados: se deja uno solo
+    vistos, unicos = set(), []
+    for m in sorted(suyos, key=lambda x: x.get("start") or ""):
+        k = (str(m.get("liveId") or m.get("id")))
+        if k in vistos:
+            continue
+        vistos.add(k)
+        unicos.append(m)
+    suyos = unicos
 
     ahora = dt.datetime.now(dt.timezone.utc)
 

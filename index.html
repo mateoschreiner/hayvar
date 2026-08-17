@@ -182,6 +182,26 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .zhead .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .zhead .nm{font-size:12.5px;font-weight:700;flex:1}
 .zhead .rd{font-size:11px;color:var(--txt2)}
+.zhead.plegable{cursor:pointer}
+.zhead.plegable:hover{background:var(--line)}
+.zhead .flecha{color:var(--txt2);font-size:11px;flex:none}
+
+/* ── cuadro de llaves de las copas ── */
+.llave{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;overflow:hidden;
+  cursor:pointer;background:var(--card)}
+.llave:hover{border-color:var(--acc)}
+.llave .eq{display:flex;align-items:center;gap:7px;padding:6px 9px;font-size:12.5px}
+.llave .eq+.eq{border-top:1px solid var(--line)}
+.llave .eq .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.llave .eq b{font-weight:800;font-variant-numeric:tabular-nums}
+.llave .eq.pasa{background:var(--bg-accent,rgba(47,111,237,.09))}
+.llave .eq.pasa .tn{font-weight:700}
+.llave .eq.cae .tn,.llave .eq.cae b{color:var(--txt3)}
+.llave .pie{font-size:10px;color:var(--txt2);padding:4px 9px;border-top:1px solid var(--line);
+  background:var(--bg)}
+.cuadro-et{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
+  font-weight:700;margin:12px 0 6px}
+.cuadro-et:first-child{margin-top:0}
 
 .match{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer}
 .m-fila{display:grid;grid-template-columns:56px 1fr 50px 1fr;align-items:center;gap:8px}
@@ -876,10 +896,16 @@ const App=(()=>{
   /* En las copas los botones no son números sino etapas. Los nombres que
      manda 365scores son largos —"Octavos de final"— y no entran, así que se
      acortan a lo que cualquiera diría en voz alta. */
+  // Ojo con el orden: "32avos de final" también contiene "final", así que
+  // las rondas específicas tienen que probarse antes que la final.
   const ETAPA_CORTA=[[/fase de grupos|group/i,'Grupos'],[/repechaje|playoff/i,'Repechaje'],
-    [/dieciseisavos|round of 32/i,'16avos'],[/octavos|round of 16/i,'Octavos'],
+    [/primera fase|preliminar|previa|fase 1|fase 2|fase 3/i,'Previa'],
+    [/64avos|sesentaicuatroavos|round of 128/i,'64avos'],
+    [/32avos|treintaidosavos|treintaydosavos|round of 64/i,'32avos'],
+    [/16avos|dieciseisavos|diecis[eé]isavos|round of 32/i,'16avos'],
+    [/octavos|round of 16/i,'Octavos'],
     [/cuartos|quarter/i,'Cuartos'],[/semi/i,'Semis'],[/tercer/i,'3° puesto'],
-    [/final/i,'Final'],[/primera fase|preliminar|previa/i,'Previa']];
+    [/final/i,'Final']];
   function etapaCorta(nombre){
     const t=String(nombre||'').trim(); if(!t) return t;
     for(const [re,corto] of ETAPA_CORTA) if(re.test(t)) return corto;
@@ -1619,17 +1645,38 @@ const App=(()=>{
   // agrupa los partidos de la fecha por zona (sirve para cualquier liga)
   function pintarFecha(){
     const dela=S.games.filter(m=>String(m.round)===String(S.round));
-    if(!dela.length) return $('#matches').innerHTML='<div class="empty">Sin partidos para esta fecha.</div>';
+    const etapa=S.etapas&&S.etapas[S.round-1];
+    if(!dela.length) return $('#matches').innerHTML=`<div class="empty">
+      <span class="big">◎</span>${etapa?esc(etapa)+': todavía sin definir.':'Sin partidos para esta fecha.'}</div>`;
+
+    // En las eliminatorias no hay zonas: se agrupa por ida y vuelta, que es
+    // como se sigue una llave.
+    if(dela.some(m=>m.tramo)){
+      const tramos={Ida:[],Vuelta:[],'':[]};
+      dela.forEach(m=>(tramos[m.tramo||'']=tramos[m.tramo||'']||[]).push(m));
+      return void($('#matches').innerHTML=['Ida','Vuelta',''].map(t=>{
+        const ms=tramos[t]||[]; if(!ms.length) return '';
+        return (t?`<div class="zhead"><span class="badge">${t==='Ida'?'I':'V'}</span>
+          <span class="nm">Partidos de ${t.toLowerCase()}</span></div>`:'')
+          + ms.map(matchRow).join('');
+      }).join(''), cargarDetalles());
+    }
+
     const zonas={};
     dela.forEach(m=>{const k=m.interzonal?'X':(m.zone||'—');(zonas[k]=zonas[k]||[]).push(m);});
     const orden=Object.keys(zonas).sort((a,b)=>a==='X'?-1:b==='X'?1:a.localeCompare(b));
     const una=orden.length===1;
-    $('#matches').innerHTML=orden.map(z=>{
+    // Los grupos de una copa son ocho listas largas: arrancan plegadas menos
+    // la primera, así se ve el panorama sin scrollear una eternidad.
+    const plegable=S.etapas&&orden.length>2;
+    $('#matches').innerHTML=orden.map((z,i)=>{
       const inter=z==='X';
-      return (una?'':`<div class="zhead">
+      const cerrado=plegable&&(S.grupoAbierto?S.grupoAbierto!==z:i>0);
+      return (una?'':`<div class="zhead${plegable?' plegable':''}"${plegable?` onclick="App.grupo('${js(z)}')"`:''}>
           <span class="badge"${inter?' style="background:#ff3b30"':''}>${inter?'↔':esc(sigla(z))}</span>
-          <span class="nm">${inter?'Interzonal':(/zona|grupo/i.test(z)?esc(z):'Zona '+esc(z))}</span></div>`)
-        + zonas[z].map(matchRow).join('');
+          <span class="nm">${inter?'Interzonal':(/zona|grupo/i.test(z)?esc(z):'Zona '+esc(z))}</span>
+          ${plegable?`<span class="flecha">${cerrado?'▸':'▾'}</span>`:''}</div>`)
+        + (cerrado?'':zonas[z].map(matchRow).join(''));
     }).join('');
     cargarDetalles();
   }
@@ -1644,6 +1691,7 @@ const App=(()=>{
     S.otra=d; S.games=g.games||[]; S.rounds=(g.rounds||[]).map(r=>({round:r,live:r===g.current&&g.live?g.live:0}));
     S.current=g.current;
     S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
+    S.llaves=g.llaves||null; S.grupoAbierto=null;
     if(S.round==null||!g.rounds.includes(S.round))
       S.round=g.current??g.rounds[g.rounds.length-1]??null;
     $('.tag').textContent=`${d.nombre} · ${d.torneo}`;
@@ -1655,9 +1703,15 @@ const App=(()=>{
     // la pestaña se llama "Tabla" y no "null".
     const nombreZona=(z,i)=>z && z.name ? z.name
       : (d.zonas.length>1 ? 'Zona '+(i+1) : 'Tabla');
+    const hayCuadro=S.llaves&&S.llaves.some(b=>b.llaves.length);
     const tabs=[...d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)]),
+                ...(hayCuadro?[['cuadro','Cuadro']]:[]),
                 ...(d.conAnual===false?[]:[['anual','Anual']]),
                 ['gol','Goles']];
+    // En una copa, si estás parado en una etapa eliminatoria lo que querés
+    // ver al costado es el cuadro, no la tabla de grupos.
+    const etapaActual=S.etapas&&S.etapas[S.round-1];
+    if(hayCuadro&&etapaActual&&!/grupo/i.test(etapaActual)) S.tab='cuadro';
     if(!tabs.find(t=>t[0]===S.tab)) S.tab=tabs[0][0];
     $('#tabs').innerHTML=tabs.map(([id,nm])=>
       `<button data-t="${id}" class="${S.tab===id?'on':''}" onclick="App.tab('${id}')">${esc(nm)}</button>`).join('');
@@ -1665,6 +1719,48 @@ const App=(()=>{
     status('ok',`<b>${esc(d.nombre)}</b> · ${esc(d.fuente||'365scores')}`);
     clearTimeout(S.timer);
     programarVivo();
+  }
+
+  /* ── el cuadro ───────────────────────────────────────────────────────
+     Una columna de llaves por etapa, de la más lejana a la final. Cada
+     llave muestra el global de la serie y marca al que pasó. Se clickea y
+     abre el partido de vuelta, que es el que la define.                */
+  function cuadroLlaves(){
+    const bloques=(S.llaves||[]).filter(b=>b.llaves.length);
+    if(!bloques.length) return '<div class="empty">El cuadro todavía no está definido.</div>';
+    return '<div style="padding:12px 14px">'+bloques.map(b=>`
+      <div class="cuadro-et">${esc(etapaCorta(b.etapa))}</div>
+      ${b.llaves.map(k=>{
+        const [a,v]=k.equipos;
+        const ultimo=k.partidos[k.partidos.length-1];
+        const lado=(e,otro)=>`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}">
+          ${crest(e.team,18)}<span class="tn">${esc(e.team.canon||e.team.name)}</span>
+          <b>${e.goles==null?'–':e.goles}</b></div>`;
+        const pie=k.partidos.map(p=>{
+          const d=p.start?new Date(p.start):null;
+          return (p.tramo?p.tramo.toLowerCase()+' ':'')
+            +(p.gh!=null?`${p.gh}-${p.ga}`:(d?`${d.getDate()}/${d.getMonth()+1}`:''));
+        }).filter(Boolean).join(' · ');
+        return `<div class="llave" onclick="App.openMatch('${js(ultimo.id)}')">
+          ${lado(a,v)}${lado(v,a)}
+          ${pie?`<div class="pie">${esc(pie)}</div>`:''}</div>`;
+      }).join('')}`).join('')+'</div>';
+  }
+
+  // Los diez primeros goleadores, para poner abajo del cuadro sin que ocupe
+  // media pantalla.
+  function golesCorto(rows){
+    if(!rows.length) return '';
+    return `<div style="padding:0 14px 12px">
+      <div class="cuadro-et">Goleadores</div>
+      ${rows.slice(0,10).map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;
+          padding:5px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px"
+          onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
+        <span style="color:var(--txt3);width:14px;font-size:11px">${i+1}</span>
+        ${crest(r.team,18)}
+        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${esc(r.name)}</span>
+        <b style="font-weight:800">${r.goals}</b></div>`).join('')}</div>`;
   }
 
   function drawOtra(){
@@ -1693,6 +1789,8 @@ const App=(()=>{
         ? tabla(z.rows,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],
                         ['DIF',r=>(r.dif>0?'+':'')+r.dif]]) + leyenda()
         : '<div class="empty">Sin datos.</div>';
+    } else if(S.tab==='cuadro'){
+      el.innerHTML=cuadroLlaves()+golesCorto(d.goleadores||[]);
     } else if(S.tab==='anual'){
       el.innerHTML=d.anual.length
         ? tabla(d.anual,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],
@@ -1984,6 +2082,8 @@ const App=(()=>{
     },
     // al cambiar de club se rehace lo que está en pantalla: la portada para
     // traer el último y el próximo, y las tablas para pintar la fila
+    // plegar y desplegar un grupo en la fase de grupos de las copas
+    grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
     setClub(c){ aplicarClub(c); api.closeModal();
       medir.evento('modo_club',{club:c?c.name:'(ninguno)'});
       if(S.liga==='home') loadHome(); else if(S.liga==='lpf') drawRight(); },

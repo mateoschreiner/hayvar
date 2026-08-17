@@ -475,6 +475,7 @@ LIGAS = {
         "pais": "Sudamérica", "anual": False, "copa": True,
         # fase de grupos: pasan los dos primeros de cada zona
         "zonas_de": {"avanza": (1, 2)},
+        "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
     },
     "sud": {
         "nombre": "Copa Sudamericana", "torneo": "Edición 2026",
@@ -483,6 +484,9 @@ LIGAS = {
         # acá pasa sólo el primero; el segundo juega el repechaje contra los
         # terceros de la Libertadores
         "zonas_de": {"avanza": (1, 1), "repechaje": (2, 2)},
+        # la Sudamericana tiene una ronda más que la Libertadores
+        "etapas_extra": ["Dieciseisavos de final", "Cuartos de final",
+                         "Semifinal", "Final"],
     },
     "ca": {
         # Eliminación directa de punta a punta, sin tabla de posiciones.
@@ -490,6 +494,7 @@ LIGAS = {
         "base": None, "pages": {}, "propia": False, "sc": 640,
         "pais": "Argentina", "anual": False, "copa": True,
         # sin zonas_de: acá no hay tabla que marcar, se elimina y listo
+        "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
     },
 }
 
@@ -2051,8 +2056,26 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
             "anulado": anulado,
         })
     goles.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
-    tv = [t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")]
+    tv = limpiar_tv([t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")])
     return {"tv": tv, "goles": goles}
+
+
+def limpiar_tv(canales):
+    """
+    Saca las apps que repiten un canal que ya está.
+
+    Si el partido va por TyC Sports, "TyC Sports Play" no agrega nada: es el
+    mismo canal por internet. Se queda el nombre corto, que es el que la
+    gente busca en el control remoto.
+    """
+    salida = []
+    for c in canales:
+        n = norm(c)
+        base = re.sub(r"\s*\b(play|app|online|en vivo)\b.*$", "", n).strip()
+        if base and base != n and any(norm(o) == base for o in canales):
+            continue
+        salida.append(c)
+    return salida
 
 
 def api_detalles(q):
@@ -2152,6 +2175,86 @@ def fecha_actual(rounds, por_fecha):
         return min(futuras)[1]
     # 4. el torneo ya terminó
     return rounds[-1]
+
+
+def llave_de(m):
+    """Identifica la serie: los mismos dos equipos, sin importar quién es local."""
+    return tuple(sorted((norm(m["home"]["name"]), norm(m["away"]["name"]))))
+
+
+def marcar_ida_vuelta(games):
+    """
+    En las llaves de ida y vuelta, marca cuál es cuál.
+
+    Se cruzan los mismos dos equipos dos veces en la misma etapa: el que se
+    juega antes es la ida. Con eso el fixture se puede ordenar como se mira
+    —todas las idas y después todas las vueltas— y cada partido dice qué es.
+    """
+    series = {}
+    for m in games:
+        series.setdefault((m.get("round"), llave_de(m)), []).append(m)
+    for partidos in series.values():
+        if len(partidos) != 2:
+            continue
+        partidos.sort(key=lambda x: x.get("start") or "")
+        partidos[0]["tramo"] = "Ida"
+        partidos[1]["tramo"] = "Vuelta"
+
+
+def armar_llaves(games, etapas):
+    """
+    Agrupa el fixture en series para dibujar el cuadro.
+
+    Cada llave son los dos equipos que se cruzan en una etapa, con el global
+    de los dos partidos. Si es a un solo partido —Copa Argentina— el global
+    es ese resultado. Se devuelve una lista por etapa, de la más lejana a la
+    final, que es como se lee un cuadro.
+    """
+    grupos = norm("Fase de grupos")
+    por_etapa = {}
+    for m in games:
+        et = m.get("etapa") or ""
+        if not et or norm(et) == grupos:
+            continue
+        por_etapa.setdefault(et, {}).setdefault(llave_de(m), []).append(m)
+
+    salida = []
+    for et in etapas:
+        if norm(et) == grupos:
+            continue
+        llaves = []
+        for partidos in (por_etapa.get(et) or {}).values():
+            partidos.sort(key=lambda x: x.get("start") or "")
+            # el global se cuenta desde el lado del local de la ida
+            uno = partidos[0]
+            a, b = uno["home"], uno["away"]
+            ga = gb = 0
+            jugados = 0
+            for p in partidos:
+                if p.get("gh") is None:
+                    continue
+                jugados += 1
+                if norm(p["home"]["name"]) == norm(a["name"]):
+                    ga, gb = ga + p["gh"], gb + p["ga"]
+                else:
+                    ga, gb = ga + p["ga"], gb + p["gh"]
+            cerrada = jugados == len(partidos) and jugados > 0
+            llaves.append({
+                "equipos": [
+                    {"team": a, "goles": ga if jugados else None,
+                     "pasa": bool(cerrada and ga > gb)},
+                    {"team": b, "goles": gb if jugados else None,
+                     "pasa": bool(cerrada and gb > ga)},
+                ],
+                "partidos": [{"id": p["id"], "start": p.get("start"),
+                              "tramo": p.get("tramo"), "status": p.get("status"),
+                              "gh": p.get("gh"), "ga": p.get("ga")}
+                             for p in partidos],
+                "cerrada": cerrada,
+            })
+        llaves.sort(key=lambda x: (x["partidos"][0]["start"] or ""))
+        salida.append({"etapa": et, "llaves": llaves})
+    return salida
 
 
 def api_liga_games(q):
@@ -2275,18 +2378,49 @@ def api_liga_games(q):
     # rótulo de los botones.
     etapas = []
     if cfg.get("copa"):
+        # ¿el torneo tiene fase de grupos? Lo dice que haya tablas por zona.
+        hay_grupos = bool(meta)
+
+        def nombre_etapa(g):
+            et = (g.get("stage") or "").strip()
+            if et:
+                return et
+            # 365scores manda la fase de grupos sin nombre: llega vacío. Si el
+            # torneo tiene zonas, un partido sin etapa es de los grupos.
+            return "Fase de grupos" if (g.get("zone") or hay_grupos) else "Fase única"
+
         primero = {}
         for g in games:
-            et = (g.get("stage") or "").strip() or "Fase única"
+            et = nombre_etapa(g)
             ini = g.get("start") or "9999"
             if et not in primero or ini < primero[et]:
                 primero[et] = ini
         etapas = sorted(primero, key=lambda e: primero[e])
+
+        # Las etapas que todavía no se jugaron no vienen en el fixture, así
+        # que la Copa Argentina se quedaba sin cuartos, semis ni final. Se
+        # agregan al final para que el botón exista aunque diga "por definir".
+        ya = {norm(e) for e in etapas}
+        for e in (cfg.get("etapas_extra") or []):
+            if norm(e) not in ya:
+                etapas.append(e)
+                ya.add(norm(e))
+
         idx = {e: i + 1 for i, e in enumerate(etapas)}
+        grupos = norm("Fase de grupos")
         for g in games:
-            et = (g.get("stage") or "").strip() or "Fase única"
+            et = nombre_etapa(g)
             g["etapa"] = et
             g["round"] = idx[et]
+            # Fuera de la fase de grupos no hay zonas: en octavos se cruzan
+            # equipos de grupos distintos y todos los partidos salían
+            # marcados como "Interzonal", que acá no quiere decir nada.
+            if norm(et) != grupos:
+                g["zone"], g["interzonal"] = None, False
+
+        # sólo en las eliminatorias: en los grupos los dos cruces son fechas
+        # distintas, no una ida y una vuelta
+        marcar_ida_vuelta([g for g in games if norm(g["etapa"]) != grupos])
 
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})
@@ -2298,12 +2432,17 @@ def api_liga_games(q):
 
     sin_zona = sorted({g[s]["name"] for g in games for s in ("home", "away")
                        if not g["zone"]})
+    # el cuadro se arma antes de filtrar por etapa: necesita el torneo entero
+    llaves = armar_llaves(games, etapas) if cfg.get("copa") else None
+
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]
     res = {"games": games, "count": len(games), "rounds": rounds, "current": actual,
            "live": vivos, "interzonal": sum(1 for g in games if g["interzonal"]),
            "sinZona": sin_zona, "nombre": cfg["nombre"],
            "copa": bool(cfg.get("copa")), "etapas": etapas}
+    if llaves is not None:
+        res["llaves"] = llaves
     if err:
         res["error"] = err
     return res

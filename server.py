@@ -1519,7 +1519,8 @@ def api_match(q):
                      out["home"].get("canon") or out["home"]["name"],
                      out["away"].get("canon") or out["away"]["name"],
                      {k: _num(hs.get(k)) for k in orden},
-                     {k: _num(as_.get(k)) for k in orden})
+                     {k: _num(as_.get(k)) for k in orden},
+                     out.get("gh"), out.get("ga"))
 
     # formaciones: los titulares vienen por id, el nombre está en members
     # titulares y suplentes; el nombre y el número salen de `members`
@@ -3467,29 +3468,45 @@ def anotar_paso(nombre, club, liga, escudo=None):
     almacen.guardar(clave, hist)
 
 
-# Los cinco ejes del gráfico. Los nombres son los que usa 365scores.
+# Los cinco ejes del gráfico.
+#
+# La idea es que midan cosas distintas: tener la pelota, generar, convertir,
+# aguantar atrás y circular. Poner remates, goles y efectividad juntos sería
+# medir tres veces lo mismo, porque efectividad es goles sobre remates.
+#
+# "Solidez" son los goles recibidos dados vuelta. En un radar el polígono
+# más grande se lee como "mejor", así que un eje donde más es peor confunde:
+# un equipo que recibe muchos goles se vería enorme. Invertido, más grande
+# quiere decir que le hacen menos.
 EJES_RADAR = [
-    ("Posesión", ["posesion de balon", "posesion"]),
-    ("Remates", ["total remates", "remates"]),
-    ("Al arco", ["remates al arco", "tiros al arco"]),
-    ("Chances", ["grandes chances", "ocasiones claras"]),
-    ("Córners", ["saques de esquina", "corners", "tiros de esquina"]),
+    {"eje": "Posesión", "tipo": "stat", "unidad": "%",
+     "claves": ["posesion de balon", "posesion"]},
+    {"eje": "Remates", "tipo": "stat", "unidad": "",
+     "claves": ["total remates", "remates"]},
+    {"eje": "Efectividad", "tipo": "efectividad", "unidad": "%", "claves": []},
+    {"eje": "Solidez", "tipo": "recibidos", "unidad": "", "invertido": True,
+     "claves": []},
+    {"eje": "Pases", "tipo": "stat", "unidad": "%",
+     "claves": ["precision de pases", "pases completados", "precision pases"]},
 ]
 
 
-def anotar_stats(liga, game_id, local, visita, vals_h, vals_a):
+def anotar_stats(liga, game_id, local, visita, vals_h, vals_a, gh=None, ga=None):
     """
     Guarda las estadísticas de un partido, por equipo.
 
     Sin esto no se puede promediar nada: hoy se piden para mostrar el
     gráfico de un partido y se tiran. Guardándolas, el promedio de un
     equipo y el de toda la liga salen de la base, sin pedir nada.
+
+    Van también los goles, porque la efectividad y la solidez no salen de
+    las estadísticas sino del resultado.
     """
     if not game_id or not (vals_h or vals_a):
         return
     almacen.guardar("stats:%s:%s" % (liga, game_id),
-                    {"h": {"eq": local, "v": vals_h},
-                     "a": {"eq": visita, "v": vals_a}})
+                    {"h": {"eq": local, "v": vals_h, "gf": gh, "gc": ga},
+                     "a": {"eq": visita, "v": vals_a, "gf": ga, "gc": gh}})
     idx, _ = almacen.leer("statsidx:%s" % liga)
     idx = idx or []
     if str(game_id) not in idx:
@@ -3519,39 +3536,67 @@ def radar_promedio(liga, club):
     idx, _ = almacen.leer("statsidx:%s" % liga)
     if not idx:
         return None
-    suma_club = {e: [0.0, 0] for e, _ in EJES_RADAR}
-    suma_liga = {e: [0.0, 0] for e, _ in EJES_RADAR}
+
+    def vacio():
+        return {"partidos": 0, "remates": 0.0, "gf": 0.0, "gc": 0.0,
+                "stat": {e["eje"]: [0.0, 0] for e in EJES_RADAR}}
+
+    club_ac, liga_ac = vacio(), vacio()
 
     for gid in idx:
         d, _ = almacen.leer("stats:%s:%s" % (liga, gid))
         if not d:
             continue
         for lado in ("h", "a"):
-            eq = (d.get(lado) or {}).get("eq") or ""
-            vals = (d.get(lado) or {}).get("v") or {}
-            propio = mismo_club(eq, club)
-            for eje, claves in EJES_RADAR:
-                v = _buscar_eje(vals, claves)
-                if v is None:
-                    continue
-                suma_liga[eje][0] += v
-                suma_liga[eje][1] += 1
-                if propio:
-                    suma_club[eje][0] += v
-                    suma_club[eje][1] += 1
+            lo = d.get(lado) or {}
+            vals = lo.get("v") or {}
+            if not vals:
+                continue
+            destinos = [liga_ac]
+            if mismo_club(lo.get("eq") or "", club):
+                destinos.append(club_ac)
+            remates = _buscar_eje(vals, ["total remates", "remates"]) or 0
+            for ac in destinos:
+                ac["partidos"] += 1
+                ac["remates"] += remates
+                ac["gf"] += lo.get("gf") or 0
+                ac["gc"] += lo.get("gc") or 0
+                for e in EJES_RADAR:
+                    if e["tipo"] != "stat":
+                        continue
+                    v = _buscar_eje(vals, e["claves"])
+                    if v is None:
+                        continue
+                    ac["stat"][e["eje"]][0] += v
+                    ac["stat"][e["eje"]][1] += 1
 
-    partidos = max(suma_club[e][1] for e, _ in EJES_RADAR)
-    if not partidos:
+    if not club_ac["partidos"]:
         return None
 
+    def valor(ac, e):
+        if e["tipo"] == "stat":
+            s, n = ac["stat"][e["eje"]]
+            return (s / n) if n else 0
+        if e["tipo"] == "efectividad":
+            return (ac["gf"] / ac["remates"] * 100) if ac["remates"] else 0
+        if e["tipo"] == "recibidos":
+            return (ac["gc"] / ac["partidos"]) if ac["partidos"] else 0
+        return 0
+
     ejes = []
-    for eje, _ in EJES_RADAR:
-        c = suma_club[eje][0] / suma_club[eje][1] if suma_club[eje][1] else 0
-        l = suma_liga[eje][0] / suma_liga[eje][1] if suma_liga[eje][1] else 0
-        ejes.append({"eje": eje, "club": round(c, 1), "liga": round(l, 1),
-                     # cuánto por encima o por debajo del promedio, en %
-                     "indice": round((c / l * 100) if l else 100)})
-    return {"partidos": partidos, "ejes": ejes}
+    for e in EJES_RADAR:
+        c, l = valor(club_ac, e), valor(liga_ac, e)
+        # en los ejes invertidos, menos es mejor: el índice se da vuelta
+        if e.get("invertido"):
+            indice = round((l / c * 100)) if c else 100
+        else:
+            indice = round((c / l * 100)) if l else 100
+        ejes.append({"eje": e["eje"], "unidad": e.get("unidad", ""),
+                     "invertido": bool(e.get("invertido")),
+                     "club": round(c, 1), "liga": round(l, 1),
+                     "indice": max(0, min(220, indice))})
+    return {"partidos": club_ac["partidos"], "ejes": ejes,
+            "deLiga": liga_ac["partidos"]}
 
 
 def anotar_plantel(club, ficha, titular, dia):
@@ -4094,12 +4139,26 @@ CLUBES_INFO = {
         # El diseño de cada camiseta, no sólo los colores. La 2025/26 de
         # Umbro es celeste lisa con vivos negros la titular, y negra con
         # vivos celestes la suplente: no van las rayas de otras épocas.
+        # Los nombres de los sponsors van como texto simple, no como sus
+        # logos: reproducir una marca registrada en la página es meterse en
+        # un problema que no hace falta. La camiseta igual se reconoce.
         "camisetas": {
-            "titular": {"patron": "liso", "base": "#3aa3e3",
-                        "raya": "#3aa3e3", "detalle": "#141414"},
-            "suplente": {"patron": "liso", "base": "#141414",
-                         "raya": "#141414", "detalle": "#3aa3e3"},
+            "titular": {
+                "patron": "liso", "base": "#29a9e1", "raya": "#29a9e1",
+                "detalle": "#141414", "cuello": "#141414",
+                "hombro": "SANOS", "marca": "umbro",
+                "pecho": "Macro", "espalda": "PAUNY", "abajo": "playcet",
+                "nuca": "BELGRANO", "panel": "#141414",
+            },
+            "suplente": {
+                "patron": "liso", "base": "#141414", "raya": "#141414",
+                "detalle": "#29a9e1", "cuello": "#29a9e1",
+                "hombro": "SANOS", "marca": "umbro",
+                "pecho": "Macro", "espalda": "PAUNY", "abajo": "playcet",
+                "nuca": "LOS PIRATAS", "panel": "#1f1f1f",
+            },
         },
+        "dorsal": {"n": 9, "nombre": "PASSERINI"},
     },
 }
 

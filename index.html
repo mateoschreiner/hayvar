@@ -818,31 +818,61 @@ const App=(()=>{
   /* ── página del club ──────────────────────────────────────────────────
      Vive en su propia dirección (/belgrano) para poder compartirla. El
      servidor devuelve el mismo index y acá se decide qué mostrar.       */
-  function camisetaSVG(k, atras, nombre){
+  /* La camiseta. Los sponsors van como texto, no como sus logos: copiar una
+     marca registrada en la página es un problema que no hace falta. Con el
+     color, el corte raglán y los nombres en su lugar se reconoce igual. */
+  function camisetaSVG(k, atras, nombre, dorsal){
     const cuerpo='M64 30 L96 18 Q115 34 134 18 L166 30 L192 62 L168 84 L158 74 '
       +'L158 214 Q115 224 72 214 L72 74 L62 84 L38 62 Z';
-    let rayas='';
+    let patron='';
     if(k.patron==='rayas') for(let i=0;i<5;i++)
-      rayas+=`<rect x="${76+i*22}" y="18" width="11" height="206" fill="${k.raya}"/>`;
+      patron+=`<rect x="${76+i*22}" y="18" width="11" height="206" fill="${k.raya}"/>`;
     if(k.patron==='banda')
-      rayas=`<path d="M40 60 L190 190 L190 214 L40 84 Z" fill="${k.raya}"/>`;
+      patron=`<path d="M40 60 L190 190 L190 214 L40 84 Z" fill="${k.raya}"/>`;
     if(k.patron==='franja')
-      rayas=`<rect x="38" y="104" width="154" height="34" fill="${k.raya}"/>`;
+      patron=`<rect x="38" y="104" width="154" height="34" fill="${k.raya}"/>`;
     const id='k'+Math.random().toString(36).slice(2,8);
+    const det=k.detalle||'#fff', panel=k.panel||'rgba(255,255,255,.06)';
+    const d=dorsal||{};
     return `<svg viewBox="0 0 230 260" width="150" height="170" aria-hidden="true">
       <defs><clipPath id="${id}"><path d="${cuerpo}"/></clipPath></defs>
-      <path d="${cuerpo}" fill="${k.base}" stroke="rgba(0,0,0,.22)" stroke-width="2"/>
-      <g clip-path="url(#${id})">${rayas}
-        <rect x="38" y="52" width="26" height="34" fill="${k.detalle}" opacity=".9"/>
-        <rect x="166" y="52" width="26" height="34" fill="${k.detalle}" opacity=".9"/></g>
-      ${atras
-        ? `<text x="115" y="132" text-anchor="middle" font-size="72" font-weight="800"
-             fill="${k.detalle}">10</text>
-           <text x="115" y="166" text-anchor="middle" font-size="15" font-weight="700"
-             fill="${k.detalle}">${esc((nombre||'').toUpperCase())}</text>`
-        : ''}
-      <path d="M96 18 Q115 34 134 18 Q115 44 96 18 Z" fill="${k.detalle}"/>
-      <path d="${cuerpo}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="2"/></svg>`;
+      <path d="${cuerpo}" fill="${k.base}" stroke="rgba(0,0,0,.25)" stroke-width="2"/>
+      <g clip-path="url(#${id})">${patron}
+        <path d="M44 60 L64 52 L70 86 L50 80 Z" fill="${panel}"/>
+        <path d="M186 60 L166 52 L160 86 L180 80 Z" fill="${panel}"/>
+        <path d="M64 30 L96 20 L92 44 L72 52 Z" fill="none"
+          stroke="${det}" stroke-width="1" opacity=".3"/>
+        <path d="M166 30 L134 20 L138 44 L158 52 Z" fill="none"
+          stroke="${det}" stroke-width="1" opacity=".3"/>
+        <rect x="38" y="206" width="154" height="4" fill="${det}" opacity=".8"/>
+      </g>
+      <path d="M96 20 L115 46 L134 20 L127 18 L115 36 L103 18 Z" fill="${k.cuello||det}"/>
+      ${atras ? `
+        <text x="115" y="60" text-anchor="middle" font-size="13" font-weight="800"
+          fill="${det}" letter-spacing=".5">${esc(k.espalda||'')}</text>
+        <text x="115" y="96" text-anchor="middle" font-size="13" font-weight="700"
+          fill="${det}" letter-spacing="1.2">${esc(d.nombre||(nombre||'').toUpperCase())}</text>
+        <text x="115" y="164" text-anchor="middle" font-size="66" font-weight="800"
+          fill="${k.base}" stroke="${det}" stroke-width="3">${d.n??10}</text>
+        <text x="115" y="196" text-anchor="middle" font-size="9" font-weight="700"
+          fill="${det}" opacity=".9">${esc(k.abajo||'')}</text>
+      ` : `
+        <text x="86" y="52" text-anchor="middle" font-size="8" font-weight="800"
+          fill="${det}" letter-spacing=".4" transform="rotate(-16 86 52)">${esc(k.hombro||'')}</text>
+        <text x="146" y="52" text-anchor="middle" font-size="8" font-weight="800"
+          fill="${det}" letter-spacing=".4" transform="rotate(16 146 52)">${esc(k.hombro||'')}</text>
+        <path d="M104 66 l7 5 -7 5 -7 -5 Z M118 66 l7 5 -7 5 -7 -5 Z" fill="${det}"/>
+        <text x="80" y="86" text-anchor="middle" font-size="8" font-weight="700"
+          fill="${det}">${esc(k.marca||'')}</text>
+        <circle cx="152" cy="80" r="13" fill="none" stroke="${det}" stroke-width="1.6"/>
+        <text x="152" y="84" text-anchor="middle" font-size="10" font-weight="800"
+          fill="${det}">CAB</text>
+        <path d="M92 120 a23 23 0 0 1 46 0" fill="none" stroke="${det}" stroke-width="7"/>
+        <circle cx="115" cy="122" r="6" fill="${det}"/>
+        <text x="115" y="150" text-anchor="middle" font-size="20" font-weight="800"
+          fill="${det}">${esc(k.pecho||'')}</text>
+      `}
+      <path d="${cuerpo}" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="2"/></svg>`;
   }
 
   /* El radar del club: su promedio contra el de toda la liga. Un dato
@@ -882,8 +912,9 @@ const App=(()=>{
           ${rot}</svg>
         <div class="radar-nums">
           ${r.ejes.map(e=>`<div><div class="rn">
-            <b style="color:${col}">${e.club}</b><span>${esc(e.eje)}</span>
-            <b style="color:var(--txt3)">${e.liga}</b></div>
+            <b style="color:${col}">${e.club}${esc(e.unidad||'')}</b>
+            <span>${esc(e.eje)}${e.invertido?' <i style="font-style:normal;color:var(--txt3)">(recibidos)</i>':''}</span>
+            <b style="color:var(--txt3)">${e.liga}${esc(e.unidad||'')}</b></div>
             <div class="rn-barra"><i style="width:${Math.min(100,e.indice/2)}%;background:${col}"></i>
               <i style="width:${Math.max(0,100-e.indice/2)}%;background:var(--line)"></i></div>
           </div>`).join('')}
@@ -932,8 +963,8 @@ const App=(()=>{
     const kitHtml=Object.keys(kits).map((nom,idx)=>`
       <div class="kit"><div class="escena" onclick="App.girarKit(${idx})">
         <div class="pivote" id="kit${idx}">
-          <div class="cara">${camisetaSVG(kits[nom],false,d.club)}</div>
-          <div class="cara atras">${camisetaSVG(kits[nom],true,d.club)}</div>
+          <div class="cara">${camisetaSVG(kits[nom],false,d.club,i.dorsal)}</div>
+          <div class="cara atras">${camisetaSVG(kits[nom],true,d.club,i.dorsal)}</div>
         </div></div><div class="lb">${esc(nom)}</div></div>`).join('');
 
     $('#matches').innerHTML=`

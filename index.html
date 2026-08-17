@@ -229,9 +229,24 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .m-extra:empty{display:none}
 .m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 0 64px;
   font-size:11px;color:var(--txt2);line-height:1.5}
-/* la tanda de penales, aparte del resultado del partido */
-.m-pen{margin:3px 0 0 64px;font-size:10.5px;font-weight:700;color:var(--txt2);
-  letter-spacing:.3px}
+/* la tanda de penales, aparte del resultado y centrada bajo el marcador */
+.m-pen{margin:3px 0 0;text-align:center;font-size:10.5px;font-weight:700;
+  color:var(--txt2);letter-spacing:.3px}
+/* y en el detalle del partido, su propio bloque al pie del minuto a minuto */
+.pen-bloque{margin-top:14px;padding-top:11px;border-top:1px solid var(--line)}
+.pen-tit{display:flex;align-items:center;justify-content:space-between;
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--txt2);font-weight:700;margin-bottom:8px}
+.pen-tit b{font-size:14px;color:var(--txt);font-variant-numeric:tabular-nums}
+.pen-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pen-cols>div:last-child{text-align:right}
+.pen-pat{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0}
+.pen-cols>div:last-child .pen-pat{flex-direction:row-reverse}
+.pen-pat .tic{font-weight:800;flex:none;width:13px;text-align:center}
+.pen-pat.ok .tic{color:var(--live)}
+.pen-pat.no .tic{color:var(--red)}
+.pen-pat.no .nm{color:var(--txt3);text-decoration:line-through}
+.pen-vacio{color:var(--txt3);font-size:12px}
 /* cada gol entero, para que no se parta por la mitad al cortar el renglón */
 .m-goles .gol{display:inline-block;white-space:nowrap}
 .m-goles .gol:not(:last-child)::after{content:"·";margin:0 5px;color:var(--txt3)}
@@ -1523,7 +1538,9 @@ const App=(()=>{
         y esta ya salió de esa ventana.<br><br>
         <span style="color:var(--txt3);font-size:12px">El resultado y el árbitro salen de AFA y sí están, en Resumen.</span></div>`;
     else if(mTab==='res'){
-      const ev=(mData&&mData.events)||[];
+      const todos=(mData&&mData.events)||[];
+      // la tanda va aparte, abajo: mezclada en el minuto a minuto se pierde
+      const tanda=todos.filter(e=>e.penales), ev=todos.filter(e=>!e.penales);
       let cruzado=false;   // para separar los dos tiempos
       body=ev.length?ev.map(e=>{
         const min=`${e.min??''}${e.added?'+'+e.added:''}'`;
@@ -1536,6 +1553,21 @@ const App=(()=>{
         if(!cruzado&&e.min>45){ cruzado=true; corte='<div class="ht"><span>Entretiempo</span></div>'; }
         return corte+`<div class="ev"><div class="r">${e.side==='h'?nom:''}</div><div class="m">${min}</div><div>${e.side==='a'?nom:''}</div></div>`;
       }).join(''):'<div class="empty">Sin eventos registrados.</div>';
+
+      // ── Definición por penales ──
+      if(tanda.length){
+        const cuenta=s=>tanda.filter(e=>e.side===s&&e.anotado).length;
+        const pat=e=>`<div class="pen-pat ${e.anotado?'ok':'no'}">
+          <span class="tic">${e.anotado?'✓':'✗'}</span>
+          <span class="nm">${esc(e.player||'—')}</span></div>`;
+        body+=`<div class="pen-bloque">
+          <div class="pen-tit"><span>Definición por penales</span>
+            <b>${cuenta('h')}-${cuenta('a')}</b></div>
+          <div class="pen-cols">
+            <div>${tanda.filter(e=>e.side==='h').map(pat).join('')||'<div class="pen-vacio">—</div>'}</div>
+            <div>${tanda.filter(e=>e.side==='a').map(pat).join('')||'<div class="pen-vacio">—</div>'}</div>
+          </div></div>`;
+      }
       const pie=[];
       if(m.referee) pie.push(`${SVG_SILBATO}Árbitro: <b style="font-weight:600">${esc(m.referee)}</b>`);
       if(m.venue) pie.push(`${SVG_ESTADIO}${esc(m.venue)}${m.capacidad?` · ${m.capacidad.toLocaleString('es-AR')} espectadores`:''}`);

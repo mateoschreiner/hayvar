@@ -1415,7 +1415,12 @@ def api_match(q):
         etiqueta = norm("%s %s" % (et.get("name") or "", et.get("subTypeName") or ""))
         anulado = any(x in etiqueta for x in
                       ("anulad", "disallow", "cancel", "invalid", "no valido"))
+        # la tanda de penales llega como eventos del minuto 120 en adelante:
+        # los convertidos como gol y los errados como otra cosa
+        tanda = isinstance(mins, (int, float)) and mins >= 120
         events.append({
+            "penales": bool(tanda),
+            "anotado": tipo == "gol",
             "min": int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None,
             "added": e.get("addedTime") or 0,
             "side": "h" if e.get("competitorId") == hid else "a",
@@ -2325,8 +2330,11 @@ def fecha_actual(rounds, por_fecha):
 # agregamos a mano: si no, "Cuartos de final" caía después de la final sólo
 # porque se sumó al final de la lista.
 _RANGO_ETAPA = [
-    # las previas van antes que los grupos: son la puerta de entrada
-    (("primera fase", "preliminar", "previa", "fase 1", "fase 2", "fase 3"), 0),
+    # Las previas van antes que los grupos y son tres en la Libertadores, no
+    # una: cada una tiene su rango para que no se pisen entre ellas.
+    (("fase 3", "tercera fase", "third stage"), 0.6),
+    (("fase 2", "segunda fase", "second stage"), 0.3),
+    (("fase 1", "primera fase", "preliminar", "previa", "first stage"), 0),
     (("fase de grupos", "grupo", "group"), 1),
     (("repechaje", "play off", "playoff", "play-off", "pre octavos"), 2),
     (("64avos", "sesentaicuatroavos"), 3),
@@ -2350,9 +2358,9 @@ _RANGO_ETAPA = [
 # se cruzan con los terceros de la Libertadores, y de octavos a la final.
 # Las dos definen a partido único, sin tercer puesto.
 FASES_COPA = {
-    "lib": ["Fase previa", "Fase de grupos", "Octavos de final",
+    "lib": ["Fase 1", "Fase 2", "Fase 3", "Fase de grupos", "Octavos de final",
             "Cuartos de final", "Semifinal", "Final"],
-    "sud": ["Fase previa", "Fase de grupos", "Pre octavos", "Octavos de final",
+    "sud": ["Primera fase", "Fase de grupos", "Pre octavos", "Octavos de final",
             "Cuartos de final", "Semifinal", "Final"],
     "ca":  ["32avos de final", "16avos de final", "Octavos de final",
             "Cuartos de final", "Semifinal", "Final"],
@@ -2371,8 +2379,9 @@ def canonizar_fase(crudo, fases):
     for f in fases:
         if rango_etapa(f) == r:
             return f
-    if r <= 2:                       # cualquier ronda anterior a los grupos
-        return next((f for f in fases if rango_etapa(f) == 0), None)
+    if r <= 1:          # una previa con otro nombre: va a la primera del torneo
+        candidatas = [f for f in fases if rango_etapa(f) <= 1]
+        return min(candidatas, key=rango_etapa) if candidatas else None
     return None
 
 
@@ -3748,11 +3757,16 @@ def juntar_goles(lid, limite=25):
     except Exception:
         return 0
 
+    # Ojo con la clave: los goles se guardan con el id de 365scores, que es
+    # el mismo que se usa para pedir el detalle. En la Liga Profesional y en
+    # las categorías de AFA el id del partido es otro —viene del fixture
+    # oficial— y preguntando por ése nunca encontrábamos nada guardado: se
+    # volvían a pedir los mismos partidos una y otra vez, para siempre.
     faltan = []
     for g in juegos:
         if g.get("status") != "FIN" or not g.get("liveId"):
             continue
-        guardado, _ = almacen.leer("goles:%s:%s" % (lid, g["id"]))
+        guardado, _ = almacen.leer("goles:%s:%s" % (lid, g["liveId"]))
         if guardado is None:
             faltan.append(g)
 
@@ -3777,7 +3791,7 @@ def rescatar_todo():
     """
     time.sleep(20)          # que la página arranque tranquila primero
     for vuelta in range(1, 13):
-        pendientes = 0
+        pendientes, goles_pendientes = 0, 0
         for lid, cfg in LIGAS.items():
             try:
                 r = rescatar_historico(cfg["sc"], paginas=20)
@@ -3793,14 +3807,17 @@ def rescatar_todo():
             try:
                 n = juntar_goles(lid, limite=20)
                 if n:
+                    goles_pendientes += 1
                     print("  · %-18s goles de %d partidos" % (LIGAS[lid]["nombre"], n), flush=True)
             except Exception:
                 pass
             time.sleep(2)
-        if not pendientes:
+        # se corta cuando no queda historia por traer ni goles por buscar
+        if not pendientes and not goles_pendientes:
             print("  Historia completa: no queda nada por traer\n", flush=True)
             return
         time.sleep(60)
+    print("  Pausa del rescate: sigue en el próximo arranque\n", flush=True)
 
 
 def main():

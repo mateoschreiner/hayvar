@@ -186,19 +186,28 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .zhead.plegable:hover{background:var(--line)}
 .zhead .flecha{color:var(--txt2);font-size:11px;flex:none}
 
-/* ── cuadro de llaves de las copas ── */
-.llave{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;overflow:hidden;
-  cursor:pointer;background:var(--card)}
-.llave:hover{border-color:var(--acc)}
-.llave .eq{display:flex;align-items:center;gap:7px;padding:6px 9px;font-size:12.5px}
-.llave .eq+.eq{border-top:1px solid var(--line)}
-.llave .eq .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.llave .eq b{font-weight:800;font-variant-numeric:tabular-nums}
-.llave .eq.pasa{background:var(--bg-accent,rgba(47,111,237,.09))}
-.llave .eq.pasa .tn{font-weight:700}
-.llave .eq.cae .tn,.llave .eq.cae b{color:var(--txt3)}
-.llave .pie{font-size:10px;color:var(--txt2);padding:4px 9px;border-top:1px solid var(--line);
-  background:var(--bg)}
+/* ── cuadro de llaves de las copas ──────────────────────────────────────
+   Las columnas van de la ronda que estás mirando hasta la final, y se
+   corren de costado porque a lo ancho no entran. Las líneas se dibujan en
+   un SVG por encima, que es lo único que une bien dos cajas a distinta
+   altura sin pelearse con el scroll.                                    */
+.cuadro-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 14px}
+.cuadro{position:relative}
+.cuadro-lineas{position:absolute;inset:0;pointer-events:none;overflow:visible}
+.brk{position:absolute;border:1px solid var(--line);border-radius:7px;overflow:hidden;
+  background:var(--card);cursor:pointer;transition:border-color .12s}
+.brk:hover{border-color:var(--acc)}
+.brk.vacia{background:var(--bg);border-style:dashed;cursor:default}
+.brk .eq{display:flex;align-items:center;gap:6px;padding:0 7px;height:23px;font-size:11.5px}
+.brk .eq+.eq{border-top:1px solid var(--line)}
+.brk .eq .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brk .eq b{font-weight:800;font-variant-numeric:tabular-nums;font-size:11.5px}
+.brk .eq.pasa{background:rgba(47,111,237,.10)}
+.brk .eq.pasa .tn{font-weight:700}
+.brk .eq.cae .tn,.brk .eq.cae b{color:var(--txt3)}
+.brk .eq .crest{width:15px;height:15px;flex:none}
+.brk-et{position:absolute;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt2);font-weight:700;white-space:nowrap}
 .cuadro-et{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
   font-weight:700;margin:12px 0 6px}
 .cuadro-et:first-child{margin-top:0}
@@ -1725,32 +1734,95 @@ const App=(()=>{
      Una columna de llaves por etapa, de la más lejana a la final. Cada
      llave muestra el global de la serie y marca al que pasó. Se clickea y
      abre el partido de vuelta, que es el que la define.                */
+  /* Ordena cada ronda para que las dos llaves que alimentan un cruce queden
+     una arriba de la otra. No hace falta saber el sorteo: alcanza con mirar
+     quién sigue en carrera. Si Racing está en cuartos, la llave de octavos
+     que tiene a Racing es una de las dos que llevan ahí. Se recorre de la
+     final hacia atrás, que es de donde viene la información. */
+  function ordenarCuadro(bloques){
+    const nom=e=>sinTildes(e.team.canon||e.team.name);
+    for(let c=bloques.length-2;c>=0;c--){
+      const hijos=bloques[c+1].llaves, padres=bloques[c].llaves;
+      if(!hijos.length||!padres.length) continue;
+      const usado=new Set(), orden=[];
+      hijos.forEach(h=>h.equipos.forEach(e=>{
+        const n=nom(e);
+        const i=padres.findIndex((p,idx)=>!usado.has(idx)&&p.equipos.some(x=>nom(x)===n));
+        if(i>=0){ usado.add(i); orden.push(padres[i]); }
+      }));
+      padres.forEach((p,i)=>{ if(!usado.has(i)) orden.push(p); });
+      bloques[c].llaves=orden;
+    }
+  }
+
   function cuadroLlaves(){
-    const bloques=(S.llaves||[]).filter(b=>b.llaves.length);
-    if(!bloques.length) return '<div class="empty">El cuadro todavía no está definido.</div>';
-    return '<div style="padding:12px 14px">'+bloques.map(b=>`
-      <div class="cuadro-et">${esc(etapaCorta(b.etapa))}</div>
-      ${b.llaves.map(k=>{
-        const [a,v]=k.equipos;
-        const ultimo=k.partidos[k.partidos.length-1];
-        const lado=(e,otro)=>`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}">
-          ${crest(e.team,18)}<span class="tn">${esc(e.team.canon||e.team.name)}</span>
-          <b>${e.goles==null?'–':e.goles}</b></div>`;
-        const pie=k.partidos.map(p=>{
-          const d=p.start?new Date(p.start):null;
-          return (p.tramo?p.tramo.toLowerCase()+' ':'')
-            +(p.gh!=null?`${p.gh}-${p.ga}`:(d?`${d.getDate()}/${d.getMonth()+1}`:''));
-        }).filter(Boolean).join(' · ');
-        return `<div class="llave" onclick="App.openMatch('${js(ultimo.id)}')">
-          ${lado(a,v)}${lado(v,a)}
-          ${pie?`<div class="pie">${esc(pie)}</div>`:''}</div>`;
-      }).join('')}`).join('')+'</div>';
+    let bloques=(S.llaves||[]).map(b=>({etapa:b.etapa,llaves:b.llaves.slice()}));
+    // se arranca en la ronda que estás mirando; las anteriores ya pasaron
+    const aqui=S.etapas&&S.etapas[S.round-1];
+    const desde=aqui?bloques.findIndex(b=>b.etapa===aqui):-1;
+    if(desde>0) bloques=bloques.slice(desde);
+    while(bloques.length&&!bloques[0].llaves.length) bloques.shift();
+    if(!bloques.length||!bloques[0].llaves.length)
+      return '<div class="empty">El cuadro todavía no está definido.</div>';
+    ordenarCuadro(bloques);
+
+    const AN=150, ALTO=48, HUECO=12, SEP=34, TOPE=22;   // medidas de la grilla
+    const paso=ALTO+HUECO;
+    // cada columna tiene la mitad de cruces que la anterior, aunque todavía
+    // no se sepa quiénes son: así el cuadro se ve entero desde el principio
+    const cupos=[bloques[0].llaves.length];
+    for(let c=1;c<bloques.length;c++) cupos.push(Math.max(1,Math.ceil(cupos[c-1]/2)));
+    const ancho=bloques.length*(AN+SEP)-SEP, alto=cupos[0]*paso-HUECO;
+    const x=c=>c*(AN+SEP);
+    const y=(c,i)=>i*paso*Math.pow(2,c)+(Math.pow(2,c)-1)*paso/2;
+    const centro=(c,i)=>y(c,i)+ALTO/2;
+
+    let cajas='', lineas='';
+    bloques.forEach((b,c)=>{
+      cajas+=`<div class="brk-et" style="left:${x(c)}px;top:0">${esc(etapaCorta(b.etapa))}</div>`;
+      for(let i=0;i<cupos[c];i++){
+        const k=b.llaves[i], top=y(c,i)+TOPE;
+        if(!k){
+          cajas+=`<div class="brk vacia" style="left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px">
+            <div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div>
+            <div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div></div>`;
+        }else{
+          const [a,v]=k.equipos;
+          const ultimo=k.partidos[k.partidos.length-1];
+          const lado=(e,otro)=>`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}">
+            ${crest(e.team,15)}<span class="tn">${esc(e.team.canon||e.team.name)}</span>
+            <b>${e.goles==null?'–':e.goles}</b></div>`;
+          const cuando=k.partidos.map(p=>(p.tramo||'')+(p.gh!=null?` ${p.gh}-${p.ga}`:'')).join(' · ');
+          cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.openMatch('${js(ultimo.id)}')"
+            style="left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px">
+            ${lado(a,v)}${lado(v,a)}</div>`;
+        }
+        // la línea hacia el cruce siguiente: sale, dobla y entra
+        if(c<bloques.length-1){
+          const yi=centro(c,i)+TOPE, yh=centro(c+1,Math.floor(i/2))+TOPE;
+          const xm=x(c)+AN+SEP/2;
+          lineas+=`<path d="M${x(c)+AN} ${yi}H${xm}V${yh}H${x(c+1)}" fill="none"
+            stroke="var(--line)" stroke-width="1.5"/>`;
+        }
+      }
+    });
+
+    return `<div class="cuadro-wrap"><div class="cuadro"
+      style="width:${ancho}px;height:${alto+TOPE}px">
+      <svg class="cuadro-lineas" width="${ancho}" height="${alto+TOPE}">${lineas}</svg>
+      ${cajas}</div></div>`;
   }
 
   // Los diez primeros goleadores, para poner abajo del cuadro sin que ocupe
-  // media pantalla.
-  function golesCorto(rows){
-    if(!rows.length) return '';
+  // media pantalla. El título va siempre: si no hay datos, se dice, en vez
+  // de dejar el espacio en blanco y que parezca que falta algo.
+  function golesCorto(rows,error){
+    if(!rows.length) return `<div style="padding:0 14px 14px">
+      <div class="cuadro-et">Goleadores</div>
+      <div style="font-size:12px;color:var(--txt2)">
+        Todavía no hay tabla de goleadores para este torneo.
+        ${error?`<br><span style="font-size:10.5px;color:var(--txt3)">${esc(error)}</span>`:''}
+      </div></div>`;
     return `<div style="padding:0 14px 12px">
       <div class="cuadro-et">Goleadores</div>
       ${rows.slice(0,10).map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;
@@ -1790,7 +1862,7 @@ const App=(()=>{
                         ['DIF',r=>(r.dif>0?'+':'')+r.dif]]) + leyenda()
         : '<div class="empty">Sin datos.</div>';
     } else if(S.tab==='cuadro'){
-      el.innerHTML=cuadroLlaves()+golesCorto(d.goleadores||[]);
+      el.innerHTML=cuadroLlaves()+golesCorto(d.goleadores||[],d.errorGoleadores);
     } else if(S.tab==='anual'){
       el.innerHTML=d.anual.length
         ? tabla(d.anual,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],

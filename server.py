@@ -1797,8 +1797,16 @@ def _sc_goleadores(comp, escudos=None):
     """Goleadores desde 365scores, para las ligas que no cubre AFA."""
     data = fetch("stats", {"competitions": comp, "competitor": 0}, ttl=900)
     bloques = data.get("stats") or data.get("statistics") or []
-    goles = next((b for b in bloques if norm(b.get("name")) in ("goles", "goals")),
-                 bloques[0] if bloques else None)
+
+    # El bloque de goles no siempre se llama igual ni viene primero: en las
+    # copas la lista arranca por asistencias o tarjetas. Se busca por nombre
+    # y, si no aparece, se toma el primero que tenga filas de verdad.
+    def es_goles(b):
+        n = norm(b.get("name"))
+        return n in ("goles", "goals") or n.startswith("gol")
+
+    goles = (next((b for b in bloques if es_goles(b)), None)
+             or next((b for b in bloques if b.get("rows")), None))
     if not goles:
         return []
 
@@ -3018,10 +3026,10 @@ def api_atleta(q):
     return {k: v for k, v in p.items() if v not in (None, "", [])}
 
 
-# Qué ligas entran en la portada. Están todas en el menú de la izquierda,
-# pero la tapa muestra sólo estas dos para no quedar cargada. Se agregan
-# sumando la clave acá.
-HOME_LIGAS = ("lpf", "nacional", "laliga")
+# Qué torneos entran en la portada, y en qué orden aparecen. Cada bloque se
+# muestra sólo si ese día hay partidos, así que las copas aparecen y
+# desaparecen solas según la semana. Se agrega o saca sumando la clave acá.
+HOME_LIGAS = ("lpf", "nacional", "ca", "lib", "sud", "laliga")
 
 
 def api_home(q):
@@ -3416,6 +3424,11 @@ def precalentar():
         ("goleadores", lambda: api_scorers({})),
         ("Primera Nacional", lambda: api_liga_games({"id": ["nacional"]})),
         ("LaLiga", lambda: api_liga_games({"id": ["laliga"]})),
+        # las copas también: ahora salen en la portada y el primero que entra
+        # no tiene por qué esperarlas
+        ("Copa Argentina", lambda: api_liga_games({"id": ["ca"]})),
+        ("Libertadores", lambda: api_liga_games({"id": ["lib"]})),
+        ("Sudamericana", lambda: api_liga_games({"id": ["sud"]})),
     ]
     for nombre, tarea in tareas:
         arranque = time.time()

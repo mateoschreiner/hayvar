@@ -3671,11 +3671,11 @@ def precalentar():
         arranque = time.time()
         try:
             tarea()
-            print("  · %-22s listo en %.1fs" % (nombre, time.time() - arranque))
+            print("  · %-22s listo en %.1fs" % (nombre, time.time() - arranque), flush=True)
         except Exception as e:
             print("  · %-22s falló (%s), se reintenta al pedirlo"
-                  % (nombre, type(e).__name__))
-    print("  Caché precalentado\n")
+                  % (nombre, type(e).__name__), flush=True)
+    print("  Caché precalentado\n", flush=True)
 
 
 def juntar_goles(lid, limite=25):
@@ -3732,7 +3732,7 @@ def rescatar_todo():
                     pendientes += 1
                 if r.get("nuevos"):
                     print("  · %-18s +%d partidos viejos (total %d)"
-                          % (cfg["nombre"], r["nuevos"], r.get("total", 0)))
+                          % (cfg["nombre"], r["nuevos"], r.get("total", 0)), flush=True)
             except Exception:
                 pass
             time.sleep(2)
@@ -3740,17 +3740,28 @@ def rescatar_todo():
             try:
                 n = juntar_goles(lid, limite=20)
                 if n:
-                    print("  · %-18s goles de %d partidos" % (LIGAS[lid]["nombre"], n))
+                    print("  · %-18s goles de %d partidos" % (LIGAS[lid]["nombre"], n), flush=True)
             except Exception:
                 pass
             time.sleep(2)
         if not pendientes:
-            print("  Historia completa: no queda nada por traer\n")
+            print("  Historia completa: no queda nada por traer\n", flush=True)
             return
         time.sleep(60)
 
 
 def main():
+    # Python guarda lo que se imprime en un buffer cuando la salida no es una
+    # terminal, y en un servidor eso significa que los mensajes no aparecen
+    # nunca —o aparecen media hora después, todos juntos—. Pidiendo que
+    # escriba línea por línea, el log del hosting va contando lo que pasa en
+    # el momento en que pasa.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
     # En local escucha sólo en 127.0.0.1. En un hosting (Render y compañía)
     # hay que escuchar en 0.0.0.0 y tomar el puerto de la variable PORT.
     env_port = os.environ.get("PORT")

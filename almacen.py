@@ -261,6 +261,26 @@ def estado():
             "mas_nuevo": round(time.time() - nuevo) if nuevo else None}
 
 
+def borrar_prefijo(prefijo):
+    """
+    Borra todo lo que empieza con ese prefijo y compacta el archivo.
+
+    Sin el VACUUM, SQLite marca el espacio como libre pero no le devuelve
+    los megas al disco —ni a la memoria, si la base quedó en memoria—.
+    """
+    with _lock:
+        c = _con()
+        n = c.execute("DELETE FROM datos WHERE clave LIKE ?",
+                      (prefijo + "%",)).rowcount
+        c.commit()
+        if n:
+            try:
+                c.execute("VACUUM")
+            except sqlite3.Error:
+                pass
+        return n
+
+
 def claves():
     """Todas las claves guardadas. Para poder mirar qué hay adentro."""
     with _lock:

@@ -331,6 +331,24 @@ def match_team(name):
 # ─────────────────────────────────────────────────────────────────────────
 _cache, _lock = {}, threading.Lock()
 
+# Cuántas respuestas se guardan en memoria. Sin tope, el caché iba creciendo
+# con cada dirección distinta —y el rescate de partidos viejos visita
+# cientos— hasta que Render mataba el proceso por consumir toda la memoria.
+# La base en disco sigue teniendo todo: esto es sólo el atajo rápido.
+_CACHE_MAX = 300
+
+
+def _guardar_en_cache(url, valor):
+    """Guarda en el caché de memoria, sacando lo más viejo si hace falta."""
+    with _lock:
+        if len(_cache) >= _CACHE_MAX:
+            # se descarta la mitad más vieja de una, para no estar podando
+            # de a uno en cada pedido
+            porEdad = sorted(_cache.items(), key=lambda kv: kv[1][0])
+            for k, _ in porEdad[:len(porEdad) // 2 + 1]:
+                _cache.pop(k, None)
+        _cache[url] = (time.time(), valor)
+
 
 def fetch(path, params, ttl=15):
     """
@@ -361,8 +379,7 @@ def fetch(path, params, ttl=15):
     if info.get("origen") == "cache-vieja":
         ULTIMO_PROBLEMA["365scores"] = info
 
-    with _lock:
-        _cache[url] = (time.time(), data)
+    _guardar_en_cache(url, data)
     return data
 
 
@@ -680,8 +697,7 @@ def df_fixture(ttl=120):
             "gh": gh, "ga": ga, "venue": "",
         })
     out.sort(key=lambda x: (x["round"] or 0, x["interzonal"], x["start"] or ""))
-    with _lock:
-        _cache[url] = (time.time(), out)
+    _guardar_en_cache(url, out)
     return out
 
 
@@ -748,8 +764,7 @@ def df_tables(page, ttl=45, liga="lpf"):
                                         max_edad=ttl, tag="afa/" + page)
     if info.get("origen") == "cache-vieja":
         ULTIMO_PROBLEMA["afa"] = info
-    with _lock:
-        _cache[url] = (time.time(), tablas)
+    _guardar_en_cache(url, tablas)
     return tablas
 
 
@@ -2008,17 +2023,15 @@ def fetch_ruta(ruta, ttl=86400):
     Pide una dirección de 365scores tal cual viene, sin rearmar los
     parámetros. La usa el rescate de partidos viejos, porque el paginado
     devuelve la dirección de la página anterior ya armada.
+
+    A propósito no se guarda nada: cada página se lee una sola vez en la
+    vida y lo que importa —los partidos— queda en el fixture. Guardarlas
+    llenaba la base de cientos de respuestas enormes que no se usaban más.
     """
     url = ruta if ruta.startswith("http") else "https://webws.365scores.com" + ruta
-
-    def ir_a_la_fuente():
-        req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-        with urlopen(req, timeout=25) as r:
-            return json.loads(r.read().decode("utf-8"))
-
-    datos, _ = almacen.con_respaldo("pag:" + url, ir_a_la_fuente,
-                                    max_edad=ttl, tag="365/paginado")
-    return datos or {}
+    req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urlopen(req, timeout=25) as r:
+        return json.loads(r.read().decode("utf-8"))
 
 
 def rescatar_historico(comp, paginas=25):
@@ -2559,9 +2572,14 @@ def armar_llaves(games, etapas, liga_id=""):
                     {"team": a, "goles": ga if jugados else None, "pasa": pasa_a},
                     {"team": b, "goles": gb if jugados else None, "pasa": pasa_b},
                 ],
+                # cada partido con su local y su visitante de verdad: en la
+                # vuelta se dan vuelta, y mostrando siempre el mismo orden el
+                # resultado quedaba del lado equivocado
                 "partidos": [{"id": p["id"], "start": p.get("start"),
                               "tramo": p.get("tramo"), "status": p.get("status"),
-                              "gh": p.get("gh"), "ga": p.get("ga")}
+                              "gh": p.get("gh"), "ga": p.get("ga"),
+                              "liveId": p.get("liveId"),
+                              "home": p["home"], "away": p["away"]}
                              for p in partidos],
                 "cerrada": cerrada,
             })
@@ -3055,8 +3073,7 @@ def laliga_fixture(ttl=21600):
                 "gh": None, "ga": None, "venue": "",
             })
     out.sort(key=lambda x: (x["round"] or 0, x["start"] or ""))
-    with _lock:
-        _cache[url] = (time.time(), out)
+    _guardar_en_cache(url, out)
     return out
 
 
@@ -3176,8 +3193,7 @@ def df_fixture_generico(liga):
             "gh": gh, "ga": ga, "venue": "",
         })
     out.sort(key=lambda x: (x["round"] or 0, x["start"] or ""))
-    with _lock:
-        _cache[url] = (time.time(), out)
+    _guardar_en_cache(url, out)
     return out
 
 
@@ -4114,6 +4130,13 @@ def rescatar_todo():
     así que si el servidor se reinicia sigue desde ahí y no vuelve a empezar.
     """
     time.sleep(20)          # que la página arranque tranquila primero
+    # Las páginas viejas ya no se guardan: las que quedaron de antes ocupan
+    # lugar al pedo. Se limpian una vez y listo.
+    try:
+        almacen.borrar_prefijo("pag:")
+    except Exception:
+        pass
+
     for vuelta in range(1, 13):
         pendientes, goles_pendientes = 0, 0
         for lid, cfg in LIGAS.items():

@@ -1870,7 +1870,12 @@ const App=(()=>{
     const nombreZona=(z,i)=>z && z.name ? z.name
       : (d.zonas.length>1 ? 'Zona '+(i+1) : 'Tabla');
     const hayCuadro=S.llaves&&S.llaves.some(b=>b.llaves.length);
-    const tabs=[...d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)]),
+    // Ocho grupos son ocho pestañas y no entran: en las copas van todos
+    // juntos bajo una sola, uno abajo del otro.
+    // También en el Federal A: son muchas zonas y encima cambian de una fase
+    // a la otra, así que una pestaña por grupo no sirve.
+    const juntos=d.zonas.length>2;
+    const tabs=[...(juntos?[['zonas','Grupos']]:d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)])),
                 ...(hayCuadro?[['cuadro','Cuadro']]:[]),
                 ...(d.conAnual===false?[]:[['anual','Anual']]),
                 ['gol','Goles']];
@@ -1930,14 +1935,16 @@ const App=(()=>{
         .map(g=>`<span class="gol">${g.anulado
           ? `<span class="gol-anulado">${esc(g.player.split(' ').slice(-1)[0])} ${g.min}'</span>`
           : `${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`}</span>`).join(''));
+      // el local de ESTE partido, no el de la llave: en la vuelta se invierten
+      const loc=p.home||{}, vis=p.away||{};
       return `<div class="serie-p" onclick="App.openMatch('${js(p.id)}')">
         <div class="cab"><b>${esc(p.tramo||'Partido')}</b>
           <span>${d?`${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`:''}${p.gh==null?'':' · Finalizado'}</span></div>
         <div class="m-fila">
           <div class="m-time">${d?hhmm(p.start):''}</div>
-          <div class="side"><span class="tn">${nom(a)}</span></div>
+          <div class="side">${crest(loc,18)}<span class="tn">${esc(loc.canon||loc.name||'')}</span></div>
           <div class="m-score${p.gh==null?' pend':''}">${p.gh==null?'vs':p.gh+'-'+p.ga}</div>
-          <div class="side away"><span class="tn">${nom(v)}</span></div>
+          <div class="side away"><span class="tn">${esc(vis.canon||vis.name||'')}</span>${crest(vis,18)}</div>
         </div>
         <div class="m-goles"><span>${lado('h')}</span><span>${lado('a')}</span></div>
         <div class="ver">Ver el partido en detalle →</div></div>`;
@@ -1957,6 +1964,17 @@ const App=(()=>{
         </div>
       </div>
       <div class="mbody">${filas||'<div class="empty">Sin partidos cargados.</div>'}</div>`;
+
+    // Los goles de estos dos partidos pueden no estar cargados —son de otra
+    // ronda que la que estás mirando—: se piden y se redibuja.
+    const faltan=k.partidos.filter(p=>!S.detalles[p.id]&&p.liveId);
+    if(faltan.length) Promise.all(faltan.map(p=>
+      get('/api/match?id='+p.liveId).then(r=>{
+        S.detalles[p.id]={tv:r.tv||[],penales:null,
+          goles:(r.events||[]).filter(e=>e.type==='gol').map(e=>({
+            player:e.player,min:e.min,added:e.added,side:e.side,
+            anulado:!!e.anulado,penales:!!e.penales}))};
+      }).catch(()=>{}))).then(()=>{ if(S.series[id]) drawSerie(id); });
   }
 
   function cuadroLlaves(){
@@ -2196,10 +2214,20 @@ const App=(()=>{
        <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag" title="Jugando ahora"></span>':''}</div></td>
        ${cols.map(c=>`<td${c[2]?' class="pts"':''}>${c[1](r)}</td>`).join('')}</tr>`;}).join('')}
       </tbody></table></div>`;
-    const leyenda=()=>d.leyenda&&S.tab.startsWith('z')
+    const leyendaSiempre=()=>d.leyenda&&d.leyenda.length
       ? `<div class="leg">${d.leyenda.map(x=>`<span><i style="background:${esc(x.color)}"></i>${esc(x.texto)}</span>`).join('')}</div>`
       : '';
-    if(S.tab.startsWith('z')){
+    const leyenda=()=>S.tab.startsWith('z')?leyendaSiempre():'';
+    if(S.tab==='zonas'){
+      // todos los grupos, uno abajo del otro
+      const cols=[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],
+                  ['DIF',r=>(r.dif>0?'+':'')+r.dif]];
+      el.innerHTML=d.zonas.length
+        ? d.zonas.map((z,i)=>`<div class="cuadro-et" style="padding:0 14px">
+            ${esc(z.name||('Grupo '+(i+1)))}</div>${tabla(z.rows,cols)}`).join('')
+          + leyendaSiempre()
+        : '<div class="empty">Sin datos.</div>';
+    } else if(S.tab.startsWith('z')){
       const z=d.zonas[+S.tab.slice(1)];
       el.innerHTML=z
         ? tabla(z.rows,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],

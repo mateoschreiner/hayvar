@@ -127,6 +127,12 @@ header{background:var(--nav);color:#fff;position:sticky;top:0;z-index:100;box-sh
 .shell{max-width:1380px;margin:14px auto;padding:0 16px;display:grid;
   grid-template-columns:186px minmax(0,1fr) 372px;gap:14px;align-items:start}
 .card{background:var(--card);border-radius:10px;box-shadow:var(--shadow);border:1px solid var(--line);overflow:hidden;margin-bottom:14px}
+/* En la portada, el panel derecho no es una caja sola sino varios globitos
+   sueltos: la caja de afuera se vuelve transparente y cada bloque se dibuja
+   solo, separado del de al lado. */
+.card.sin-caja{background:transparent;border:0;box-shadow:none;overflow:visible}
+.globo{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
 
 /* ── barra lateral de ligas ── */
 aside{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);
@@ -229,6 +235,62 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cuadro-et{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
   font-weight:700;margin:12px 0 6px}
 .cuadro-et:first-child{margin-top:0}
+
+/* ── página del club ── */
+.cl-top{display:flex;align-items:center;gap:16px;padding:18px 16px;flex-wrap:wrap}
+.cl-top .esc{width:74px;height:74px;object-fit:contain;flex:none}
+.cl-top h2{font-size:23px;font-weight:800;letter-spacing:-.4px;margin:0}
+.cl-top .sub{font-size:12.5px;color:var(--txt2);margin-top:2px}
+.cl-datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:10px;padding:0 16px 16px}
+.cl-dato{background:var(--bg);border-radius:10px;padding:10px 12px}
+.cl-dato .lb{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2)}
+.cl-dato .vl{font-size:14px;font-weight:700;margin-top:3px}
+.cl-dato a{color:var(--acc)}
+.cl-sec{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);
+  font-weight:800;padding:12px 16px 8px}
+.cl-plantel{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0 18px;
+  padding:0 16px 12px}
+.cl-jug{display:flex;align-items:center;gap:9px;padding:6px 0;
+  border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.cl-jug:hover{color:var(--acc)}
+.cl-jug .num{width:22px;text-align:center;font-weight:800;color:var(--txt3);font-size:11.5px;flex:none}
+.cl-jug .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cl-jug .pj{font-size:10.5px;color:var(--txt3)}
+.cl-puesto{grid-column:1/-1;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt3);font-weight:800;margin:10px 0 2px}
+/* las camisetas: giran al tocarlas */
+.kits{display:flex;gap:18px;padding:4px 16px 18px;flex-wrap:wrap;justify-content:center}
+.kit{width:150px;text-align:center}
+.kit .escena{perspective:800px;height:172px;cursor:pointer}
+.kit .pivote{position:relative;width:100%;height:100%;transform-style:preserve-3d;
+  transition:transform .75s cubic-bezier(.4,.1,.2,1)}
+.kit .cara{position:absolute;inset:0;backface-visibility:hidden;display:grid;place-items:center}
+.kit .atras{transform:rotateY(180deg)}
+.kit .lb{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
+  font-weight:700;margin-top:4px}
+
+/* ── grupos en tarjetas ─────────────────────────────────────────────────
+   Ocho zonas seguidas se leen como una sola lista larga. Cada una en su
+   tarjeta, con aire en el medio, se recorre de un vistazo.             */
+.zonas-wrap{padding:12px 14px;display:flex;flex-direction:column;gap:14px}
+.zona-card{border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:var(--card)}
+.zona-card>h5{font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--txt2);font-weight:800;padding:9px 12px;background:var(--bg);
+  border-bottom:1px solid var(--line)}
+.zona-card .tablewrap{border:0}
+.zona-card table{font-size:12.5px}
+/* la fila entera pintada según a dónde va el equipo. Tonos suaves: se nota
+   sin gritar, y el nombre y el escudo se siguen leyendo. */
+.fila-avanza{background:rgba(45,164,110,.13)}
+.fila-repechaje{background:rgba(232,168,56,.14)}
+.fila-desciende{background:rgba(224,90,90,.12)}
+.fila-final{background:rgba(96,132,222,.14)}
+html[data-theme="dark"] .fila-avanza{background:rgba(45,164,110,.20)}
+html[data-theme="dark"] .fila-repechaje{background:rgba(232,168,56,.20)}
+html[data-theme="dark"] .fila-desciende{background:rgba(224,90,90,.18)}
+html[data-theme="dark"] .fila-final{background:rgba(96,132,222,.22)}
 
 /* ── la serie: los dos partidos de una llave ── */
 .serie-p{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
@@ -743,6 +805,105 @@ const App=(()=>{
     }).join('');
   }
 
+  /* ── página del club ──────────────────────────────────────────────────
+     Vive en su propia dirección (/belgrano) para poder compartirla. El
+     servidor devuelve el mismo index y acá se decide qué mostrar.       */
+  function camisetaSVG(k, atras, nombre){
+    const cuerpo='M64 30 L96 18 Q115 34 134 18 L166 30 L192 62 L168 84 L158 74 '
+      +'L158 214 Q115 224 72 214 L72 74 L62 84 L38 62 Z';
+    let rayas='';
+    if(k.patron==='rayas') for(let i=0;i<5;i++)
+      rayas+=`<rect x="${76+i*22}" y="18" width="11" height="206" fill="${k.raya}"/>`;
+    if(k.patron==='banda')
+      rayas=`<path d="M40 60 L190 190 L190 214 L40 84 Z" fill="${k.raya}"/>`;
+    if(k.patron==='franja')
+      rayas=`<rect x="38" y="104" width="154" height="34" fill="${k.raya}"/>`;
+    const id='k'+Math.random().toString(36).slice(2,8);
+    return `<svg viewBox="0 0 230 260" width="150" height="170" aria-hidden="true">
+      <defs><clipPath id="${id}"><path d="${cuerpo}"/></clipPath></defs>
+      <path d="${cuerpo}" fill="${k.base}" stroke="rgba(0,0,0,.22)" stroke-width="2"/>
+      <g clip-path="url(#${id})">${rayas}
+        <rect x="38" y="52" width="26" height="34" fill="${k.detalle}" opacity=".9"/>
+        <rect x="166" y="52" width="26" height="34" fill="${k.detalle}" opacity=".9"/></g>
+      ${atras
+        ? `<text x="115" y="132" text-anchor="middle" font-size="72" font-weight="800"
+             fill="${k.detalle}">10</text>
+           <text x="115" y="166" text-anchor="middle" font-size="15" font-weight="700"
+             fill="${k.detalle}">${esc((nombre||'').toUpperCase())}</text>`
+        : ''}
+      <path d="M96 18 Q115 34 134 18 Q115 44 96 18 Z" fill="${k.detalle}"/>
+      <path d="${cuerpo}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="2"/></svg>`;
+  }
+
+  function drawClub(){
+    const d=S.clubInfo; if(!d) return;
+    const i=d.info||{}, p=d.partidos||{};
+    const dato=(lb,vl)=>vl?`<div class="cl-dato"><div class="lb">${lb}</div>
+      <div class="vl">${vl}</div></div>`:'';
+
+    // plantel agrupado por puesto
+    let plantel='', ultimo='';
+    (d.plantel||[]).forEach(j=>{
+      const pu=j.puesto||'Sin puesto';
+      if(pu!==ultimo){ plantel+=`<div class="cl-puesto">${esc(pu)}</div>`; ultimo=pu; }
+      plantel+=`<div class="cl-jug" onclick="App.jugador('${js(j.nombre)}',${j.id||'null'})">
+        <span class="num">${j.n??'–'}</span><span class="nm">${esc(j.nombre)}</span>
+        <span class="pj">${j.titulares||0} tit.</span></div>`;
+    });
+
+    const kits=i.camisetas||{};
+    const kitHtml=Object.keys(kits).map((nom,idx)=>`
+      <div class="kit"><div class="escena" onclick="App.girarKit(${idx})">
+        <div class="pivote" id="kit${idx}">
+          <div class="cara">${camisetaSVG(kits[nom],false,d.club)}</div>
+          <div class="cara atras">${camisetaSVG(kits[nom],true,d.club)}</div>
+        </div></div><div class="lb">${esc(nom)}</div></div>`).join('');
+
+    $('#matches').innerHTML=`
+      <div class="cl-top">
+        ${d.escudo?`<img class="esc" src="${esc(d.escudo)}" alt="">`:''}
+        <div style="flex:1;min-width:0">
+          <h2>${esc(i.nombre||d.club)}</h2>
+          <div class="sub">${[i.apodo,i.fundado?'Fundado en '+i.fundado:''].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>
+      <div class="cl-datos">
+        ${dato('Estadio', i.estadio?esc(i.estadio)+(i.estadioApodo?`<div style="font-size:11px;font-weight:400;color:var(--txt2)">${esc(i.estadioApodo)}</div>`:''):'')}
+        ${dato('Capacidad', i.capacidad?i.capacidad.toLocaleString('es-AR')+' personas':'')}
+        ${dato('Dónde queda', i.mapa?`<a href="${esc(i.mapa)}" target="_blank" rel="noopener">Ver en el mapa ↗</a>
+           <div style="font-size:11px;font-weight:400;color:var(--txt2)">${esc(i.direccion||'')}</div>`:'')}
+        ${dato('Sitio oficial', d.sitio?`<a href="${esc(d.sitio)}" target="_blank" rel="noopener">Entrar ↗</a>`:'')}
+      </div>
+      ${kitHtml?`<div class="cl-sec">Camisetas</div><div class="kits">${kitHtml}</div>`:''}
+      ${plantel?`<div class="cl-sec">Plantel</div><div class="cl-plantel">${plantel}</div>
+        <div class="note" style="padding:0 16px 14px">Armado con los jugadores que
+        aparecieron en las formaciones. Puede faltar alguno que todavía no jugó.</div>`:''}`;
+
+    $('#right').innerHTML=`<div class="globo">${bloqueClubDe(p,d)}</div>`;
+    const caja=$('#right').parentElement; if(caja) caja.classList.add('sin-caja');
+    $('#tabs').innerHTML='';
+  }
+
+  // el mismo bloque de último y próximo, pero con datos que le pasan
+  function bloqueClubDe(cg,d){
+    const guardado=S.clubGames, guardadoClub=S.club;
+    S.clubGames=cg; S.club={name:d.club,logo:d.escudo,primary:d.primary,accent:d.accent};
+    const html=bloqueClub();
+    S.clubGames=guardado; S.club=guardadoClub;
+    return html;
+  }
+
+  async function loadClub(nombre){
+    shell(); drawSide();
+    $('.tag').textContent=nombre;
+    $('#matches').innerHTML='<div class="skel" style="width:45%"></div><div class="skel"></div>';
+    $('#right').innerHTML='<div class="skel"></div>';
+    try{ S.clubInfo=await get('/api/club-info?name='+encodeURIComponent(nombre)); }
+    catch(e){ return status('err','No se pudo cargar el club: '+esc(e.message)); }
+    drawClub();
+    status('ok',`<b>${esc(S.clubInfo.club)}</b> · ficha del club`);
+  }
+
   async function loadHome(){
     shell(true); drawSide();
     if(!S.weekStart){ const w=new Date(S.homeDate); w.setDate(w.getDate()-((w.getDay()+6)%7)); S.weekStart=w; }
@@ -837,8 +998,10 @@ const App=(()=>{
     const golazo=S.games.find(m=>String(m.id)===String(h.partidazo))
       || finalizados.slice().sort((a,b)=>((b.gh+b.ga)-(a.gh+a.ga)))[0];
     $('#tabs').innerHTML='';
+    // En la portada cada bloque va en su propio globito, separado del resto.
+    const caja=$('#right').parentElement; if(caja) caja.classList.add('sin-caja');
     $('#right').innerHTML=`
-      ${S.club?bloqueClub():`<div style="padding:12px 14px;border-bottom:1px solid var(--line)">
+      ${S.club?`<div class="globo">${bloqueClub()}</div>`:`<div class="globo" style="padding:12px 14px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:9px">Resumen del día</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
           ${[['En vivo',vivos.length,'var(--live)'],['Jugados',finalizados.length,'var(--txt)'],['Por jugar',S.games.length-vivos.length-finalizados.length,'var(--txt)']]
@@ -847,7 +1010,7 @@ const App=(()=>{
               <div style="font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px;margin-top:3px">${lb}</div></div>`).join('')}
         </div>
       </div>`}
-      ${golazo?`<div style="padding:11px 14px;border-bottom:1px solid var(--line)">
+      ${golazo?`<div class="globo" style="padding:11px 14px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:7px">Partidazo del día</div>
         <div class="partidazo" onclick="App.openMatch('${js(golazo.id)}')">
           <div class="pz-eq">${crest(golazo.home,20)}<span class="tn">${esc(golazo.home.canon||golazo.home.name)}</span>
@@ -858,15 +1021,15 @@ const App=(()=>{
             ${golazo.interzonal?'Interzonal · ':''}${golazo.status==='LIVE'?(golazo.minute??'')+"' en vivo"
               :golazo.status==='FIN'?'Finalizado':hhmm(golazo.start)}</div>
         </div></div>`:''}
-      ${proximos.length?`<div style="padding:11px 14px 4px">
+      ${proximos.length?`<div class="globo"><div style="padding:11px 14px 4px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:5px">Lo que viene</div></div>
         ${proximos.map(m=>`<div class="match" style="grid-template-columns:46px 1fr" onclick="App.openMatch('${js(m.id)}')">
           <div class="m-time">${hhmm(m.start)}</div>
           <div style="min-width:0">
             <div class="tcell" style="gap:6px">${crest(m.home,17)}<span class="tn" style="font-size:12.5px">${esc(m.home.canon||m.home.name)}</span></div>
             <div class="tcell" style="gap:6px;margin-top:3px">${crest(m.away,17)}<span class="tn" style="font-size:12.5px">${esc(m.away.canon||m.away.name)}</span></div>
-          </div></div>`).join('')}`:''}
-      <div class="note">Elegí un torneo en el menú de la izquierda para ver sus tablas.</div>`;
+          </div></div>`).join('')}</div>`:''}
+      <div class="note" style="padding:0 2px">Elegí un torneo en el menú de la izquierda para ver sus tablas.</div>`;
   }
 
   /* ── modo club ── */
@@ -914,10 +1077,17 @@ const App=(()=>{
     const luz=hex=>{const n=parseInt(hex.slice(1),16);
       return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))/255;};
     hay.style.color='#fff';
-    var_.style.color = luz(c.accent) > .82 ? oscurecer(c.accent,.42) : c.accent;
+    // el color del VAR lo decide el servidor: hay clubes donde el segundo
+    // color no se lee sobre su propia barra y va en negro
+    const cVar=c.var||c.accent;
+    var_.style.color = luz(cVar) > .82 ? oscurecer(cVar,.42) : cVar;
     ball.style.background=c.accent;
     ball.style.color=claro(c.accent)?'#111':'#fff';
+    // el escudo del encabezado lleva a la página del club
     esc_.style.display='inline-flex';
+    esc_.style.cursor='pointer';
+    esc_.title='Ver la página de '+c.name;
+    esc_.onclick=()=>api.club(c.name);
     esc_.innerHTML=c.logo
       ? `<img src="${esc(c.logo)}" alt="${esc(c.name)}" title="${esc(c.name)}">`
       : '';
@@ -1345,6 +1515,7 @@ const App=(()=>{
 
   function drawRight(){
     const el=$('#right');
+    const caja=el.parentElement; if(caja) caja.classList.remove('sin-caja');
     if(S.tab==='A'||S.tab==='B'){
       if(!S.standings) return;
       const z=S.standings.zones.find(x=>x.name.endsWith(S.tab));
@@ -1870,12 +2041,16 @@ const App=(()=>{
     const nombreZona=(z,i)=>z && z.name ? z.name
       : (d.zonas.length>1 ? 'Zona '+(i+1) : 'Tabla');
     const hayCuadro=S.llaves&&S.llaves.some(b=>b.llaves.length);
-    // Ocho grupos son ocho pestañas y no entran: en las copas van todos
-    // juntos bajo una sola, uno abajo del otro.
-    // También en el Federal A: son muchas zonas y encima cambian de una fase
-    // a la otra, así que una pestaña por grupo no sirve.
+    /* Ocho grupos son ocho pestañas y no entran. Van todos juntos bajo una
+       sola, en tarjetas. Y si las zonas vienen con el nombre de su fase
+       —"Segunda Fase - Zona A", como manda el Federal A— se arma una
+       pestaña por fase en vez de una sola con todo mezclado. */
+    S.fasesZona=agruparZonas(d.zonas);
     const juntos=d.zonas.length>2;
-    const tabs=[...(juntos?[['zonas','Grupos']]:d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)])),
+    const tabs=[...(S.fasesZona.length>1
+                    ? S.fasesZona.map((f,i)=>['f'+i,f.nombre])
+                    : juntos?[['zonas','Grupos']]
+                            :d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)])),
                 ...(hayCuadro?[['cuadro','Cuadro']]:[]),
                 ...(d.conAnual===false?[]:[['anual','Anual']]),
                 ['gol','Goles']];
@@ -1980,7 +2155,13 @@ const App=(()=>{
   function cuadroLlaves(){
     // el cuadro arranca en la primera ronda eliminatoria que tenga datos:
     // en la Copa Argentina eso son los 32avos
-    let bloques=(S.llaves||[]).map(b=>({etapa:b.etapa,llaves:b.llaves.slice()}));
+    // Si estás parado en una fase previa, el cuadro que corresponde es el de
+    // las previas; si no, el del torneo propiamente dicho.
+    const aquiEs=S.etapas&&S.etapas[S.round-1];
+    const enPrevia=/previa|fase 1|fase 2|fase 3|primera fase/i.test(aquiEs||'');
+    let bloques=(S.llaves||[])
+      .filter(b=>!!b.previa===enPrevia)
+      .map(b=>({etapa:b.etapa,llaves:b.llaves.slice()}));
     while(bloques.length&&!bloques[0].llaves.length) bloques.shift();
     if(!bloques.length)
       return '<div class="empty">El cuadro todavía no está definido.</div>';
@@ -2197,19 +2378,45 @@ const App=(()=>{
         <b style="font-weight:800">${r.goals}</b></div>`).join('')}</div>`;
   }
 
+  /* Las zonas llegan con el nombre de su fase adelante: "Segunda Fase -
+     Zona A". Se parte en dos para poder agrupar por fase y mostrar sólo el
+     nombre corto de la zona adentro de cada una. */
+  function agruparZonas(zonas){
+    const fases=[];
+    (zonas||[]).forEach((z,i)=>{
+      const t=String(z.name||'').trim();
+      const m=t.match(/^(.*?fase.*?)\s*[-–]\s*(.+)$/i);
+      const fase=m?m[1].trim():'';
+      const corto=m?m[2].trim():(t||('Zona '+(i+1)));
+      let f=fases.find(x=>x.nombre===fase);
+      if(!f){ f={nombre:fase,zonas:[]}; fases.push(f); }
+      f.zonas.push({...z,corto});
+    });
+    // si ninguna trae fase, queda un solo grupo sin nombre
+    return (fases.length===1&&!fases[0].nombre)?[]:fases;
+  }
+
   function drawOtra(){
     const d=S.otra, el=$('#right'); if(!d) return;
+    // fuera de la portada el panel vuelve a ser una sola caja
+    const caja=el.parentElement; if(caja) caja.classList.remove('sin-caja');
     // Franja de color al costado de la posición. Faltaban las tres de Europa
     // y por eso LaLiga no marcaba nada.
     const DEST={final:'z-camp',reducido:'z-lib',
                 champions:'z-lib',europa:'z-camp',conference:'z-sud',
                 avanza:'z-lib',repechaje:'z-camp',
                 desciende:'z-desc'};
+    // el color de la fila entera, más suave que la franja del costado
+    const FILA={final:'fila-final',reducido:'fila-final',champions:'fila-final',
+                europa:'fila-repechaje',conference:'fila-avanza',
+                avanza:'fila-avanza',repechaje:'fila-repechaje',
+                desciende:'fila-desciende'};
     const tabla=(rows,cols)=>`<div class="tablewrap"><table><thead><tr>
       <th style="width:26px"></th><th class="l">Equipo</th>${cols.map(c=>`<th>${c[0]}</th>`).join('')}
       </tr></thead><tbody>${rows.map((r,i)=>{
       const zc=DEST[r.destino];
-      return `<tr${r.destinoTexto?` title="${esc(r.destinoTexto)}"`:''}>
+      return `<tr class="${FILA[r.destino]||''}"${r.destinoTexto?` title="${esc(r.destinoTexto)}"`:''}
+        style="${estiloClub(r.team.canon||r.team.name)}">
        <td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos??i+1}</td>
        <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag" title="Jugando ahora"></span>':''}</div></td>
        ${cols.map(c=>`<td${c[2]?' class="pts"':''}>${c[1](r)}</td>`).join('')}</tr>`;}).join('')}
@@ -2218,15 +2425,20 @@ const App=(()=>{
       ? `<div class="leg">${d.leyenda.map(x=>`<span><i style="background:${esc(x.color)}"></i>${esc(x.texto)}</span>`).join('')}</div>`
       : '';
     const leyenda=()=>S.tab.startsWith('z')?leyendaSiempre():'';
-    if(S.tab==='zonas'){
-      // todos los grupos, uno abajo del otro
-      const cols=[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],
-                  ['DIF',r=>(r.dif>0?'+':'')+r.dif]];
-      el.innerHTML=d.zonas.length
-        ? d.zonas.map((z,i)=>`<div class="cuadro-et" style="padding:0 14px">
-            ${esc(z.name||('Grupo '+(i+1)))}</div>${tabla(z.rows,cols)}`).join('')
-          + leyendaSiempre()
-        : '<div class="empty">Sin datos.</div>';
+    // cada grupo en su tarjeta, con aire en el medio
+    const COLS=[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],
+                ['DIF',r=>(r.dif>0?'+':'')+r.dif]];
+    const tarjetas=zs=>zs.length
+      ? `<div class="zonas-wrap">${zs.map((z,i)=>`<div class="zona-card">
+          <h5>${esc(z.corto||z.name||('Grupo '+(i+1)))}</h5>
+          ${tabla(z.rows,COLS)}</div>`).join('')}</div>` + leyendaSiempre()
+      : '<div class="empty">Sin datos.</div>';
+
+    if(S.tab.startsWith('f')&&S.fasesZona&&S.fasesZona.length>1){
+      const f=S.fasesZona[+S.tab.slice(1)];
+      el.innerHTML=f?tarjetas(f.zonas):'<div class="empty">Sin datos.</div>';
+    } else if(S.tab==='zonas'){
+      el.innerHTML=tarjetas(d.zonas);
     } else if(S.tab.startsWith('z')){
       const z=d.zonas[+S.tab.slice(1)];
       el.innerHTML=z
@@ -2495,7 +2707,12 @@ const App=(()=>{
     init(){
       document.documentElement.dataset.theme=localStorage.getItem('hayvar.theme')||'light';
       medir.arrancar();
-      loadAll(true);
+      // si entraron por la dirección de un club (/belgrano), va directo ahí
+      const ruta=location.pathname.replace(/^\/|\/$/g,'');
+      if(ruta && ruta!=='index.html'){
+        S.liga='club';
+        loadClub(ruta.replace(/-/g,' '));
+      } else loadAll(true);
       cargarEmblemas();
       // el club elegido se recuerda entre sesiones
       try{ const c=localStorage.getItem('hayvar.club'); if(c) setTimeout(()=>aplicarClub(JSON.parse(c)),50); }catch(e){}
@@ -2531,6 +2748,15 @@ const App=(()=>{
     // cambiar de fase en los torneos que la tienen (Federal A)
     fase(n){ S.fase=n; S.round=null; drawRounds(); pintarFecha(); },
     serie(id){ drawSerie(id); },
+    girarKit(i){
+      const p=document.getElementById('kit'+i); if(!p) return;
+      const dado=p.dataset.girada==='1';
+      p.dataset.girada=dado?'0':'1';
+      p.style.transform='rotateY('+(dado?0:180)+'deg)';
+    },
+    club(nombre){ S.liga='club'; location.hash=''; history.pushState({},'', '/'+
+      nombre.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,'-'));
+      loadClub(nombre); },
     // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
     // que se redibuja más chico
     correrCuadro(d){

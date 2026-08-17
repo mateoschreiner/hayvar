@@ -2183,6 +2183,7 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
     hid = (g.get("homeCompetitor") or {}).get("id")
     quien = {m.get("id"): (m.get("name") or m.get("shortName") or "")
              for m in (g.get("members") or [])}
+    dorsal = {m.get("id"): m.get("jerseyNumber") for m in (g.get("members") or [])}
 
     # Ya que tenemos el partido entero abierto, anotamos quiénes jugaron.
     # Esto es lo que hace que el contador de partidos se llene solo: /api/
@@ -2196,9 +2197,20 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
             nom = quien.get(mm.get("id"))
             if not nom:
                 continue
-            if mm.get("status") == 1 or norm(mm.get("statusText")) in ("titular", "starting", "starter"):
+            titular = (mm.get("status") == 1
+                       or norm(mm.get("statusText")) in ("titular", "starting", "starter"))
+            if titular:
                 anotar_partido(nom, liga, game_id)
             anotar_paso(nom, club, liga, escudo)
+            # el plantel del club: dorsal, puesto y si fue titular
+            anotar_plantel(club, {
+                "nombre": nom,
+                "n": mm.get("jerseyNumber") or dorsal.get(mm.get("id")),
+                "puesto": puesto_ar((mm.get("position") or {}).get("name")),
+                "id": (g.get("members") and next(
+                    (m.get("athleteId") for m in g["members"]
+                     if m.get("id") == mm.get("id")), None)),
+            }, titular, (g.get("startTime") or "")[:10])
     goles = []
     for e in (g.get("events") or []):
         et = e.get("eventType") or {}
@@ -2497,10 +2509,12 @@ def armar_llaves(games, etapas, liga_id=""):
     es ese resultado. Se devuelve una lista por etapa, de la más lejana a la
     final, que es como se lee un cuadro.
     """
-    # El cuadro es de la eliminación directa en serio: ni los grupos ni las
-    # fases previas, que son un torneo aparte antes de que empiece este.
+    # Todo lo que se juega por eliminación entra al cuadro: las fases previas
+    # también son llaves de ida y vuelta y merecen verse. Lo único que queda
+    # afuera es la fase de grupos. Cada bloque dice si es previa, para que la
+    # página muestre un cuadro u otro según dónde estés parado.
     def del_cuadro(nombre):
-        return rango_etapa(nombre) >= 2
+        return rango_etapa(nombre) != 1
 
     por_etapa = {}
     for m in games:
@@ -2586,7 +2600,8 @@ def armar_llaves(games, etapas, liga_id=""):
         # por lugar en el cuadro si lo sabemos; si no, por fecha
         llaves.sort(key=lambda x: (x["slot"] if x["slot"] else 999,
                                    x["partidos"][0]["start"] or ""))
-        salida.append({"etapa": et, "llaves": llaves})
+        salida.append({"etapa": et, "llaves": llaves,
+                       "previa": rango_etapa(et) < 1})
     return salida
 
 
@@ -3400,6 +3415,53 @@ def anotar_paso(nombre, club, liga, escudo=None):
     almacen.guardar(clave, hist)
 
 
+def anotar_plantel(club, ficha, titular, dia):
+    """
+    Arma el plantel de un club con los que fueron apareciendo en las
+    formaciones. No es la lista oficial —al que nunca jugó no lo vemos— y
+    por eso la página lo aclara. Pero para los que juegan es el dato bueno:
+    dorsal, puesto y cuándo fue la última vez.
+    """
+    if not club or not ficha.get("nombre"):
+        return
+    clave = "plantel:" + norm(club)
+    plantel, _ = almacen.leer(clave)
+    plantel = plantel or {}
+    k = norm(ficha["nombre"])
+    viejo = plantel.get(k) or {}
+    plantel[k] = {
+        "nombre": ficha["nombre"],
+        "n": ficha.get("n") or viejo.get("n"),
+        "puesto": ficha.get("puesto") or viejo.get("puesto"),
+        "id": ficha.get("id") or viejo.get("id"),
+        "titulares": (viejo.get("titulares") or 0) + (1 if titular else 0),
+        "convocado": (viejo.get("convocado") or 0) + 1,
+        "ultimo": max(dia or "", viejo.get("ultimo") or ""),
+    }
+    almacen.guardar(clave, plantel)
+
+
+def plantel_de(club):
+    """El plantel guardado, ordenado por puesto y después por dorsal."""
+    plantel, _ = almacen.leer("plantel:" + norm(club))
+    if not plantel:
+        return []
+    orden = {"arquero": 0, "defensor": 1, "mediocampista": 2, "delantero": 3}
+
+    def puesto_rango(p):
+        n = norm(p or "")
+        for k, v in orden.items():
+            if k in n:
+                return v
+        return 4
+
+    filas = list(plantel.values())
+    filas.sort(key=lambda x: (puesto_rango(x.get("puesto")),
+                              x.get("n") if isinstance(x.get("n"), int) else 99,
+                              norm(x.get("nombre"))))
+    return filas
+
+
 def carrera(nombre):
     hist, _ = almacen.leer("carrera:" + norm(nombre))
     return sorted(hist or [], key=lambda h: h.get("desde") or "", reverse=True)
@@ -3869,6 +3931,87 @@ def api_club(q):
             "proximo": proximo, "total": len(suyos)}
 
 
+# Clubes cuyo "VAR" del logo va en negro. El segundo color de la camiseta
+# no siempre sirve: el celeste de Belgrano sobre la barra celeste no se lee.
+VAR_NEGRO = {"Belgrano", "Banfield", "Gimnasia y Esgrima (LP)", "Independiente",
+             "Lanús", "Barracas Central", "Estudiantes (LP)",
+             "Independiente Rivadavia", "Sarmiento (J)", "Unión",
+             "Atlético Tucumán", "Estudiantes (RC)", "Huracán", "Instituto",
+             "Platense", "Talleres (C)"}
+
+
+# Los datos que no salen de ninguna fuente automática. Por ahora sólo
+# Belgrano, para probar la página antes de cargar los treinta.
+CLUBES_INFO = {
+    "Belgrano": {
+        "nombre": "Club Atlético Belgrano",
+        "apodo": "El Pirata",
+        "fundado": 1905,
+        "estadio": "Estadio Julio César Villagra",
+        "estadioApodo": "Gigante de Alberdi",
+        "direccion": "Arturo Orgaz 510, Alberdi, Córdoba",
+        "capacidad": 30000,
+        "sitio": "https://belgranocordoba.com",
+        # el diseño de la camiseta, no sólo los colores: sin esto todas
+        # se verían como un rectángulo del mismo color
+        "camisetas": {
+            "titular": {"patron": "rayas", "base": "#ffffff",
+                        "raya": "#4aa3dc", "detalle": "#1b3f66"},
+            "suplente": {"patron": "liso", "base": "#1b3f66",
+                         "raya": "#1b3f66", "detalle": "#4aa3dc"},
+        },
+    },
+}
+
+
+def api_club_info(q):
+    """
+    Todo lo del club para su página. /api/club-info?name=Belgrano
+    """
+    nombre = (q.get("name") or [""])[0].strip()
+    if not nombre:
+        return {"error": "falta el parámetro name"}
+    canon = match_team(nombre) or nombre
+
+    ficha = dict(CLUBES_INFO.get(canon) or {})
+    colores = COLORES.get(canon)
+    escudo = None
+    try:
+        escudo = (_logos().get(canon) or {}).get("logo")
+    except Exception:
+        pass
+
+    # el estadio, si no está cargado a mano: el que más se repite de local
+    if not ficha.get("estadio"):
+        canchas = {}
+        try:
+            for m in all_games(ttl=600):
+                if m["home"].get("canon") == canon and m.get("venue"):
+                    canchas[m["venue"]] = canchas.get(m["venue"], 0) + 1
+        except Exception:
+            pass
+        if canchas:
+            ficha["estadio"] = max(canchas, key=canchas.get)
+
+    if ficha.get("estadio"):
+        from urllib.parse import quote
+        ficha["mapa"] = ("https://www.google.com/maps/search/?api=1&query="
+                         + quote("%s %s" % (ficha["estadio"],
+                                            ficha.get("direccion") or "Argentina")))
+
+    return {
+        "club": canon,
+        "escudo": escudo,
+        "primary": colores[0] if colores else None,
+        "accent": colores[1] if colores else None,
+        "var": "#111111" if canon in VAR_NEGRO else (colores[1] if colores else None),
+        "info": ficha,
+        "plantel": plantel_de(canon),
+        "partidos": api_club({"name": [canon]}),
+        "sitio": ficha.get("sitio") or SITIOS.get(canon),
+    }
+
+
 def api_clubes(q):
     """Clubes de Primera con sus colores, para el modo club."""
     logos = {}
@@ -3878,6 +4021,7 @@ def api_clubes(q):
         pass
     return {"clubes": sorted(
         [{"name": n, "primary": c[0], "accent": c[1],
+          "var": "#111111" if n in VAR_NEGRO else c[1],
           "logo": (logos.get(n) or {}).get("logo")}
          for n, c in COLORES.items()],
         key=lambda x: norm(x["name"]))}
@@ -3918,6 +4062,7 @@ ROUTES = {
     "/api/home": api_home,
     "/api/clubes": api_clubes,
     "/api/club": api_club,
+    "/api/club-info": api_club_info,
     "/api/competencias": api_competencias,
     "/api/contenido": api_contenido,
     "/api/historico": api_historico,
@@ -3933,6 +4078,11 @@ ROUTES = {
     "/api/scorers": api_scorers,
     "/api/match": api_match,
 }
+
+
+# Las direcciones propias de cada club. Por ahora sólo la de prueba; se
+# suman solas a medida que se cargue CLUBES_INFO.
+RUTAS_CLUB = {norm(n).replace(" ", "-"): n for n in CLUBES_INFO}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -4039,8 +4189,11 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 500)
 
-        # la página, comprimida
-        if path in ("/", "/index.html"):
+        # La página, comprimida. Las direcciones de club —/belgrano— también
+        # devuelven el index: la página es una sola y adentro decide qué
+        # mostrar mirando la dirección. Así el enlace se puede compartir y
+        # Google lo puede indexar.
+        if path in ("/", "/index.html") or path.strip("/") in RUTAS_CLUB:
             return self._archivo(os.path.join(HERE, "index.html"),
                                  "text/html; charset=utf-8")
         return super().do_GET()

@@ -1768,9 +1768,27 @@ def _sc_standings(comp, ttl=25):
     fila trae su groupNum y el bloque, los nombres de los grupos.
     """
     data = fetch("standings", {"competitions": comp, "live": "true"}, ttl=ttl)
-    bloque = (data.get("standings") or [{}])[0]
-    nombres = {g.get("num"): g.get("name") for g in (bloque.get("groups") or [])}
+    todos = data.get("standings") or [{}]
+
+    # 365scores manda una tabla por fase: la primera es la que se está
+    # jugando, pero las anteriores también vienen. Antes tomábamos sólo la
+    # primera y por eso el Federal A se quedaba sin las zonas de la fase 1.
+    # Se juntan todas, poniéndole a cada zona el nombre de su fase adelante.
     zonas = {}
+    for bloque in todos:
+        fase = (bloque.get("name") or bloque.get("stageName") or "").strip()
+        _sc_zonas_de(bloque, fase, zonas)
+    out = []
+    for clave in sorted(zonas, key=lambda k: (zonas[k]["orden"], k)):
+        z = zonas[clave]
+        out.append({"name": z["nombre"], "num": z["num"],
+                    "rows": sort_rows_simple(z["filas"])})
+    return out
+
+
+def _sc_zonas_de(bloque, fase, zonas):
+    """Vuelca las filas de una tabla en el diccionario de zonas."""
+    nombres = {g.get("num"): g.get("name") for g in (bloque.get("groups") or [])}
     for r in bloque.get("rows", []):
         c = r.get("competitor") or {}
         gf, gc = int(r.get("for") or 0), int(r.get("against") or 0)
@@ -1783,7 +1801,17 @@ def _sc_standings(comp, ttl=25):
             form.append("G" if me["score"] > riv["score"]
                         else ("P" if me["score"] < riv["score"] else "E"))
         g = r.get("groupNum")
-        zonas.setdefault(g, []).append({
+        # Los torneos sin zonas vienen con num en blanco. Sin esto la
+        # pestaña terminaba diciendo "Zona None".
+        corto = nombres.get(g)
+        if not corto and g not in (None, "", 0):
+            corto = "Zona %s" % g
+        # el nombre lleva la fase adelante para poder agruparlas después
+        nombre = ("%s - %s" % (fase, corto)) if (fase and corto) else (corto or fase or None)
+        clave = (fase, g)
+        z = zonas.setdefault(clave, {"nombre": nombre, "num": g,
+                                     "orden": len(zonas), "filas": []})
+        z["filas"].append({
             "team": {"name": c.get("name") or "", "short": c.get("symbolicName") or "",
                      "logo": logo(c), "site": sitio_de(c.get("name") or "")},
             "pts": int(float(r.get("points") or 0)), "pj": int(r.get("gamePlayed") or 0),
@@ -1791,17 +1819,6 @@ def _sc_standings(comp, ttl=25):
             "p": int(r.get("gamesLost") or 0),
             "gf": gf, "gc": gc, "dif": gf - gc, "form": form, "live": False,
         })
-    out = []
-    for num in sorted(zonas):
-        # Los torneos sin zonas vienen con num en blanco. Antes se armaba
-        # "Zona %s" igual y la pestaña terminaba diciendo "Zona None": si no
-        # hay nombre ni número, se deja vacío y la página pone "Tabla".
-        nombre = nombres.get(num)
-        if not nombre and num not in (None, "", 0):
-            nombre = "Zona %s" % num
-        out.append({"name": nombre or None,
-                    "num": num, "rows": sort_rows_simple(zonas[num])})
-    return out
 
 
 LEYENDA_DESTINOS = [
@@ -3951,14 +3968,15 @@ CLUBES_INFO = {
         "estadioApodo": "Gigante de Alberdi",
         "direccion": "Arturo Orgaz 510, Alberdi, Córdoba",
         "capacidad": 30000,
-        "sitio": "https://belgranocordoba.com",
-        # el diseño de la camiseta, no sólo los colores: sin esto todas
-        # se verían como un rectángulo del mismo color
+        "sitio": "https://belgrano.com.ar",
+        # El diseño de cada camiseta, no sólo los colores. La 2025/26 de
+        # Umbro es celeste lisa con vivos negros la titular, y negra con
+        # vivos celestes la suplente: no van las rayas de otras épocas.
         "camisetas": {
-            "titular": {"patron": "rayas", "base": "#ffffff",
-                        "raya": "#4aa3dc", "detalle": "#1b3f66"},
-            "suplente": {"patron": "liso", "base": "#1b3f66",
-                         "raya": "#1b3f66", "detalle": "#4aa3dc"},
+            "titular": {"patron": "liso", "base": "#3aa3e3",
+                        "raya": "#3aa3e3", "detalle": "#141414"},
+            "suplente": {"patron": "liso", "base": "#141414",
+                         "raya": "#141414", "detalle": "#3aa3e3"},
         },
     },
 }
@@ -3999,9 +4017,29 @@ def api_club_info(q):
                          + quote("%s %s" % (ficha["estadio"],
                                             ficha.get("direccion") or "Argentina")))
 
+    # el fixture completo del club, separado por competencia
+    fixture, orden = {}, []
+    for lid in (l for l in LIGAS if l != "fem"):
+        try:
+            juegos = (all_games(ttl=600) if lid == "lpf"
+                      else api_liga_games({"id": [lid]}).get("games", []))
+        except Exception:
+            continue
+        suyos = [m for m in juegos
+                 if any(mismo_club(m[s].get("canon") or m[s].get("name"), canon)
+                        for s in ("home", "away"))]
+        if not suyos:
+            continue
+        suyos.sort(key=lambda m: m.get("start") or "")
+        orden.append(lid)
+        fixture[lid] = {"nombre": LIGAS[lid]["nombre"],
+                        "copa": bool(LIGAS[lid].get("copa")),
+                        "games": suyos}
+
     return {
         "club": canon,
         "escudo": escudo,
+        "fixture": [dict(fixture[l], liga=l) for l in orden],
         "primary": colores[0] if colores else None,
         "accent": colores[1] if colores else None,
         "var": "#111111" if canon in VAR_NEGRO else (colores[1] if colores else None),

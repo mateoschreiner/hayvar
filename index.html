@@ -229,6 +229,9 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .m-extra:empty{display:none}
 .m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 0 64px;
   font-size:11px;color:var(--txt2);line-height:1.5}
+/* la tanda de penales, aparte del resultado del partido */
+.m-pen{margin:3px 0 0 64px;font-size:10.5px;font-weight:700;color:var(--txt2);
+  letter-spacing:.3px}
 /* cada gol entero, para que no se parta por la mitad al cortar el renglón */
 .m-goles .gol{display:inline-block;white-space:nowrap}
 .m-goles .gol:not(:last-child)::after{content:"·";margin:0 5px;color:var(--txt3)}
@@ -990,7 +993,13 @@ const App=(()=>{
     // Cada gol es un bloque propio y el separador va pegado al anterior. Si
     // se escribía " · " suelto, al cortarse el renglón el punto quedaba
     // colgado al principio de la línea siguiente, lejos del nombre.
-    const lado=s=>(d.goles||[]).filter(g=>g.side===s).map(g=>{
+    // La tanda de penales no son goles del partido: se cuentan aparte y se
+    // muestran como "Penales 4-2", que es como se lee en cualquier lado.
+    const tanda=(d.goles||[]).filter(g=>g.penales&&!g.anulado);
+    const penales=tanda.length
+      ? `<div class="m-pen">Penales ${tanda.filter(g=>g.side==='h').length}-${tanda.filter(g=>g.side==='a').length}</div>`
+      : '';
+    const lado=s=>(d.goles||[]).filter(g=>g.side===s&&!g.penales).map(g=>{
       const txt=`${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`;
       return `<span class="gol">${g.anulado
         ? `<span class="gol-anulado" title="Gol anulado por el VAR">${txt}</span>`
@@ -1000,6 +1009,7 @@ const App=(()=>{
     const tv=(d.tv||[]).join(' · ');
     return `<div class="m-extra">
       ${(gh||ga)?`<div class="m-goles"><span>${gh}</span><span>${ga}</span></div>`:''}
+      ${penales}
       ${tv?`<div class="m-tv" title="Se ve por ${esc(tv)}">${esc(tv)}</div>`:''}
     </div>`;
   }

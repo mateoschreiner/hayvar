@@ -2177,13 +2177,19 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
         etiqueta = norm("%s %s" % (et.get("name") or "", et.get("subTypeName") or ""))
         anulado = any(x in etiqueta for x in
                       ("anulad", "disallow", "cancel", "invalid", "no valido"))
+        minuto = int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None
+        # La definición por penales llega como goles del minuto 120 y pico,
+        # así que se sumaban al resultado y a los goleadores. No son goles
+        # del partido: son la tanda. Se separan.
+        tanda = minuto is not None and minuto >= 120
         goles.append({
-            "min": int(mins) if isinstance(mins, (int, float)) and mins >= 0 else None,
+            "min": minuto,
             "added": e.get("addedTime") or 0,
             "side": "h" if e.get("competitorId") == hid else "a",
             "player": quien.get(e.get("playerId"), ""),
             "sub": et.get("subTypeName") or "",
             "anulado": anulado,
+            "penales": tanda,
         })
     goles.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
 
@@ -2319,8 +2325,9 @@ def fecha_actual(rounds, por_fecha):
 # agregamos a mano: si no, "Cuartos de final" caía después de la final sólo
 # porque se sumó al final de la lista.
 _RANGO_ETAPA = [
-    (("fase de grupos", "grupo", "group"), 0),
-    (("primera fase", "preliminar", "previa", "fase 1", "fase 2", "fase 3"), 1),
+    # las previas van antes que los grupos: son la puerta de entrada
+    (("primera fase", "preliminar", "previa", "fase 1", "fase 2", "fase 3"), 0),
+    (("fase de grupos", "grupo", "group"), 1),
     (("repechaje", "play off", "playoff", "play-off", "pre octavos"), 2),
     (("64avos", "sesentaicuatroavos"), 3),
     (("32avos", "treintaidosavos", "treintaydosavos"), 4),
@@ -2331,6 +2338,42 @@ _RANGO_ETAPA = [
     (("tercer",), 9),
     (("final",), 10),
 ]
+
+
+# Las fases que tiene cada copa, con su nombre y en orden. Sirve de filtro:
+# 365scores manda nombres sueltos y a veces alguno que no corresponde —
+# apareció un "tercer puesto" que ni la Libertadores ni la Sudamericana
+# juegan— y todo lo que no esté en esta lista se descarta.
+#
+# Libertadores 2026: tres fases previas, grupos y de octavos a la final.
+# Sudamericana 2026: una fase previa, grupos, el play-off donde los segundos
+# se cruzan con los terceros de la Libertadores, y de octavos a la final.
+# Las dos definen a partido único, sin tercer puesto.
+FASES_COPA = {
+    "lib": ["Fase previa", "Fase de grupos", "Octavos de final",
+            "Cuartos de final", "Semifinal", "Final"],
+    "sud": ["Fase previa", "Fase de grupos", "Pre octavos", "Octavos de final",
+            "Cuartos de final", "Semifinal", "Final"],
+    "ca":  ["32avos de final", "16avos de final", "Octavos de final",
+            "Cuartos de final", "Semifinal", "Final"],
+}
+
+
+def canonizar_fase(crudo, fases):
+    """
+    Lleva el nombre que manda la fuente al nombre de fase del torneo.
+
+    "Fase 2" y "Fase 3" de la Libertadores son las dos previas: van juntas
+    en una sola. Lo que no encaja en ninguna fase del torneo se descarta en
+    vez de inventarle un lugar en el cuadro.
+    """
+    r = rango_etapa(crudo)
+    for f in fases:
+        if rango_etapa(f) == r:
+            return f
+    if r <= 2:                       # cualquier ronda anterior a los grupos
+        return next((f for f in fases if rango_etapa(f) == 0), None)
+    return None
 
 
 def rango_etapa(nombre):
@@ -2374,17 +2417,21 @@ def armar_llaves(games, etapas):
     es ese resultado. Se devuelve una lista por etapa, de la más lejana a la
     final, que es como se lee un cuadro.
     """
-    grupos = norm("Fase de grupos")
+    # El cuadro es de la eliminación directa en serio: ni los grupos ni las
+    # fases previas, que son un torneo aparte antes de que empiece este.
+    def del_cuadro(nombre):
+        return rango_etapa(nombre) >= 2
+
     por_etapa = {}
     for m in games:
         et = m.get("etapa") or ""
-        if not et or norm(et) == grupos:
+        if not et or not del_cuadro(et):
             continue
         por_etapa.setdefault(et, {}).setdefault(llave_de(m), []).append(m)
 
     salida = []
     for et in etapas:
-        if norm(et) == grupos:
+        if not del_cuadro(et):
             continue
         llaves = []
         for partidos in (por_etapa.get(et) or {}).values():
@@ -2555,18 +2602,22 @@ def api_liga_games(q):
     if cfg.get("copa"):
         # ¿el torneo tiene fase de grupos? Lo dice que haya tablas por zona.
         hay_grupos = bool(meta)
+        fases = FASES_COPA.get(lid)
 
         def nombre_etapa(g):
             et = (g.get("stage") or "").strip()
-            if et:
-                return et
-            # 365scores manda la fase de grupos sin nombre: llega vacío. Si el
-            # torneo tiene zonas, un partido sin etapa es de los grupos.
-            return "Fase de grupos" if (g.get("zone") or hay_grupos) else "Fase única"
+            if not et:
+                # 365scores manda la fase de grupos sin nombre: llega vacío.
+                # Si el torneo tiene zonas, un partido sin etapa es de grupos.
+                et = "Fase de grupos" if (g.get("zone") or hay_grupos) else "Fase única"
+            return canonizar_fase(et, fases) if fases else et
 
         # Las rondas se ordenan por stageNum, que es el orden real del
         # torneo. La fecha no sirve sola: los 32avos de una zona pueden
         # jugarse después de los 16avos de otra.
+        # los partidos que no encajan en ninguna fase del torneo se van
+        games = [g for g in games if nombre_etapa(g)]
+
         primero = {}
         for g in games:
             et = nombre_etapa(g)
@@ -3177,8 +3228,10 @@ def anotar_goles(liga, game_id, goles):
     """
     if not game_id:
         return
+    # ni los anulados ni los de la tanda de penales cuentan para la tabla
     limpios = [{"j": g["player"], "e": g.get("equipo") or "", "m": g.get("min")}
-               for g in goles if g.get("player") and not g.get("anulado")]
+               for g in goles
+               if g.get("player") and not g.get("anulado") and not g.get("penales")]
     almacen.guardar("goles:%s:%s" % (liga, game_id), limpios)
     indice, _ = almacen.leer("golesidx:%s" % liga)
     indice = indice or []

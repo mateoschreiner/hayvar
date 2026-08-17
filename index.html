@@ -227,11 +227,16 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .match{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer}
 .m-fila{display:grid;grid-template-columns:56px 1fr 50px 1fr;align-items:center;gap:8px}
 .m-extra:empty{display:none}
-.m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 0 64px;
+/* los goles quedan bajo el nombre de cada equipo: los del local arrancan
+   donde arranca su nombre y los del visitante terminan donde termina el suyo */
+.m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 64px 0 64px;
   font-size:11px;color:var(--txt2);line-height:1.5}
-/* la tanda de penales, aparte del resultado y centrada bajo el marcador */
-.m-pen{margin:3px 0 0;text-align:center;font-size:10.5px;font-weight:700;
-  color:var(--txt2);letter-spacing:.3px}
+.m-goles span:last-child{text-align:right}
+/* La tanda va justo abajo del marcador, no en el medio de la fila: se repite
+   la misma grilla del partido y se la mete en la columna del resultado. */
+.m-pen{display:grid;grid-template-columns:56px 1fr 50px 1fr;gap:8px;margin:3px 0 0}
+.m-pen b{grid-column:3;text-align:center;white-space:nowrap;font-size:10.5px;
+  font-weight:700;color:var(--txt2);letter-spacing:.3px}
 /* y en el detalle del partido, su propio bloque al pie del minuto a minuto */
 .pen-bloque{margin-top:14px;padding-top:11px;border-top:1px solid var(--line)}
 .pen-tit{display:flex;align-items:center;justify-content:space-between;
@@ -324,6 +329,8 @@ td.l{text-align:left;padding-left:8px}
 .mscore .sc .n{font-size:34px;font-weight:800;text-align:center;line-height:1}
 .mscore .sc .s{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:4px;text-transform:uppercase;letter-spacing:.6px}
 .mscore .sc .s.live{color:#5ee9a8;font-weight:700}
+.mscore .sc .pen-cab{font-size:12px;font-weight:800;color:#fff;text-align:center;
+  margin-top:5px;letter-spacing:.2px}
 .mbody{padding:14px;min-height:150px}
 .ev{display:grid;grid-template-columns:1fr 44px 1fr;gap:8px;padding:5px 0;font-size:12.5px;align-items:center}
 .ev .m{text-align:center;color:var(--txt2);font-size:11px;font-weight:700}
@@ -458,8 +465,9 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
 
   .match{padding:9px 8px}
   .m-fila{grid-template-columns:46px minmax(0,1fr) 42px minmax(0,1fr);gap:6px}
-  .m-goles,.m-tv{margin-left:52px}
-  .m-goles span:last-child{padding-right:46px}
+  .m-goles{margin-left:52px;margin-right:52px}
+  .m-tv{margin-left:52px}
+  .m-pen{grid-template-columns:46px minmax(0,1fr) 42px minmax(0,1fr);gap:6px}
   .side .tn{font-size:12.5px}
   .m-time{font-size:11px} .m-time .st{font-size:9px}
   .m-score{font-size:14px}
@@ -952,7 +960,11 @@ const App=(()=>{
   // las rondas específicas tienen que probarse antes que la final.
   const ETAPA_CORTA=[[/fase de grupos|group/i,'Grupos'],
     [/repechaje|play.?off|pre.?octavos/i,'Pre octavos'],
-    [/primera fase|preliminar|previa|fase 1|fase 2|fase 3/i,'Previa'],
+    // las previas se numeran: en la Libertadores son tres y "Previa" a secas
+    // las dejaba a las tres iguales
+    [/fase 3|tercera fase/i,'Previa 3'],
+    [/fase 2|segunda fase/i,'Previa 2'],
+    [/fase 1|primera fase|preliminar|previa/i,'Previa 1'],
     [/64avos|sesentaicuatroavos|round of 128/i,'64avos'],
     [/32avos|treintaidosavos|treintaydosavos|round of 64/i,'32avos'],
     [/16avos|dieciseisavos|diecis[eé]isavos|round of 32/i,'16avos'],
@@ -1012,7 +1024,7 @@ const App=(()=>{
     // muestran como "Penales 4-2", que es como se lee en cualquier lado.
     const tanda=(d.goles||[]).filter(g=>g.penales&&!g.anulado);
     const penales=tanda.length
-      ? `<div class="m-pen">Penales ${tanda.filter(g=>g.side==='h').length}-${tanda.filter(g=>g.side==='a').length}</div>`
+      ? `Penales ${tanda.filter(g=>g.side==='h').length}-${tanda.filter(g=>g.side==='a').length}`
       : '';
     const lado=s=>(d.goles||[]).filter(g=>g.side===s&&!g.penales).map(g=>{
       const txt=`${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`;
@@ -1024,7 +1036,7 @@ const App=(()=>{
     const tv=(d.tv||[]).join(' · ');
     return `<div class="m-extra">
       ${(gh||ga)?`<div class="m-goles"><span>${gh}</span><span>${ga}</span></div>`:''}
-      ${penales}
+      ${penales?`<div class="m-pen"><b>${penales}</b></div>`:''}
       ${tv?`<div class="m-tv" title="Se ve por ${esc(tv)}">${esc(tv)}</div>`:''}
     </div>`;
   }
@@ -1530,6 +1542,12 @@ const App=(()=>{
     const d=new Date(m.start);
     // miércoles 5 de agosto + horario original
     const fechaLarga=`${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`;
+    // Si se definió por penales, el 0-0 de arriba no dice quién ganó: va el
+    // resultado de la tanda debajo del marcador.
+    const tandaCab=((mData&&mData.events)||[]).filter(e=>e.penales&&e.anotado);
+    const penTit=tandaCab.length
+      ? `<div class="pen-cab">${tandaCab.filter(e=>e.side==='h').length} - ${tandaCab.filter(e=>e.side==='a').length} en penales</div>`
+      : '';
     let body;
     if(loading) body='<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
     else if(mData&&mData.error) body=`<div class="empty">No se pudo cargar el detalle.<br><small>${esc(mData.error)}</small></div>`;
@@ -1696,7 +1714,8 @@ const App=(()=>{
         </div>
         <div class="mscore">
           <div class="t">${crest(m.home,46,true)}<span>${esc(m.home.canon||m.home.name)}</span></div>
-          <div class="sc"><div class="n">${m.gh==null?'– –':m.gh+' - '+m.ga}</div><div class="s ${lv?'live':''}">${st}</div></div>
+          <div class="sc"><div class="n">${m.gh==null?'– –':m.gh+' - '+m.ga}</div>
+            ${penTit}<div class="s ${lv?'live':''}">${st}</div></div>
           <div class="t">${crest(m.away,46,true)}<span>${esc(m.away.canon||m.away.name)}</span></div>
         </div>
       </div>
@@ -1734,11 +1753,16 @@ const App=(()=>{
     if(dela.some(m=>m.tramo)){
       const tramos={Ida:[],Vuelta:[],'':[]};
       dela.forEach(m=>(tramos[m.tramo||'']=tramos[m.tramo||'']||[]).push(m));
+      // idas y vueltas plegables, igual que los grupos
       return void($('#matches').innerHTML=['Ida','Vuelta',''].map(t=>{
         const ms=tramos[t]||[]; if(!ms.length) return '';
-        return (t?`<div class="zhead"><span class="badge">${t==='Ida'?'I':'V'}</span>
-          <span class="nm">Partidos de ${t.toLowerCase()}</span></div>`:'')
-          + ms.map(matchRow).join('');
+        if(!t) return ms.map(matchRow).join('');
+        const cerrado=S.grupoAbierto?S.grupoAbierto!==t:false;
+        return `<div class="zhead plegable" onclick="App.grupo('${t}')">
+            <span class="badge">${t==='Ida'?'I':'V'}</span>
+            <span class="nm">Partidos de ${t.toLowerCase()}</span>
+            <span class="flecha">${cerrado?'▸':'▾'}</span></div>`
+          + (cerrado?'':ms.map(matchRow).join(''));
       }).join(''), cargarDetalles());
     }
 

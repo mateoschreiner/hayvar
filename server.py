@@ -2613,12 +2613,23 @@ def api_liga_games(q):
         hay_grupos = bool(meta)
         fases = FASES_COPA.get(lid)
 
+        # ¿el torneo tiene una ronda entre los grupos y los octavos?
+        pre = next((f for f in (fases or []) if rango_etapa(f) == 2), None)
+
         def nombre_etapa(g):
             et = (g.get("stage") or "").strip()
             if not et:
-                # 365scores manda la fase de grupos sin nombre: llega vacío.
-                # Si el torneo tiene zonas, un partido sin etapa es de grupos.
-                et = "Fase de grupos" if (g.get("zone") or hay_grupos) else "Fase única"
+                # 365scores manda estas rondas sin nombre y todas caían en la
+                # fase de grupos. Pero en los grupos nadie juega contra otra
+                # zona: si los dos equipos son de zonas distintas, eso no es
+                # un partido de grupos sino el play-off por los octavos.
+                # Así aparecían Barracas–Santos y Petrolero–Vasco marcados
+                # como "Interzonal" dentro de los grupos.
+                if pre and g.get("interzonal"):
+                    et = pre
+                else:
+                    et = ("Fase de grupos" if (g.get("zone") or hay_grupos)
+                          else "Fase única")
             return canonizar_fase(et, fases) if fases else et
 
         # Las rondas se ordenan por stageNum, que es el orden real del

@@ -2394,8 +2394,11 @@ _RANGO_ETAPA = [
 # se cruzan con los terceros de la Libertadores, y de octavos a la final.
 # Las dos definen a partido único, sin tercer puesto.
 FASES_COPA = {
-    "lib": ["Fase 1", "Fase 2", "Fase 3", "Fase de grupos", "Octavos de final",
-            "Cuartos de final", "Semifinal", "Final"],
+    # La Libertadores 2026 también tiene una ronda entre los grupos y los
+    # octavos: la "Eliminatoria de octavos", donde los segundos de zona se
+    # cruzan antes de entrar al cuadro.
+    "lib": ["Fase 1", "Fase 2", "Fase 3", "Fase de grupos", "Pre octavos",
+            "Octavos de final", "Cuartos de final", "Semifinal", "Final"],
     "sud": ["Primera fase", "Fase de grupos", "Pre octavos", "Octavos de final",
             "Cuartos de final", "Semifinal", "Final"],
     "ca":  ["32avos de final", "16avos de final", "Octavos de final",
@@ -3619,6 +3622,37 @@ def api_competencias(q):
                            "los agrega al menú.")}
 
 
+# Palabras que no distinguen a un club de otro: "Racing" y "Racing Club" son
+# el mismo, "Racing" y "Racing de Córdoba" no.
+_RELLENO = {"club", "atletico", "atletica", "asociacion", "asoc", "deportivo",
+            "esgrima", "sportivo", "social", "cultural",
+            "fc", "cf", "ac", "sc", "cd", "ca", "sad", "afc", "cfc"}
+
+
+def mismo_club(nombre, canon):
+    """
+    ¿Son el mismo club? Estricto a propósito.
+
+    El modo club se confundía: al elegir Racing te mostraba el último partido
+    de Racing de Córdoba, que juega en la Nacional. Se compara por tokens
+    —que ya expanden las abreviaturas, así "(LP)" se vuelve "la plata"— y se
+    perdona sólo lo que no distingue a un club de otro: "Racing" y "Racing
+    Club" son el mismo, "Racing" y "Racing de Córdoba" no.
+
+    No se usa match_team acá: ese matcher es laxo a propósito para leer el
+    fixture de AFA y devuelve "Racing" para "Racing de Córdoba".
+    """
+    if not nombre or not canon:
+        return False
+    if norm(nombre) == norm(canon):
+        return True
+    ta, tb = _tokens(nombre), _tokens(canon)
+    if not ta or not tb or not (ta & tb):
+        return False
+    # si no sobra nada, son idénticos una vez expandidas las abreviaturas
+    return (ta ^ tb) <= _RELLENO
+
+
 def api_club(q):
     """
     El partido anterior y el siguiente de un club, para el modo club.
@@ -3641,9 +3675,9 @@ def api_club(q):
             err = str(e)
             continue
         for m in juegos:
-            lados = (m["home"].get("canon"), m["away"].get("canon"),
-                     m["home"].get("name"), m["away"].get("name"))
-            if canon in lados or emparejar(canon, {norm(x): 1 for x in lados if x}):
+            lados = [m["home"].get("canon"), m["away"].get("canon"),
+                     m["home"].get("name"), m["away"].get("name")]
+            if any(mismo_club(x, canon) for x in lados if x):
                 suyos.append(dict(m, liga=lid, ligaNombre=LIGAS[lid]["nombre"]))
 
     if not suyos and err:

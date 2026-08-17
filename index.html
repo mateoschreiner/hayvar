@@ -231,7 +231,9 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
    donde arranca su nombre y los del visitante terminan donde termina el suyo */
 .m-goles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 64px 0 64px;
   font-size:11px;color:var(--txt2);line-height:1.55}
-.m-goles>span{min-width:0}
+/* cada lado alineado con el nombre de su equipo: el local a la izquierda,
+   el visitante a la derecha */
+.m-goles>span{min-width:0;text-align:left}
 .m-goles>span:last-child{text-align:right}
 /* La tanda va justo abajo del marcador, no en el medio de la fila: se repite
    la misma grilla del partido y se la mete en la columna del resultado. */
@@ -263,7 +265,6 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .gol-anulado::after{content:"VAR";font-size:8px;font-weight:800;letter-spacing:.3px;
   color:var(--red);text-decoration:none;display:inline-block;vertical-align:1px;
   margin-left:3px}
-.m-goles span:last-child{text-align:right;padding-right:56px}
 .m-tv{margin:3px 0 0 64px;font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px}
 .m-tv::before{content:"▶ ";font-size:8px;vertical-align:1px}
 .match:hover{background:var(--bg)}
@@ -1953,6 +1954,28 @@ const App=(()=>{
       sueltas.forEach(k=>{ const h=fila.indexOf(null); if(h>=0) fila[h]=k; });
       return fila;
     });
+
+    /* Las rondas que no parten al medio —el pre octavos, que tiene tantas
+       llaves como los octavos— numeran sus lugares por su cuenta, así que
+       el número no sirve para alinearlas. Se ordenan siguiendo al ganador:
+       la llave del pre octavos va a la altura del cruce de octavos donde
+       aparece el equipo que pasó. */
+    const nomEq=e=>e&&e.team?sinTildes(e.team.canon||e.team.name):'';
+    for(let c=0;c<slots.length-1;c++){
+      if(cupos[c]!==cupos[c+1]) continue;
+      const hijos=slots[c+1];
+      if(!hijos.some(Boolean)) continue;
+      const fila=new Array(cupos[c]).fill(null), sobran=[];
+      slots[c].forEach(k=>{
+        if(!k) return;
+        const suyos=k.equipos.map(nomEq).filter(Boolean);
+        const j=hijos.findIndex((h,i)=>h&&!fila[i]
+          &&h.equipos.some(e=>suyos.includes(nomEq(e))));
+        if(j>=0) fila[j]=k; else sobran.push(k);
+      });
+      sobran.forEach(k=>{ const h=fila.indexOf(null); if(h>=0) fila[h]=k; });
+      slots[c]=fila;
+    }
     for(let c=0;c<slots.length-1;c++){
       const unoAuno=cupos[c]===cupos[c+1];
       for(let j=0;j<slots[c+1].length;j++){

@@ -3518,6 +3518,7 @@ ROUTES = {
     "/api/clubes": api_clubes,
     "/api/club": api_club,
     "/api/competencias": api_competencias,
+    "/api/historico": api_historico,
     "/api/liga": api_liga,
     "/api/liga/games": api_liga_games,
     "/api/player": api_player,
@@ -3677,6 +3678,78 @@ def precalentar():
     print("  Caché precalentado\n")
 
 
+def juntar_goles(lid, limite=25):
+    """
+    Busca los autores de los goles de los partidos viejos.
+
+    El rescate histórico trae los partidos con el resultado, pero no con
+    quién los hizo: eso está en el detalle de cada uno. Se piden de a poco,
+    los que ya terminaron y todavía no tenemos, para no castigar a la fuente.
+    """
+    cfg = LIGAS.get(lid)
+    if not cfg:
+        return 0
+    try:
+        juegos = (all_games(ttl=600) if lid == "lpf"
+                  else api_liga_games({"id": [lid]}).get("games", []))
+    except Exception:
+        return 0
+
+    faltan = []
+    for g in juegos:
+        if g.get("status") != "FIN" or not g.get("liveId"):
+            continue
+        guardado, _ = almacen.leer("goles:%s:%s" % (lid, g["id"]))
+        if guardado is None:
+            faltan.append(g)
+
+    hechos = 0
+    for g in faltan[:limite]:
+        try:
+            detalle_liviano(g["liveId"], en_juego=False, liga=lid)
+            hechos += 1
+        except Exception:
+            continue
+    return hechos
+
+
+def rescatar_todo():
+    """
+    Va llenando la base en segundo plano, sin que nadie tenga que pedirlo.
+
+    Primero recupera los partidos que 365scores ya no muestra —fases de
+    grupos jugadas hace meses, rondas viejas de la Copa Argentina— y después
+    busca los goleadores de esos partidos. Cada vuelta guarda dónde quedó,
+    así que si el servidor se reinicia sigue desde ahí y no vuelve a empezar.
+    """
+    time.sleep(20)          # que la página arranque tranquila primero
+    for vuelta in range(1, 13):
+        pendientes = 0
+        for lid, cfg in LIGAS.items():
+            try:
+                r = rescatar_historico(cfg["sc"], paginas=20)
+                if not r.get("listo"):
+                    pendientes += 1
+                if r.get("nuevos"):
+                    print("  · %-18s +%d partidos viejos (total %d)"
+                          % (cfg["nombre"], r["nuevos"], r.get("total", 0)))
+            except Exception:
+                pass
+            time.sleep(2)
+        for lid in LIGAS:
+            try:
+                n = juntar_goles(lid, limite=20)
+                if n:
+                    print("  · %-18s goles de %d partidos" % (LIGAS[lid]["nombre"], n))
+            except Exception:
+                pass
+            time.sleep(2)
+        if not pendientes:
+            print("  Historia completa: no queda nada por traer\n")
+            return
+        time.sleep(60)
+
+
 def main():
     # En local escucha sólo en 127.0.0.1. En un hosting (Render y compañía)
     # hay que escuchar en 0.0.0.0 y tomar el puerto de la variable PORT.
@@ -3696,6 +3769,7 @@ def main():
     print("  Datos: AFA + 365scores")
     print("  Cortar con Ctrl+C\n")
     threading.Thread(target=precalentar, daemon=True).start()
+    threading.Thread(target=rescatar_todo, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

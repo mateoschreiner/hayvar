@@ -872,6 +872,13 @@ def map_game(g):
         "referee": "",
         "round": g.get("roundNum"),
         "stage": g.get("stageName") or "",
+        # En las copas, groupNum no es un grupo: es el lugar que ocupa la
+        # llave en el cuadro. Los octavos van del 1 al 8 y de ahí sale quién
+        # se cruza con quién, sin tener que adivinarlo. stageNum ordena las
+        # rondas mejor que la fecha, porque una ronda puede empezar antes de
+        # que termine la anterior.
+        "slot": g.get("groupNum"),
+        "stageNum": g.get("stageNum"),
         "start": g.get("startTime"),
         "status": st,
         "statusText": g.get("statusText") or "",
@@ -1918,6 +1925,16 @@ def api_liga(q):
             out["goleadores"] = _sc_goleadores(cfg["sc"], escudos)
         except Exception as e:
             out["errorGoleadores"] = str(e)
+        # Si la fuente no publica goleadores —pasa en las copas— la tabla se
+        # arma con los goles que fuimos guardando de cada partido. No es
+        # oficial, así que se avisa.
+        if not out["goleadores"]:
+            propios = goleadores_propios(lid, escudos)
+            if propios:
+                out["goleadores"] = propios
+                out["goleadoresPropios"] = True
+                out["notaGoleadores"] = ("Contados por HAYVAR a partir de los "
+                                         "goles de cada partido.")
         return out
 
     try:
@@ -2064,6 +2081,14 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
             "anulado": anulado,
         })
     goles.sort(key=lambda x: (x["min"] if x["min"] is not None else 999, x["added"]))
+
+    # de qué equipo es cada gol, para poder armar la tabla de goleadores
+    equipo = {"h": (g.get("homeCompetitor") or {}).get("name") or "",
+              "a": (g.get("awayCompetitor") or {}).get("name") or ""}
+    for x in goles:
+        x["equipo"] = equipo.get(x["side"], "")
+    anotar_goles(liga, game_id, goles)
+
     tv = limpiar_tv([t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")])
     return {"tv": tv, "goles": goles}
 
@@ -2247,7 +2272,9 @@ def armar_llaves(games, etapas):
                 else:
                     ga, gb = ga + p["ga"], gb + p["gh"]
             cerrada = jugados == len(partidos) and jugados > 0
+            posiciones = [p.get("slot") for p in partidos if p.get("slot")]
             llaves.append({
+                "slot": min(posiciones) if posiciones else None,
                 "equipos": [
                     {"team": a, "goles": ga if jugados else None,
                      "pasa": bool(cerrada and ga > gb)},
@@ -2260,9 +2287,18 @@ def armar_llaves(games, etapas):
                              for p in partidos],
                 "cerrada": cerrada,
             })
-        llaves.sort(key=lambda x: (x["partidos"][0]["start"] or ""))
+        # por lugar en el cuadro si lo sabemos; si no, por fecha
+        llaves.sort(key=lambda x: (x["slot"] if x["slot"] else 999,
+                                   x["partidos"][0]["start"] or ""))
         salida.append({"etapa": et, "llaves": llaves})
     return salida
+
+
+def ganador_de(llave):
+    """El equipo que pasó, o None si la serie sigue abierta."""
+    if not llave.get("cerrada"):
+        return None
+    return next((e["team"] for e in llave["equipos"] if e["pasa"]), None)
 
 
 def api_liga_games(q):
@@ -2397,12 +2433,16 @@ def api_liga_games(q):
             # torneo tiene zonas, un partido sin etapa es de los grupos.
             return "Fase de grupos" if (g.get("zone") or hay_grupos) else "Fase única"
 
+        # Las rondas se ordenan por stageNum, que es el orden real del
+        # torneo. La fecha no sirve sola: los 32avos de una zona pueden
+        # jugarse después de los 16avos de otra.
         primero = {}
         for g in games:
             et = nombre_etapa(g)
-            ini = g.get("start") or "9999"
-            if et not in primero or ini < primero[et]:
-                primero[et] = ini
+            clave = (g.get("stageNum") if g.get("stageNum") is not None else 999,
+                     g.get("start") or "9999")
+            if et not in primero or clave < primero[et]:
+                primero[et] = clave
         etapas = sorted(primero, key=lambda e: primero[e])
 
         # Las etapas que todavía no se jugaron no vienen en el fixture, así
@@ -2982,6 +3022,63 @@ def anotar_partido(nombre, liga, game_id):
     dato["ids"] = (dato["ids"] + [str(game_id)])[-60:]
     dato["n"] = len(set(dato["ids"]))
     almacen.guardar(clave, dato)
+
+
+def anotar_goles(liga, game_id, goles):
+    """
+    Guarda quién hizo los goles de un partido.
+
+    Los torneos chicos y las copas no tienen tabla de goleadores publicada,
+    pero los autores de cada gol ya los estamos leyendo para mostrarlos en la
+    lista de partidos. Guardándolos, la tabla se arma sola.
+
+    Se guarda por partido y no sumando de a uno: si el mismo partido se lee
+    diez veces —pasa, se refresca cada veinte segundos— el último pisa al
+    anterior y nadie termina con treinta goles.
+    """
+    if not game_id:
+        return
+    limpios = [{"j": g["player"], "e": g.get("equipo") or "", "m": g.get("min")}
+               for g in goles if g.get("player") and not g.get("anulado")]
+    almacen.guardar("goles:%s:%s" % (liga, game_id), limpios)
+    indice, _ = almacen.leer("golesidx:%s" % liga)
+    indice = indice or []
+    if str(game_id) not in indice:
+        almacen.guardar("golesidx:%s" % liga, (indice + [str(game_id)])[-400:])
+
+
+def goleadores_propios(liga, escudos=None):
+    """La tabla de goleadores armada con los goles que fuimos guardando."""
+    indice, _ = almacen.leer("golesidx:%s" % liga)
+    if not indice:
+        return []
+    cuenta = {}
+    for gid in indice:
+        goles, _ = almacen.leer("goles:%s:%s" % (liga, gid))
+        for g in (goles or []):
+            k = norm(g["j"])
+            if not k:
+                continue
+            r = cuenta.setdefault(k, {"name": g["j"], "equipo": g.get("e") or "",
+                                      "goals": 0})
+            r["goals"] += 1
+            if g.get("e"):
+                r["equipo"] = g["e"]
+
+    filas = []
+    for r in cuenta.values():
+        eq = {"name": r["equipo"], "short": "", "logo": None, "site": None}
+        if escudos:
+            k = emparejar(r["equipo"], escudos)
+            if k:
+                eq = escudos[k]
+        filas.append({"name": r["name"], "team": eq, "goals": r["goals"],
+                      "pens": 0, "jugada": None, "cabeza": None,
+                      "tiroLibre": None, "athleteId": None})
+    filas.sort(key=lambda x: (-x["goals"], norm(x["name"])))
+    for i, r in enumerate(filas, 1):
+        r["rank"] = i
+    return filas
 
 
 def api_atleta(q):

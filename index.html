@@ -191,7 +191,15 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
    corren de costado porque a lo ancho no entran. Las líneas se dibujan en
    un SVG por encima, que es lo único que une bien dos cajas a distinta
    altura sin pelearse con el scroll.                                    */
-.cuadro-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 14px}
+.cuadro-barra{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:9px 14px 0}
+.cuadro-barra .cbtn{width:28px;height:28px;border-radius:7px;background:var(--bg);
+  color:var(--txt2);font-size:15px;font-weight:700;flex:none}
+.cuadro-barra .cbtn:hover{background:var(--line);color:var(--txt)}
+.cuadro-barra .cbtn-lb{flex:1;text-align:center;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.6px;color:var(--txt2)}
+.cuadro-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 14px;
+  scroll-behavior:smooth}
 .cuadro{position:relative}
 .cuadro-lineas{position:absolute;inset:0;pointer-events:none;overflow:visible}
 .brk{position:absolute;border:1px solid var(--line);border-radius:7px;overflow:hidden;
@@ -469,6 +477,15 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
   .datos span{font-size:9px}
   .m-goles{font-size:10px}
   .m-tv{font-size:9px}
+  /* el cuadro en el celular: cajas y letras más chicas, y los botones de
+     ronda más grandes para poder tocarlos con el dedo */
+  .cuadro-wrap{padding:10px 10px}
+  .cuadro-barra{padding:8px 10px 0}
+  .cuadro-barra .cbtn{width:34px;height:34px;font-size:17px}
+  .brk .eq{height:22px;font-size:11px;padding:0 6px;gap:5px}
+  .brk .eq b{font-size:11px}
+  .brk .eq .crest{width:14px;height:14px}
+  .brk-et{font-size:9.5px}
   .clubgrid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr))}
   footer{padding:14px 12px 26px;font-size:11px}
 }
@@ -1756,22 +1773,52 @@ const App=(()=>{
   }
 
   function cuadroLlaves(){
+    // el cuadro arranca en la primera ronda eliminatoria que tenga datos:
+    // en la Copa Argentina eso son los 32avos
     let bloques=(S.llaves||[]).map(b=>({etapa:b.etapa,llaves:b.llaves.slice()}));
-    // se arranca en la ronda que estás mirando; las anteriores ya pasaron
-    const aqui=S.etapas&&S.etapas[S.round-1];
-    const desde=aqui?bloques.findIndex(b=>b.etapa===aqui):-1;
-    if(desde>0) bloques=bloques.slice(desde);
     while(bloques.length&&!bloques[0].llaves.length) bloques.shift();
-    if(!bloques.length||!bloques[0].llaves.length)
+    if(!bloques.length)
       return '<div class="empty">El cuadro todavía no está definido.</div>';
     ordenarCuadro(bloques);
 
-    const AN=150, ALTO=48, HUECO=12, SEP=34, TOPE=22;   // medidas de la grilla
+    // en pantalla chica las cajas se achican, si no no entra ni una columna
+    const chico=window.innerWidth<=600;
+    const AN=chico?134:150, ALTO=48, HUECO=chico?10:12,
+          SEP=chico?26:34, TOPE=22;
     const paso=ALTO+HUECO;
-    // cada columna tiene la mitad de cruces que la anterior, aunque todavía
-    // no se sepa quiénes son: así el cuadro se ve entero desde el principio
-    const cupos=[bloques[0].llaves.length];
+    /* Cuántos cruces tiene cada ronda. La primera la manda el cuadro real
+       —365scores numera cada llave con su lugar, así que si los octavos van
+       del 1 al 8, son ocho aunque falte publicar alguno— y de ahí cada
+       ronda tiene la mitad. */
+    const tope=b=>b.llaves.reduce((m,k)=>Math.max(m,k.slot||0),0);
+    const cupos=[Math.max(bloques[0].llaves.length,tope(bloques[0]))||1];
     for(let c=1;c<bloques.length;c++) cupos.push(Math.max(1,Math.ceil(cupos[c-1]/2)));
+
+    /* Los lugares de cada ronda. Si una serie ya se definió y el fixture de
+       la ronda siguiente todavía no salió, igual se anota al que pasó: es lo
+       primero que uno quiere ver cuando termina un partido. Esas cajas van
+       sin resultado, porque el cruce todavía no se jugó. */
+    const ganador=k=>k&&k.cerrada?(k.equipos.find(e=>e.pasa)||{}).team:null;
+    const slots=bloques.map((b,c)=>{
+      const fila=new Array(cupos[c]).fill(null);
+      const sueltas=[];
+      b.llaves.forEach(k=>{
+        const s=(k.slot>=1&&k.slot<=cupos[c])?k.slot-1:-1;
+        if(s>=0&&!fila[s]) fila[s]=k; else sueltas.push(k);
+      });
+      // las que no traen posición se acomodan en los huecos que quedaron
+      sueltas.forEach(k=>{ const h=fila.indexOf(null); if(h>=0) fila[h]=k; });
+      return fila;
+    });
+    for(let c=0;c<slots.length-1;c++){
+      for(let j=0;j<slots[c+1].length;j++){
+        if(slots[c+1][j]) continue;
+        const g1=ganador(slots[c][2*j]), g2=ganador(slots[c][2*j+1]);
+        if(!g1&&!g2) continue;
+        slots[c+1][j]={provisional:true,cerrada:false,partidos:[],
+          equipos:[{team:g1,goles:null,pasa:false},{team:g2,goles:null,pasa:false}]};
+      }
+    }
     const ancho=bloques.length*(AN+SEP)-SEP, alto=cupos[0]*paso-HUECO;
     const x=c=>c*(AN+SEP);
     const y=(c,i)=>i*paso*Math.pow(2,c)+(Math.pow(2,c)-1)*paso/2;
@@ -1781,21 +1828,26 @@ const App=(()=>{
     bloques.forEach((b,c)=>{
       cajas+=`<div class="brk-et" style="left:${x(c)}px;top:0">${esc(etapaCorta(b.etapa))}</div>`;
       for(let i=0;i<cupos[c];i++){
-        const k=b.llaves[i], top=y(c,i)+TOPE;
+        const k=slots[c][i], top=y(c,i)+TOPE;
+        const pos=`left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px`;
+        const porDefinir='<div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div>';
         if(!k){
-          cajas+=`<div class="brk vacia" style="left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px">
-            <div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div>
-            <div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div></div>`;
+          cajas+=`<div class="brk vacia" style="${pos}">${porDefinir}${porDefinir}</div>`;
         }else{
           const [a,v]=k.equipos;
-          const ultimo=k.partidos[k.partidos.length-1];
-          const lado=(e,otro)=>`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}">
-            ${crest(e.team,15)}<span class="tn">${esc(e.team.canon||e.team.name)}</span>
-            <b>${e.goles==null?'–':e.goles}</b></div>`;
-          const cuando=k.partidos.map(p=>(p.tramo||'')+(p.gh!=null?` ${p.gh}-${p.ga}`:'')).join(' · ');
-          cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.openMatch('${js(ultimo.id)}')"
-            style="left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px">
-            ${lado(a,v)}${lado(v,a)}</div>`;
+          const lado=(e,otro)=>!e.team?porDefinir
+            :`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}">
+              ${crest(e.team,15)}<span class="tn">${esc(e.team.canon||e.team.name)}</span>
+              <b>${e.goles==null?'–':e.goles}</b></div>`;
+          if(k.provisional){
+            cajas+=`<div class="brk vacia" title="Clasificado, cruce por jugarse"
+              style="${pos}">${lado(a,v)}${lado(v,a)}</div>`;
+          }else{
+            const ultimo=k.partidos[k.partidos.length-1];
+            const cuando=k.partidos.map(p=>(p.tramo||'')+(p.gh!=null?` ${p.gh}-${p.ga}`:'')).join(' · ');
+            cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.openMatch('${js(ultimo.id)}')"
+              style="${pos}">${lado(a,v)}${lado(v,a)}</div>`;
+          }
         }
         // la línea hacia el cruce siguiente: sale, dobla y entra
         if(c<bloques.length-1){
@@ -1807,10 +1859,38 @@ const App=(()=>{
       }
     });
 
-    return `<div class="cuadro-wrap"><div class="cuadro"
+    // dónde arranca cada ronda, para poder saltar de una a otra
+    S.cuadroCols=bloques.map((b,c)=>({etapa:b.etapa,x:x(c)}));
+    S.cuadroPaso=AN+SEP;
+    return `<div class="cuadro-barra">
+        <button class="cbtn" onclick="App.correrCuadro(-1)" aria-label="Ronda anterior">‹</button>
+        <span class="cbtn-lb" id="cuadroEtapa"></span>
+        <button class="cbtn" onclick="App.correrCuadro(1)" aria-label="Ronda siguiente">›</button>
+      </div>
+      <div class="cuadro-wrap" id="cuadroWrap"><div class="cuadro"
       style="width:${ancho}px;height:${alto+TOPE}px">
       <svg class="cuadro-lineas" width="${ancho}" height="${alto+TOPE}">${lineas}</svg>
       ${cajas}</div></div>`;
+  }
+
+  /* Al entrar, el cuadro se para en la ronda que se está jugando: mirar
+     32avos cuando ya se juegan los octavos no le sirve a nadie. Desde ahí
+     se va para adelante y para atrás. */
+  function centrarCuadro(){
+    const wrap=$('#cuadroWrap'); if(!wrap||!S.cuadroCols) return;
+    const aqui=S.etapas&&S.etapas[S.round-1];
+    const i=S.cuadroCols.findIndex(c=>c.etapa===aqui);
+    wrap.scrollLeft=i>=0?S.cuadroCols[i].x:0;
+    marcarEtapaCuadro();
+    wrap.onscroll=marcarEtapaCuadro;
+  }
+  function marcarEtapaCuadro(){
+    const wrap=$('#cuadroWrap'), lb=$('#cuadroEtapa');
+    if(!wrap||!lb||!S.cuadroCols) return;
+    const x=wrap.scrollLeft+10;
+    let cerca=S.cuadroCols[0];
+    S.cuadroCols.forEach(c=>{ if(c.x<=x) cerca=c; });
+    lb.textContent=etapaCorta(cerca.etapa);
   }
 
   // Los diez primeros goleadores, para poner abajo del cuadro sin que ocupe
@@ -1863,6 +1943,7 @@ const App=(()=>{
         : '<div class="empty">Sin datos.</div>';
     } else if(S.tab==='cuadro'){
       el.innerHTML=cuadroLlaves()+golesCorto(d.goleadores||[],d.errorGoleadores);
+      centrarCuadro();
     } else if(S.tab==='anual'){
       el.innerHTML=d.anual.length
         ? tabla(d.anual,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],
@@ -2156,6 +2237,15 @@ const App=(()=>{
     // traer el último y el próximo, y las tablas para pintar la fila
     // plegar y desplegar un grupo en la fase de grupos de las copas
     grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
+    // mover el cuadro una ronda para adelante o para atrás
+    correrCuadro(d){
+      const wrap=$('#cuadroWrap'); if(!wrap||!S.cuadroCols) return;
+      const x=wrap.scrollLeft+10;
+      let i=0; S.cuadroCols.forEach((c,j)=>{ if(c.x<=x) i=j; });
+      const destino=Math.max(0,Math.min(S.cuadroCols.length-1,i+d));
+      wrap.scrollTo({left:S.cuadroCols[destino].x,behavior:'smooth'});
+      setTimeout(marcarEtapaCuadro,320);
+    },
     setClub(c){ aplicarClub(c); api.closeModal();
       medir.evento('modo_club',{club:c?c.name:'(ninguno)'});
       if(S.liga==='home') loadHome(); else if(S.liga==='lpf') drawRight(); },

@@ -196,8 +196,10 @@ aside .sep{height:1px;background:var(--line);margin:6px 0}
 .cuadro-barra .cbtn{width:28px;height:28px;border-radius:7px;background:var(--bg);
   color:var(--txt2);font-size:15px;font-weight:700;flex:none}
 .cuadro-barra .cbtn:hover{background:var(--line);color:var(--txt)}
+.cuadro-barra .cbtn[disabled]{opacity:.3;cursor:default}
 .cuadro-barra .cbtn-lb{flex:1;text-align:center;font-size:11px;font-weight:700;
   text-transform:uppercase;letter-spacing:.6px;color:var(--txt2)}
+.cuadro-barra .lupa{font-style:normal;font-size:9.5px;color:var(--txt3);margin-left:4px}
 .cuadro-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 14px;
   scroll-behavior:smooth}
 .cuadro{position:relative}
@@ -1717,7 +1719,7 @@ const App=(()=>{
     S.otra=d; S.games=g.games||[]; S.rounds=(g.rounds||[]).map(r=>({round:r,live:r===g.current&&g.live?g.live:0}));
     S.current=g.current;
     S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
-    S.llaves=g.llaves||null; S.grupoAbierto=null;
+    S.llaves=g.llaves||null; S.grupoAbierto=null; S.cuadroDesde=null;
     if(S.round==null||!g.rounds.includes(S.round))
       S.round=g.current??g.rounds[g.rounds.length-1]??null;
     $('.tag').textContent=`${d.nombre} · ${d.torneo}`;
@@ -1781,10 +1783,32 @@ const App=(()=>{
       return '<div class="empty">El cuadro todavía no está definido.</div>';
     ordenarCuadro(bloques);
 
-    // en pantalla chica las cajas se achican, si no no entra ni una columna
+    /* Desde qué ronda se muestra. Arranca en la que se está jugando —los
+       octavos se leen cómodos— y los botones ‹ › corren esa ventana. Cada
+       paso hacia atrás duplica la cantidad de llaves, así que las cajas se
+       achican: es el zoom out. */
+    const aqui=S.etapas&&S.etapas[S.round-1];
+    if(S.cuadroDesde==null){
+      const i=bloques.findIndex(b=>b.etapa===aqui);
+      S.cuadroDesde=i>=0?i:0;
+    }
+    S.cuadroDesde=Math.max(0,Math.min(bloques.length-1,S.cuadroDesde));
+    S.cuadroTotal=bloques.length;
+    const desde=S.cuadroDesde;
+    const nombresRondas=bloques.map(b=>b.etapa);
+    bloques=bloques.slice(desde);
+
+    // en pantalla chica todo entra más justo
     const chico=window.innerWidth<=600;
-    const AN=chico?134:150, ALTO=48, HUECO=chico?10:12,
-          SEP=chico?26:34, TOPE=22;
+    // cuántas llaves tiene la primera columna decide el tamaño: ocho entran
+    // holgadas, dieciséis apretadas, treinta y dos sólo con el escudo
+    const primeras=Math.max(bloques[0].llaves.length,
+      bloques[0].llaves.reduce((m,k)=>Math.max(m,k.slot||0),0))||1;
+    const nivel=Math.max(0,Math.min(2,Math.round(Math.log2(primeras/8))));
+    const M=[{an:chico?134:150,alto:48,hueco:chico?10:12,sep:chico?26:34,corto:false},
+             {an:chico?104:118,alto:38,hueco:8,sep:chico?20:26,corto:true},
+             {an:chico?78:88, alto:30,hueco:6,sep:chico?16:20,corto:true}][nivel];
+    const AN=M.an, ALTO=M.alto, HUECO=M.hueco, SEP=M.sep, TOPE=22;
     const paso=ALTO+HUECO;
     /* Cuántos cruces tiene cada ronda. La primera la manda el cuadro real
        —365scores numera cada llave con su lugar, así que si los octavos van
@@ -1835,9 +1859,12 @@ const App=(()=>{
           cajas+=`<div class="brk vacia" style="${pos}">${porDefinir}${porDefinir}</div>`;
         }else{
           const [a,v]=k.equipos;
+          // apretado, el nombre completo no entra: va la sigla del club
+          const rotulo=t=>M.corto?(t.short||t.canon||t.name):(t.canon||t.name);
           const lado=(e,otro)=>!e.team?porDefinir
-            :`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}">
-              ${crest(e.team,15)}<span class="tn">${esc(e.team.canon||e.team.name)}</span>
+            :`<div class="eq ${e.pasa?'pasa':(k.cerrada&&otro.pasa?'cae':'')}"
+                title="${esc(e.team.canon||e.team.name)}">
+              ${crest(e.team,M.corto?13:15)}<span class="tn">${esc(rotulo(e.team))}</span>
               <b>${e.goles==null?'–':e.goles}</b></div>`;
           if(k.provisional){
             cajas+=`<div class="brk vacia" title="Clasificado, cruce por jugarse"
@@ -1859,38 +1886,19 @@ const App=(()=>{
       }
     });
 
-    // dónde arranca cada ronda, para poder saltar de una a otra
-    S.cuadroCols=bloques.map((b,c)=>({etapa:b.etapa,x:x(c)}));
-    S.cuadroPaso=AN+SEP;
+    const hayAtras=desde>0, hayAdelante=desde<nombresRondas.length-1;
     return `<div class="cuadro-barra">
-        <button class="cbtn" onclick="App.correrCuadro(-1)" aria-label="Ronda anterior">‹</button>
-        <span class="cbtn-lb" id="cuadroEtapa"></span>
-        <button class="cbtn" onclick="App.correrCuadro(1)" aria-label="Ronda siguiente">›</button>
+        <button class="cbtn" onclick="App.correrCuadro(-1)" ${hayAtras?'':'disabled'}
+          title="Ronda anterior (se ve más chico)">‹</button>
+        <span class="cbtn-lb">${esc(etapaCorta(nombresRondas[desde]))}
+          ${nivel?`<i class="lupa">− ${nivel+1}×</i>`:''}</span>
+        <button class="cbtn" onclick="App.correrCuadro(1)" ${hayAdelante?'':'disabled'}
+          title="Ronda siguiente">›</button>
       </div>
       <div class="cuadro-wrap" id="cuadroWrap"><div class="cuadro"
       style="width:${ancho}px;height:${alto+TOPE}px">
       <svg class="cuadro-lineas" width="${ancho}" height="${alto+TOPE}">${lineas}</svg>
       ${cajas}</div></div>`;
-  }
-
-  /* Al entrar, el cuadro se para en la ronda que se está jugando: mirar
-     32avos cuando ya se juegan los octavos no le sirve a nadie. Desde ahí
-     se va para adelante y para atrás. */
-  function centrarCuadro(){
-    const wrap=$('#cuadroWrap'); if(!wrap||!S.cuadroCols) return;
-    const aqui=S.etapas&&S.etapas[S.round-1];
-    const i=S.cuadroCols.findIndex(c=>c.etapa===aqui);
-    wrap.scrollLeft=i>=0?S.cuadroCols[i].x:0;
-    marcarEtapaCuadro();
-    wrap.onscroll=marcarEtapaCuadro;
-  }
-  function marcarEtapaCuadro(){
-    const wrap=$('#cuadroWrap'), lb=$('#cuadroEtapa');
-    if(!wrap||!lb||!S.cuadroCols) return;
-    const x=wrap.scrollLeft+10;
-    let cerca=S.cuadroCols[0];
-    S.cuadroCols.forEach(c=>{ if(c.x<=x) cerca=c; });
-    lb.textContent=etapaCorta(cerca.etapa);
   }
 
   // Los diez primeros goleadores, para poner abajo del cuadro sin que ocupe
@@ -1943,7 +1951,6 @@ const App=(()=>{
         : '<div class="empty">Sin datos.</div>';
     } else if(S.tab==='cuadro'){
       el.innerHTML=cuadroLlaves()+golesCorto(d.goleadores||[],d.errorGoleadores);
-      centrarCuadro();
     } else if(S.tab==='anual'){
       el.innerHTML=d.anual.length
         ? tabla(d.anual,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],
@@ -2237,14 +2244,12 @@ const App=(()=>{
     // traer el último y el próximo, y las tablas para pintar la fila
     // plegar y desplegar un grupo en la fase de grupos de las copas
     grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
-    // mover el cuadro una ronda para adelante o para atrás
+    // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
+    // que se redibuja más chico
     correrCuadro(d){
-      const wrap=$('#cuadroWrap'); if(!wrap||!S.cuadroCols) return;
-      const x=wrap.scrollLeft+10;
-      let i=0; S.cuadroCols.forEach((c,j)=>{ if(c.x<=x) i=j; });
-      const destino=Math.max(0,Math.min(S.cuadroCols.length-1,i+d));
-      wrap.scrollTo({left:S.cuadroCols[destino].x,behavior:'smooth'});
-      setTimeout(marcarEtapaCuadro,320);
+      if(S.cuadroDesde==null) return;
+      S.cuadroDesde=Math.max(0,Math.min((S.cuadroTotal||1)-1,S.cuadroDesde+d));
+      drawOtra();
     },
     setClub(c){ aplicarClub(c); api.closeModal();
       medir.evento('modo_club',{club:c?c.name:'(ninguno)'});

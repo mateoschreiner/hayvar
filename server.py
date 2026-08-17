@@ -484,9 +484,11 @@ LIGAS = {
         # acá pasa sólo el primero; el segundo juega el repechaje contra los
         # terceros de la Libertadores
         "zonas_de": {"avanza": (1, 1), "repechaje": (2, 2)},
-        # la Sudamericana tiene una ronda más que la Libertadores
-        "etapas_extra": ["Dieciseisavos de final", "Cuartos de final",
-                         "Semifinal", "Final"],
+        # La ronda extra que tiene la Sudamericana —los que salen segundos
+        # contra los terceros de la Libertadores— no se agrega a mano: viene
+        # en el fixture con el nombre que le pone CONMEBOL y se traduce a
+        # "Pre octavos" al mostrarla.
+        "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
     },
     "ca": {
         # Eliminación directa de punta a punta, sin tabla de posiciones.
@@ -2210,6 +2212,32 @@ def fecha_actual(rounds, por_fecha):
     return rounds[-1]
 
 
+# El orden natural de las rondas de una copa. Se usa para acomodar las que
+# agregamos a mano: si no, "Cuartos de final" caía después de la final sólo
+# porque se sumó al final de la lista.
+_RANGO_ETAPA = [
+    (("fase de grupos", "grupo", "group"), 0),
+    (("primera fase", "preliminar", "previa", "fase 1", "fase 2", "fase 3"), 1),
+    (("repechaje", "play off", "playoff", "play-off", "pre octavos"), 2),
+    (("64avos", "sesentaicuatroavos"), 3),
+    (("32avos", "treintaidosavos", "treintaydosavos"), 4),
+    (("16avos", "dieciseisavos"), 5),
+    (("octavos",), 6),
+    (("cuartos",), 7),
+    (("semi",), 8),
+    (("tercer",), 9),
+    (("final",), 10),
+]
+
+
+def rango_etapa(nombre):
+    n = norm(nombre)
+    for claves, r in _RANGO_ETAPA:
+        if any(k in n for k in claves):
+            return r
+    return 5.5      # algo que no reconocemos: al medio, sin molestar
+
+
 def llave_de(m):
     """Identifica la serie: los mismos dos equipos, sin importar quién es local."""
     return tuple(sorted((norm(m["home"]["name"]), norm(m["away"]["name"]))))
@@ -2453,6 +2481,14 @@ def api_liga_games(q):
             if norm(e) not in ya:
                 etapas.append(e)
                 ya.add(norm(e))
+
+        # Y se ordena todo por el orden real de una copa. Sin esto, las que
+        # agregamos a mano quedaban pegadas al final: en la Sudamericana los
+        # dieciseisavos aparecían después de los octavos.
+        # las posiciones se guardan antes: durante sort() la lista queda
+        # vacía para Python, así que buscar adentro de la clave revienta
+        posicion = {e: i for i, e in enumerate(etapas)}
+        etapas.sort(key=lambda e: (rango_etapa(e), posicion[e]))
 
         idx = {e: i + 1 for i, e in enumerate(etapas)}
         grupos = norm("Fase de grupos")

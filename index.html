@@ -277,6 +277,29 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cmp-vals em{margin-left:auto;font-style:normal;font-size:12px;font-weight:800}
 .cmp-vals em.up{color:var(--live)}
 .cmp-vals em.down{color:var(--red)}
+/* El puesto que ocupa en la liga, al lado del nombre del aspecto: sin eso,
+   estar 20% arriba del promedio puede ser el primero o el séptimo y no hay
+   forma de saberlo. */
+.cmp-rk{margin-left:8px;font-size:10px;font-weight:700;letter-spacing:0;
+  text-transform:none;padding:1px 7px;border-radius:9px;white-space:nowrap;
+  background:var(--line);color:var(--txt2)}
+.cmp-rk.bien{background:rgba(45,164,110,.16);color:var(--live)}
+.cmp-rk.mal{background:rgba(224,90,90,.14);color:var(--red)}
+/* El escudo y el nombre llevan a la página del club. */
+[data-club]{cursor:pointer}
+.crest[data-club]:hover{outline:2px solid var(--acc);outline-offset:1px;border-radius:4px}
+.tn[data-club]:hover{text-decoration:underline;text-underline-offset:2px}
+/* Resultados del buscador */
+.hsearch .res{position:absolute;top:38px;left:0;right:0;z-index:60;max-height:60vh;
+  overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 12px 32px rgba(0,0,0,.22);padding:4px}
+.hsearch .res b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt3);padding:7px 9px 3px}
+.hsearch .res a{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;
+  cursor:pointer;color:var(--txt);font-size:13.5px}
+.hsearch .res a:hover,.hsearch .res a.sel{background:var(--bg2)}
+.hsearch .res img{width:20px;height:20px;object-fit:contain}
+.hsearch .res .vacio{padding:10px;font-size:12.5px;color:var(--txt3)}
 /* las camisetas: giran al tocarlas */
 .kits{display:flex;gap:18px;padding:4px 16px 18px;flex-wrap:wrap;justify-content:center}
 .kit{width:150px;text-align:center}
@@ -498,6 +521,11 @@ html[data-theme="dark"] .cancha{background:linear-gradient(0deg,#14532d,#166534)
 
 /* ── radar de estadísticas ── */
 .radar-wrap{display:grid;grid-template-columns:220px 1fr;gap:10px;align-items:center}
+/* El gráfico del club y el del jugador van centrados en la página. Con la
+   columna de números libre, el porcentaje se escapaba al filo derecho de la
+   pantalla y quedaba lejísimos del valor que explica. */
+.radar-wrap.pes{grid-template-columns:230px minmax(0,330px);gap:30px;
+  justify-content:center;padding:4px 18px 16px}
 .radar{width:100%;height:auto;overflow:visible}
 /* Cada estadística se lee como el partido: el número del local a la
    izquierda, el del visitante a la derecha y el nombre en el medio, cada
@@ -605,6 +633,8 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
   .eq-nom{font-size:9px;bottom:5px}
   .eq-nom.izq{left:7px} .eq-nom.der{right:7px}
   .radar-wrap{grid-template-columns:1fr;gap:2px}
+  .radar-wrap.pes{grid-template-columns:1fr;gap:6px;padding:4px 12px 14px}
+  .radar-wrap.pes .cmp{max-width:420px;margin:0 auto}
   .radar{max-width:250px;margin:0 auto}
   .radar-nums{gap:7px}
   .rn{grid-template-columns:34px 1fr 34px;gap:6px}
@@ -653,7 +683,10 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
     <span class="tag">Liga Profesional · Clausura 2026</span>
     <div class="hsearch">
       <span class="ic">⌕</span>
-      <input placeholder="Buscar equipo o jugador…" title="Todavía sin función" disabled>
+      <input id="q" placeholder="Buscar club…" autocomplete="off"
+             oninput="App.buscar(this.value)" onkeydown="App.buscarTecla(event)"
+             onfocus="App.buscar(this.value)">
+      <div class="res" id="qres" style="display:none"></div>
     </div>
     <div class="hspacer"></div>
     <button class="hbtn" id="liveBtn" onclick="App.onlyLive()">● VIVO <span id="liveCnt">0</span></button>
@@ -730,7 +763,19 @@ const App=(()=>{
            scores:{},detalles:{},detallesDe:null,detTimer:null,series:{},
            timer:null,vivoTimer:null,failures:0};
 
-  // link=true convierte el escudo en un enlace al sitio oficial del club
+  /* ── entrar al club desde cualquier lado ──────────────────────────────
+     Los clubes que tienen página propia se guardan acá al arrancar. El
+     escudo de esos lleva a su página; el de los demás sigue llevando al
+     sitio oficial, que es lo único que tenemos de ellos.
+
+     El sitio oficial no se pierde: vive adentro de la página del club, que
+     es donde corresponde. Primero lo nuestro y después el salto afuera. */
+  const CLUBES=[], CLUBES_PAG=new Map();
+  const claveClub=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().replace(/['´`]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+  const conPagina=n=>CLUBES_PAG.get(claveClub(n));
+
+  // link=true usa el sitio oficial cuando el club no tiene página propia
   const crest=(t,px,link)=>{
     const s=px?`width:${px}px;height:${px}px;font-size:${Math.round(px/3.4)}px`:'';
     const ini=esc((t&&t.short)||initials(t&&t.name));
@@ -738,11 +783,46 @@ const App=(()=>{
       ? `<img src="${esc(t.logo)}" alt="${esc(t&&t.name)}" loading="lazy"
            onerror="this.parentNode.innerHTML='<span class=\\'ini\\'>${ini}</span>'">`
       : `<span class="ini">${ini}</span>`;
+    const suyo=t&&conPagina(t.canon||t.name);
+    if(suyo) return `<span class="crest" style="${s}" data-club="${esc(suyo)}"
+        title="Ver ${esc(suyo)}">${inner}</span>`;
     return (link&&t&&t.site)
       ? `<a class="crest" style="${s}" href="${esc(t.site)}" target="_blank" rel="noopener"
            title="Sitio oficial de ${esc(t.name)}">${inner}</a>`
       : `<span class="crest" style="${s}">${inner}</span>`;
   };
+
+  /* El nombre que está al lado del escudo también tiene que llevar al club.
+     En vez de tocar los veinte lugares donde se pinta un equipo —tablas,
+     partidos, goleadores, el cuadro de copa— se marca el escudo al dibujarlo
+     y una sola pasada le contagia la marca al nombre vecino. Un lugar para
+     mantener en vez de veinte. */
+  function enlazarNombres(){
+    document.querySelectorAll('.crest[data-club]').forEach(c=>{
+      const p=c.parentElement; if(!p) return;
+      p.querySelectorAll(':scope > .tn').forEach(n=>{
+        if(!n.dataset.club) n.dataset.club=c.dataset.club;
+      });
+    });
+  }
+  // se dispara sola cuando cambia algo en pantalla, agrupando los cambios
+  // de un mismo cuadro para no correr veinte veces por segundo
+  let pendienteEnlazar=false;
+  new MutationObserver(()=>{
+    if(pendienteEnlazar) return;
+    pendienteEnlazar=true;
+    requestAnimationFrame(()=>{ pendienteEnlazar=false; enlazarNombres(); });
+  }).observe(document.documentElement,{childList:true,subtree:true});
+
+  // Un solo click para todos. En captura, porque el escudo casi siempre
+  // está adentro de una fila que abre el partido y el club tiene que ganar.
+  document.addEventListener('click',ev=>{
+    const t=ev.target;
+    const el=t&&t.closest&&t.closest('[data-club]');
+    if(!el) return;
+    ev.stopPropagation(); ev.preventDefault();
+    App.club(el.dataset.club);
+  },true);
 
   /* ── layout base ── */
   // `modo`: 'portada' con el calendario, 'club' sin barra de fechas, o
@@ -814,6 +894,28 @@ const App=(()=>{
       drawSide();
     }catch(e){}
   }
+
+  /* La lista de clubes con página propia. Se baja una sola vez al arrancar
+     y sirve para dos cosas: saber qué escudos se pueden clickear y buscar
+     sin pedirle nada al servidor por cada letra. */
+  let qHits=[], qSel=-1;
+  async function cargarClubes(){
+    try{
+      const d=await get('/api/clubes');
+      (d.clubes||[]).forEach(c=>{
+        CLUBES.push(c);
+        CLUBES_PAG.set(claveClub(c.name), c.name);
+      });
+      // los escudos ya dibujados todavía no saben que ahora se puede
+      // entrar: se redibuja lo que esté en pantalla
+      if(S.liga==='home') loadHome(); else if(S.liga!=='club') loadAll(false);
+    }catch(e){}
+  }
+  // click afuera del buscador: se cierra
+  document.addEventListener('mousedown',ev=>{
+    const c=$('#qres');
+    if(c&&c.style.display!=='none'&&!ev.target.closest('.hsearch')) api.cerrarBuscador();
+  });
 
   /* ── portada: partidos del día de todas las ligas ── */
   const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -957,13 +1059,17 @@ const App=(()=>{
   /* El radar del club: su promedio contra el de toda la liga. Un dato
      suelto no dice nada —doce remates por partido puede ser mucho o poco—;
      comparado con el promedio, sí. El polígono gris es la liga. */
-  function radarClub(r,d){
-    if(!r||!r.ejes||!r.ejes.length) return `<div class="cl-sec">Cómo juega</div>
-      <div class="note" style="padding:0 16px 14px">Todavía sin estadísticas
-      suficientes: se juntan solas partido a partido.</div>`;
-    // El círculo del medio es el promedio de la liga. Lo que sobresale es
-    // mejor que el promedio; lo que queda adentro, peor. Así se lee de una.
-    const N=r.ejes.length, R=58, CX=120, CY=104;
+  /* El panel del gráfico: el polígono y, al lado, los números.
+
+     Lo usan la página del club y la ficha del jugador. Comparan cosas
+     distintas —un club contra su liga, un jugador contra los de su mismo
+     puesto— pero se leen igual, así que el dibujo es uno solo y lo que
+     cambia viene por parámetro.
+
+     La línea punteada es siempre el promedio. Lo que sobresale se hace
+     mejor que el promedio; lo que queda adentro, peor. */
+  function radarPanel(r,o){
+    const N=r.ejes.length, R=56, CX=116, CY=104;
     const punto=(i,rad)=>{const a=-Math.PI/2+i*2*Math.PI/N;
       return [CX+Math.cos(a)*rad, CY+Math.sin(a)*rad];};
     const poly=f=>r.ejes.map((e,i)=>punto(i,
@@ -971,41 +1077,75 @@ const App=(()=>{
     const rejilla=[1.5,1,.5].map(f=>`<polygon points="${r.ejes.map((_,i)=>
       punto(i,R*f).map(n=>n.toFixed(1)).join(',')).join(' ')}" fill="none"
       stroke="var(--line)" stroke-width="1"/>`).join('');
-    const ejes=r.ejes.map((_,i)=>{const [x,y]=punto(i,R*1.5);
+    const radios=r.ejes.map((_,i)=>{const [x,y]=punto(i,R*1.5);
       return `<line x1="${CX}" y1="${CY}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"
         stroke="var(--line)" stroke-width="1"/>`;}).join('');
-    const rot=r.ejes.map((e,i)=>{const [x,y]=punto(i,R*1.5+13);
+    const rot=r.ejes.map((e,i)=>{const [x,y]=punto(i,R*1.5+12);
       const an=Math.abs(x-CX)<8?'middle':(x>CX?'start':'end');
       return `<text x="${x.toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="${an}"
         font-size="8.5" font-weight="700" fill="var(--txt2)"
         style="text-transform:uppercase;letter-spacing:.3px">${esc(e.eje)}</text>`;}).join('');
+    const col=o.color;
+    return `<div class="radar-wrap pes">
+      <svg viewBox="0 0 232 212" class="radar">${rejilla}${radios}
+        <polygon points="${poly(()=>100)}" fill="none"
+          stroke="var(--txt3)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <polygon points="${poly(e=>e.indice)}" fill="${col}" fill-opacity=".24"
+          stroke="${col}" stroke-width="2"/>
+        ${rot}</svg>
+      <div class="cmp">
+        ${r.ejes.map(e=>{
+          const dif=e.indice-100, mejor=dif>=0, u=esc(e.unidad||'');
+          // el puesto: primer tercio en verde, último en rojo
+          let chip='';
+          if(e.puesto&&e.de){
+            const t=e.puesto<=e.de/3?'bien':(e.puesto>e.de*2/3?'mal':'');
+            chip=`<span class="cmp-rk ${t}">${e.puesto}° de ${e.de}</span>`;
+          }
+          return `<div class="cmp-fila">
+            <div class="cmp-eje">${esc(e.eje)}${chip}${e.invertido
+              ?` <i>${esc(o.notaInvertido||'menos es mejor')}</i>`:''}</div>
+            <div class="cmp-vals">
+              <b style="color:${col}">${o.mio(e)}${u}</b>
+              <span>${esc(o.etiqueta)} ${o.medio(e)}${u}</span>
+              <em class="${mejor?'up':'down'}">${mejor?'+':''}${dif}%</em>
+            </div></div>`;}).join('')}
+      </div></div>`;
+  }
+
+  function radarClub(r,d){
+    if(!r||!r.ejes||!r.ejes.length) return `<div class="cl-sec">Cómo juega</div>
+      <div class="note" style="padding:0 16px 14px">Todavía sin estadísticas
+      suficientes: se juntan solas partido a partido.</div>`;
     const col=(d.primary&&claro(d.primary))?d.accent:(d.primary||'#2f6fed');
     return `<div class="cl-sec">Cómo juega
       <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt3)">
         · promedio de ${r.partidos} partidos en la liga</span></div>
-      <div class="radar-wrap" style="padding:0 16px 14px">
-        <svg viewBox="0 0 240 210" class="radar">${rejilla}${ejes}
-          <polygon points="${poly(()=>100)}" fill="none"
-            stroke="var(--txt3)" stroke-width="1.5" stroke-dasharray="4 3"/>
-          <polygon points="${poly(e=>e.indice)}" fill="${col}" fill-opacity=".24"
-            stroke="${col}" stroke-width="2"/>
-          ${rot}</svg>
-        <div class="cmp">
-          ${r.ejes.map(e=>{
-            const dif=e.indice-100, mejor=dif>=0;
-            return `<div class="cmp-fila">
-              <div class="cmp-eje">${esc(e.eje)}${e.invertido
-                ?' <i>goles recibidos, menos es mejor</i>':''}</div>
-              <div class="cmp-vals">
-                <b style="color:${col}">${e.club}${esc(e.unidad||'')}</b>
-                <span>liga ${e.liga}${esc(e.unidad||'')}</span>
-                <em class="${mejor?'up':'down'}">${mejor?'+':''}${dif}%</em>
-              </div></div>`;}).join('')}
-        </div>
-      </div>
+      ${radarPanel(r,{color:col, etiqueta:'liga',
+        notaInvertido:'goles recibidos, menos es mejor',
+        mio:e=>e.club, medio:e=>e.liga})}
       <div class="note" style="padding:0 16px 14px">La línea punteada es el promedio
       de la liga. Lo que sobresale, ${esc(d.club)} lo hace mejor que el promedio;
-      lo que queda adentro, peor.</div>`;
+      lo que queda adentro, peor.${r.clubes
+        ? ` El puesto es entre los ${r.clubes} equipos con datos cargados.`:''}</div>`;
+  }
+
+  // El del jugador: mismo panel, pero comparado contra los de su puesto.
+  const GRUPO_TXT={arquero:'los arqueros', defensor:'los defensores',
+                   volante:'los volantes', delantero:'los delanteros'};
+  function radarJugador(r){
+    if(!r||!r.ejes||!r.ejes.length) return '';
+    const quienes=GRUPO_TXT[r.grupo]||'los de su puesto';
+    return `<div class="subt" style="margin-top:16px">Cómo juega
+      <span style="font-weight:400;color:var(--txt3)">
+        · ${r.partidos} partidos, contra ${quienes} de la liga</span></div>
+      ${radarPanel(r,{color:'var(--acc)', etiqueta:'media',
+        notaInvertido:'menos es mejor',
+        mio:e=>e.jugador, medio:e=>e.media})}
+      <div class="note" style="padding:0 4px 8px">La línea punteada es el promedio
+      de ${quienes} con al menos tres partidos (${r.compara} jugadores). A un
+      arquero no se lo mide con los remates ni a un nueve con los despejes,
+      así que cada puesto tiene sus propias métricas.</div>`;
   }
 
   // el fixture del club, una sección por competencia
@@ -1707,6 +1847,7 @@ const App=(()=>{
           return `<div class="stat"><div class="lb"><span class="c">${esc(lb)}</span><b>${n}</b></div>
             <div class="bar"><i style="width:${pc}%"></i><i style="width:${100-pc}%"></i></div></div>`;
         }).join('')}
+        ${radarJugador(p.radar)}
         ${(p.carrera||[]).length?`<div class="subt" style="margin-top:14px">Trayectoria</div>
           <div class="carrera">${p.carrera.map(h=>`
             <div class="cr"><span class="crest" style="width:20px;height:20px">${
@@ -2927,6 +3068,7 @@ const App=(()=>{
         loadClub(ruta.replace(/-/g,' '));
       } else loadAll(true);
       cargarEmblemas();
+      cargarClubes();
       // el club elegido se recuerda entre sesiones
       try{ const c=localStorage.getItem('hayvar.club'); if(c) setTimeout(()=>aplicarClub(JSON.parse(c)),50); }catch(e){}
     },
@@ -2948,6 +3090,46 @@ const App=(()=>{
       drawCal(); loadHome(); },
     homeWeek(n){ S.weekStart=addDays(S.weekStart,n*7); S.homeDate=new Date(S.weekStart); drawCal(); loadHome(); },
     clubPicker,
+    /* ── buscador ──────────────────────────────────────────────────────
+       Busca entre los clubes que tienen página. Filtra en el navegador
+       contra la lista que ya se bajó al arrancar: no hace un pedido por
+       cada letra que escribís. */
+    buscar(txt){
+      const caja=$('#qres'); if(!caja) return;
+      const q=claveClub(txt);
+      if(!q){ caja.style.display='none'; caja.innerHTML=''; qSel=-1; return; }
+      // primero los que empiezan con lo escrito, después los que lo contienen
+      const arranca=[], contiene=[];
+      CLUBES.forEach(c=>{
+        const k=claveClub(c.name);
+        if(k.startsWith(q)) arranca.push(c);
+        else if(k.includes(q)) contiene.push(c);
+      });
+      qHits=arranca.concat(contiene).slice(0,8);
+      qSel=qHits.length?0:-1;
+      caja.style.display='block';
+      caja.innerHTML=qHits.length
+        ? `<b>Clubes</b>`+qHits.map((c,i)=>
+            `<a class="${i===0?'sel':''}" onmousedown="event.preventDefault();App.irClub('${js(c.name)}')">
+               ${c.logo?`<img src="${esc(c.logo)}" alt="" onerror="this.remove()">`
+                       :`<span class="crest" style="width:20px;height:20px"></span>`}
+               <span>${esc(c.name)}</span></a>`).join('')
+        : `<div class="vacio">No hay ningún club que se llame así.</div>`;
+    },
+    buscarTecla(ev){
+      if(!qHits.length) return;
+      if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){
+        ev.preventDefault();
+        qSel=(qSel+(ev.key==='ArrowDown'?1:qHits.length-1))%qHits.length;
+        document.querySelectorAll('#qres a').forEach((a,i)=>a.classList.toggle('sel',i===qSel));
+      } else if(ev.key==='Enter'&&qSel>=0){
+        ev.preventDefault(); api.irClub(qHits[qSel].name);
+      } else if(ev.key==='Escape'){ api.cerrarBuscador(); }
+    },
+    irClub(nombre){ api.cerrarBuscador(); api.club(nombre); },
+    cerrarBuscador(){ const c=$('#qres'), i=$('#q');
+      if(c){ c.style.display='none'; c.innerHTML=''; }
+      if(i){ i.value=''; i.blur(); } qHits=[]; qSel=-1; },
     menu(abrir){
       const a=$('#side'), sc=$('#scrim'); if(!a) return;
       const v=abrir===undefined?!a.classList.contains('open'):abrir;
@@ -2974,6 +3156,8 @@ const App=(()=>{
       nombre.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()
         .replace(/['´`]/g,'')          // Newell's -> newells, sin cortar
         .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''));
+      // si se entró desde el escudo dentro de un partido, el modal sobra
+      api.closeModal();
       loadClub(nombre); },
     // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
     // que se redibuja más chico

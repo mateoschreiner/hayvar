@@ -1555,11 +1555,34 @@ def api_match(q):
         etiqueta = norm("%s %s" % (f.get("puesto") or "", f.get("pos") or ""))
         return any(x in etiqueta for x in ("entrenador", "director tecnico",
                                            "coach", "manager"))
+    # lo que hizo cada jugador, para el gráfico de su ficha
+    filas_jug = []
     for c_key, key in (("homeCompetitor", "home"), ("awayCompetitor", "away")):
         lu = (g.get(c_key) or {}).get("lineups") or {}
         formation[key] = lu.get("formation") or ""
+        club_lado = (out[key].get("canon") or out[key].get("name") or "")
         clasificados = []
         for m in (lu.get("members") or []):
+            # Las estadísticas del jugador vienen acá adentro, en el mismo
+            # paquete del partido: no hay que pedir nada aparte. Se guardan
+            # sólo las que usa algún gráfico.
+            suyas = {}
+            for s in (m.get("stats") or []):
+                cn = norm(s.get("name"))
+                if cn in _CLAVES_JUGADOR:
+                    v = _num_jug(s.get("value"))
+                    if v is not None:
+                        suyas[cn] = v
+            if suyas or m.get("ranking") is not None:
+                p0 = quien.get(m.get("id"), {})
+                filas_jug.append({
+                    "n": p0.get("name") or "",
+                    "eq": club_lado,
+                    "p": (puesto_ar((m.get("position") or {}).get("name"))
+                          or puesto_ar((m.get("formation") or {}).get("name"))),
+                    "r": m.get("ranking"),
+                    "v": suyas,
+                })
             p = quien.get(m.get("id"), {})
             # yardFormation trae dónde para el jugador en la cancha, en
             # porcentajes: fieldLine es la profundidad (0 = línea propia) y
@@ -1612,6 +1635,7 @@ def api_match(q):
             anotar_partido(p["name"], liga_id, out.get("id"))
         for p in banco[key]:
             anotar_paso(p["name"], club, liga_id, lado.get("logo"))
+    anotar_jugadores(liga_id, gid, filas_jug)
 
     # colores del club, para pintar la cancha
     for key, lado in (("home", out["home"]), ("away", out["away"])):
@@ -3634,12 +3658,30 @@ def _buscar_eje(vals, claves):
     return None
 
 
+def _valor_eje(ac, e):
+    """El promedio del acumulador para un eje."""
+    if e["tipo"] == "stat":
+        s, n = ac["stat"][e["eje"]]
+        return (s / n) if n else 0
+    if e["tipo"] == "efectividad":
+        return (ac["gf"] / ac["remates"] * 100) if ac["remates"] else 0
+    if e["tipo"] == "recibidos":
+        return (ac["gc"] / ac["partidos"]) if ac["partidos"] else 0
+    return 0
+
+
 def radar_promedio(liga, club):
     """
-    El promedio del club contra el promedio de toda la liga, eje por eje.
+    El promedio del club contra el de toda la liga, eje por eje, y en qué
+    puesto lo deja eso.
 
     Es la única forma de que el gráfico signifique algo: doce remates por
-    partido no dicen nada hasta que sabés que la liga promedia ocho.
+    partido no dicen nada hasta que sabés que la liga promedia ocho. Y el
+    puesto agrega lo que el promedio solo no dice: estar 20% arriba puede
+    ser el primero de la liga o el séptimo, según qué tan parejo esté todo.
+
+    Por eso se acumula club por club y no sólo "el club" contra "la liga":
+    con la tabla entera armada, el puesto sale de ordenarla.
     """
     idx, _ = almacen.leer("statsidx:%s" % liga)
     if not idx:
@@ -3649,7 +3691,7 @@ def radar_promedio(liga, club):
         return {"partidos": 0, "remates": 0.0, "gf": 0.0, "gc": 0.0,
                 "stat": {e["eje"]: [0.0, 0] for e in EJES_RADAR}}
 
-    club_ac, liga_ac = vacio(), vacio()
+    por_club, liga_ac = {}, vacio()
 
     for gid in idx:
         d, _ = almacen.leer("stats:%s:%s" % (liga, gid))
@@ -3660,9 +3702,10 @@ def radar_promedio(liga, club):
             vals = lo.get("v") or {}
             if not vals:
                 continue
-            destinos = [liga_ac]
-            if mismo_club(lo.get("eq") or "", club):
-                destinos.append(club_ac)
+            eq = match_team(lo.get("eq") or "") or (lo.get("eq") or "")
+            if not eq:
+                continue
+            destinos = [liga_ac, por_club.setdefault(eq, vacio())]
             remates = _buscar_eje(vals, ["total remates", "remates"]) or 0
             for ac in destinos:
                 ac["partidos"] += 1
@@ -3678,37 +3721,306 @@ def radar_promedio(liga, club):
                     ac["stat"][e["eje"]][0] += v
                     ac["stat"][e["eje"]][1] += 1
 
-    if not club_ac["partidos"]:
+    # el club puede figurar con otro nombre: se busca con la regla estricta
+    mio = next((v for k, v in por_club.items() if mismo_club(k, club)), None)
+    if not mio or not mio["partidos"]:
         return None
 
-    def valor(ac, e):
-        if e["tipo"] == "stat":
-            s, n = ac["stat"][e["eje"]]
-            return (s / n) if n else 0
-        if e["tipo"] == "efectividad":
-            return (ac["gf"] / ac["remates"] * 100) if ac["remates"] else 0
-        if e["tipo"] == "recibidos":
-            return (ac["gc"] / ac["partidos"]) if ac["partidos"] else 0
-        return 0
+    # Para el puesto sólo cuentan los clubes con al menos dos partidos
+    # cargados: con uno solo, un partido raro los manda al primer puesto y
+    # el número miente.
+    rivales = {k: v for k, v in por_club.items() if v["partidos"] >= 2}
 
     ejes = []
     for e in EJES_RADAR:
-        c, l = valor(club_ac, e), valor(liga_ac, e)
+        c, l = _valor_eje(mio, e), _valor_eje(liga_ac, e)
         # un eje sin datos no se muestra: mejor cuatro puntas de verdad que
         # cinco con un cero inventado
         if not c and not l:
             continue
-        # en los ejes invertidos, menos es mejor: el índice se da vuelta
+        # En los ejes invertidos, menos es mejor: el índice se da vuelta.
+        # Y cero es el mejor valor posible, no "igual que el promedio":
+        # dividir por cero daba 100% y el club que no recibió ningún gol
+        # salía del montón.
         if e.get("invertido"):
-            indice = round((l / c * 100)) if c else 100
+            indice = 100 if not l else (220 if not c else round(l / c * 100))
         else:
             indice = round((c / l * 100)) if l else 100
-        ejes.append({"eje": e["eje"], "unidad": e.get("unidad", ""),
-                     "invertido": bool(e.get("invertido")),
-                     "club": round(c, 1), "liga": round(l, 1),
-                     "indice": max(0, min(220, indice))})
-    return {"partidos": club_ac["partidos"], "ejes": ejes,
-            "deLiga": liga_ac["partidos"]}
+
+        fila = {"eje": e["eje"], "unidad": e.get("unidad", ""),
+                "invertido": bool(e.get("invertido")),
+                "club": round(c, 1), "liga": round(l, 1),
+                "indice": max(0, min(220, indice))}
+        if len(rivales) >= 4:
+            tabla = sorted(((_valor_eje(v, e), k) for k, v in rivales.items()),
+                           reverse=not e.get("invertido"))
+            puesto = next((i for i, (_, k) in enumerate(tabla, 1)
+                           if mismo_club(k, club)), None)
+            if puesto:
+                fila["puesto"], fila["de"] = puesto, len(tabla)
+        ejes.append(fila)
+
+    return {"partidos": mio["partidos"], "ejes": ejes,
+            "deLiga": liga_ac["partidos"], "clubes": len(rivales)}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# El gráfico de cada jugador
+#
+# A un arquero no se lo mide con los remates ni a un delantero con los
+# despejes. Así que no hay un gráfico sino cuatro, uno por puesto, y cada
+# jugador se compara contra el promedio de los que juegan en su mismo
+# puesto: que un central meta un gol cada diez partidos es mucho; que lo
+# haga un nueve, poco.
+#
+# Los nombres de cada estadística salen tal cual los manda 365scores en el
+# detalle del partido. Van varias claves por eje porque la fuente no siempre
+# los escribe igual —y a veces mezcla castellano con inglés en la misma
+# lista, "Minutes" al lado de "Despejes"—.
+# ─────────────────────────────────────────────────────────────────────────
+GRUPOS_PUESTO = ("arquero", "defensor", "volante", "delantero")
+
+EJES_JUGADOR = {
+    "arquero": [
+        {"eje": "Atajadas", "claves": ["salvadas de portero", "atajadas", "saves"]},
+        {"eje": "Goles evitados",
+         "claves": ["goles esperados evitados", "goals prevented"]},
+        {"eje": "Vallas", "invertido": True,
+         "claves": ["goles recibidos", "goals conceded"]},
+        {"eje": "Salidas",
+         "claves": ["despeje con los punos", "despejes", "punches", "clearances"]},
+        {"eje": "Pases largos",
+         "claves": ["pases largos completados", "accurate long balls"]},
+        {"eje": "Puntaje", "claves": ["__ranking"]},
+    ],
+    "defensor": [
+        {"eje": "Quites", "claves": ["barridas ganadas", "tackles won", "entradas"]},
+        {"eje": "Intercepciones", "claves": ["intercepciones", "interceptions"]},
+        {"eje": "Despejes", "claves": ["despejes", "clearances"]},
+        {"eje": "Duelos", "claves": ["duelos aereos ganados", "duelos aereos",
+                                     "duelos en el suelo ganados",
+                                     "duelos en el suelo"]},
+        {"eje": "Pases", "claves": ["pases completados", "accurate passes"]},
+        {"eje": "Puntaje", "claves": ["__ranking"]},
+    ],
+    "volante": [
+        {"eje": "Pases", "claves": ["pases completados", "accurate passes"]},
+        {"eje": "Pases clave", "claves": ["pases claves", "key passes"]},
+        {"eje": "Recuperos",
+         "claves": ["recuperacion de la posesion", "possession won"]},
+        {"eje": "Regates", "claves": ["regates", "dribbles", "successful dribbles"]},
+        {"eje": "Toques", "claves": ["toques", "touches"]},
+        {"eje": "Puntaje", "claves": ["__ranking"]},
+    ],
+    "delantero": [
+        {"eje": "Goles", "claves": ["goles", "goals"]},
+        {"eje": "Remates", "claves": ["total remates", "remates", "total shots"]},
+        {"eje": "Goles esperados", "claves": ["goles esperados", "expected goals"]},
+        {"eje": "Pases clave", "claves": ["pases claves", "key passes"]},
+        {"eje": "Regates", "claves": ["regates", "dribbles"]},
+        {"eje": "Puntaje", "claves": ["__ranking"]},
+    ],
+}
+
+# Todo lo que hay que guardar de cada partido: la unión de los seis ejes de
+# los cuatro puestos. Guardar el resto sería llenar la base de números que
+# nadie mira.
+_CLAVES_JUGADOR = sorted({c for ejes in EJES_JUGADOR.values()
+                          for e in ejes for c in e["claves"]
+                          if not c.startswith("__")})
+
+
+def grupo_puesto(texto):
+    """
+    De "Lateral izquierdo" o "Centrodelantero" al grupo que le toca.
+
+    Se mira el texto y no un código porque la fuente cambia el nombre del
+    puesto según el idioma y según si lo saca de la ficha del jugador o de
+    la formación de ese partido.
+
+    El orden importa y no es caprichoso: "central" aparece igual en "Volante
+    central" que en "Defensor central", así que el volante tiene que
+    preguntarse antes. Si no, la mitad del mediocampo terminaba comparándose
+    contra los defensores.
+    """
+    t = norm(texto)
+    if not t:
+        return None
+    if any(x in t for x in ("arquero", "portero", "goalkeeper", "guardameta")):
+        return "arquero"
+    if any(x in t for x in ("volante", "medio", "enganche", "midfield",
+                            "centrocampista", "mediapunta", "mediocampista")):
+        return "volante"
+    if any(x in t for x in ("delantero", "extremo", "punta", "forward",
+                            "striker", "winger")):
+        return "delantero"
+    if any(x in t for x in ("defensor", "defensa", "lateral", "central",
+                            "back", "zaguero")):
+        return "defensor"
+    return None
+
+
+def _num_jug(v):
+    """
+    El número de una estadística de jugador.
+
+    Vienen en varios formatos: "90'" los minutos, "3/5" los duelos (ganados
+    sobre intentados) y "7.4" el puntaje. De los duelos interesa el primer
+    número, que es lo que se ganó.
+    """
+    s = str(v if v is not None else "").strip()
+    if not s:
+        return None
+    s = s.split("/")[0].replace("'", "").replace("%", "").replace(",", ".")
+    try:
+        return float(s.strip())
+    except ValueError:
+        return None
+
+
+def anotar_jugadores(liga, game_id, filas):
+    """
+    Guarda lo que hizo cada jugador en un partido.
+
+    Igual que con las estadísticas de equipo: hoy se piden para mostrar el
+    partido y se tiran. Guardándolas, el promedio de cada puesto sale de la
+    base sin pedirle nada a nadie, y crece solo fecha a fecha.
+    """
+    filas = [f for f in filas if f.get("n") and f.get("v")]
+    if not game_id or not filas:
+        return
+    almacen.guardar("jug:%s:%s" % (liga, game_id), filas)
+    idx, _ = almacen.leer("jugidx:%s" % liga)
+    idx = idx or []
+    if str(game_id) not in idx:
+        almacen.guardar("jugidx:%s" % liga, (idx + [str(game_id)])[-500:])
+
+
+# Recorrer quinientos partidos por cada jugador que alguien mire sería
+# absurdo, así que la tabla entera se arma una vez y se guarda un rato.
+_AGG_JUG, _AGG_JUG_CUANDO = {}, {}
+_AGG_JUG_VIDA = 30 * 60
+
+
+def agregado_jugadores(liga, forzar=False):
+    """
+    El promedio por partido de cada jugador de la liga, con su puesto.
+
+    Devuelve {nombre: {puesto, partidos, club, ejes: {eje: promedio}}}.
+    """
+    ahora = time.time()
+    if (not forzar and liga in _AGG_JUG
+            and ahora - _AGG_JUG_CUANDO.get(liga, 0) < _AGG_JUG_VIDA):
+        return _AGG_JUG[liga]
+
+    idx, _ = almacen.leer("jugidx:%s" % liga)
+    acum = {}
+    for gid in (idx or []):
+        filas, _ = almacen.leer("jug:%s:%s" % (liga, gid))
+        for f in (filas or []):
+            nombre = f.get("n") or ""
+            if not nombre:
+                continue
+            a = acum.setdefault(norm(nombre), {
+                "nombre": nombre, "club": f.get("eq") or "",
+                "puestos": {}, "partidos": 0, "suma": {}, "cuenta": {}})
+            a["club"] = f.get("eq") or a["club"]
+            g = grupo_puesto(f.get("p") or "")
+            if g:
+                a["puestos"][g] = a["puestos"].get(g, 0) + 1
+            a["partidos"] += 1
+            vals = f.get("v") or {}
+            if f.get("r") is not None:
+                vals = dict(vals, __ranking=f["r"])
+            for clave, valor in vals.items():
+                if valor is None:
+                    continue
+                a["suma"][clave] = a["suma"].get(clave, 0.0) + valor
+                a["cuenta"][clave] = a["cuenta"].get(clave, 0) + 1
+
+    salida = {}
+    for k, a in acum.items():
+        # el puesto del jugador es el que más veces ocupó, no el del último
+        # partido: un lateral que una vez entró de nueve sigue siendo lateral
+        puesto = max(a["puestos"], key=a["puestos"].get) if a["puestos"] else None
+        salida[k] = {"nombre": a["nombre"], "club": a["club"], "puesto": puesto,
+                     "partidos": a["partidos"],
+                     "prom": {c: a["suma"][c] / a["cuenta"][c]
+                              for c in a["suma"] if a["cuenta"].get(c)}}
+    _AGG_JUG[liga], _AGG_JUG_CUANDO[liga] = salida, ahora
+    return salida
+
+
+def _prom_eje(prom, e):
+    """El valor de un eje: la suma de sus claves que existan."""
+    total, hubo = 0.0, False
+    for c in e["claves"]:
+        if c in prom:
+            total += prom[c]
+            hubo = True
+            # el puntaje y los promedios simples no se suman entre sí
+            if c.startswith("__"):
+                break
+    return total if hubo else None
+
+
+# Con menos de tres partidos el promedio es ruido: entran a la comparación
+# pero no definen el puesto de nadie.
+MIN_PARTIDOS_JUGADOR = 3
+
+
+def radar_jugador(liga, nombre, puesto=None):
+    """
+    El gráfico del jugador contra el promedio de los que juegan en su puesto.
+
+    Compararlo contra toda la liga no diría nada: un arquero tiene cero
+    remates y un nueve cero atajadas, y los dos saldrían pésimos. Por eso el
+    promedio es el de su grupo —arqueros, defensores, volantes o
+    delanteros— y el puesto también.
+    """
+    if not nombre:
+        return None
+    tabla = agregado_jugadores(liga)
+    yo = tabla.get(norm(nombre))
+    if not yo:
+        return None
+
+    grupo = yo.get("puesto") or grupo_puesto(puesto or "")
+    if not grupo:
+        return None
+    ejes_def = EJES_JUGADOR[grupo]
+
+    pares = [v for v in tabla.values()
+             if v.get("puesto") == grupo and v["partidos"] >= MIN_PARTIDOS_JUGADOR]
+    if len(pares) < 4:
+        return None
+
+    ejes = []
+    for e in ejes_def:
+        mio = _prom_eje(yo["prom"], e)
+        otros = [x for x in (_prom_eje(p["prom"], e) for p in pares)
+                 if x is not None]
+        if mio is None or not otros:
+            continue
+        media = sum(otros) / len(otros)
+        if e.get("invertido"):
+            indice = 100 if not media else (220 if not mio
+                                            else round(media / mio * 100))
+        else:
+            indice = round(mio / media * 100) if media else 100
+        fila = {"eje": e["eje"], "jugador": round(mio, 2),
+                "media": round(media, 2), "invertido": bool(e.get("invertido")),
+                "indice": max(0, min(220, indice))}
+        orden = sorted(otros, reverse=not e.get("invertido"))
+        mejores = sum(1 for v in orden
+                      if (v > mio if not e.get("invertido") else v < mio))
+        fila["puesto"], fila["de"] = mejores + 1, len(orden)
+        ejes.append(fila)
+
+    if len(ejes) < 3:
+        return None
+    return {"grupo": grupo, "partidos": yo["partidos"], "club": yo["club"],
+            "ejes": ejes, "compara": len(pares)}
 
 
 def anotar_plantel(club, ficha, titular, dia):
@@ -3883,6 +4195,13 @@ def api_atleta(q):
     p["carrera"] = carrera(p["name"])
     p["pj"] = partidos_jugados(p["name"], lid)
 
+    # el gráfico, contra el promedio de los que juegan en su mismo puesto
+    try:
+        p["radar"] = radar_jugador(lid, p["name"],
+                                   p.get("puesto") or p.get("posicion"))
+    except Exception:
+        pass
+
     # goles en el torneo, si figura entre los goleadores
     try:
         filas = (api_scorers({}).get("rows", []) if lid == "lpf"
@@ -3903,7 +4222,8 @@ def api_atleta(q):
 # Qué torneos entran en la portada, y en qué orden aparecen. Cada bloque se
 # muestra sólo si ese día hay partidos, así que las copas aparecen y
 # desaparecen solas según la semana. Se agrega o saca sumando la clave acá.
-HOME_LIGAS = ("lpf", "nacional", "ca", "lib", "sud", "laliga")
+HOME_LIGAS = ("lpf", "nacional", "ca", "lib", "sud", "champions",
+              "laliga", "premier", "seriea", "bundesliga")
 
 
 def api_home(q):
@@ -3989,7 +4309,8 @@ def partidazo_del_dia(bloques):
 # "pronto" van sin escudo: poner uno estimado quedaba mal y confundía.
 EMBLEMAS = {"lpf": 72, "nacional": 419, "pbm": 5077, "fa": 5078,
             "fem": 6224, "laliga": 11, "premier": 7, "seriea": 17,
-            "bundesliga": 25, "lib": 102, "sud": 389, "ca": 640}
+            "bundesliga": 25, "champions": 572, "lib": 102, "sud": 389,
+            "ca": 640}
 
 
 def api_ligas(q):
@@ -4236,8 +4557,9 @@ VAR_NEGRO = {"Belgrano", "Banfield", "Gimnasia y Esgrima (LP)", "Independiente",
              "Platense", "Talleres (C)"}
 
 
-# Los datos que no salen de ninguna fuente automática. Por ahora sólo
-# Belgrano, para probar la página antes de cargar los treinta.
+# Los datos que no salen de ninguna fuente automática. Belgrano va suelto
+# porque fue el primero; los otros veintinueve se arman más abajo a partir
+# de _OTROS_CLUBES y se agregan a este mismo diccionario.
 CLUBES_INFO = {
     "Belgrano": {
         "nombre": "Club Atlético Belgrano",

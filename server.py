@@ -2328,12 +2328,28 @@ def cursor_manual(comp, direccion, desde_id):
 
 
 def _borde(juegos, comp, direccion):
-    """El partido más viejo (o más nuevo) que tenemos de esa competencia."""
+    """
+    El partido del extremo: el más viejo hacia atrás, el más nuevo adelante.
+
+    Ojo con el criterio: se ordena por FECHA, no por número de partido.
+    Parece un detalle y era el error que dejaba media Copa Argentina sin
+    bajar. El cursor de 365scores significa "dame los partidos anteriores a
+    este en el calendario", y los números no siguen el calendario: pidiendo
+    los anteriores al 4728058 devuelve el 4728053 pero también el 4728065 y
+    el 4728067. Anclando en el número más chico, el cursor no se movía —el
+    mínimo ya estaba guardado— y el recorrido se daba por terminado en la
+    primera vuelta.
+    """
     suyos = [m for m in juegos
              if m.get("comp") in (None, comp) and str(m.get("id")).isdigit()]
     if not suyos:
         return None
     elegir = min if direccion < 0 else max
+    conFecha = [m for m in suyos if m.get("start")]
+    if conFecha:
+        return int(elegir(conFecha, key=lambda m: m["start"])["id"])
+    # Sin fechas no queda otra que el número. Es peor —por eso está último—
+    # pero es preferible a no tener por dónde empezar.
     return elegir(int(m["id"]) for m in suyos)
 
 
@@ -2732,7 +2748,12 @@ def migrar_fixture(comp):
 # por otra versión no se le cree y se rehace, sin depender de una reparación
 # global que puede haber corrido en mal momento. Cambiar la lógica del
 # recorrido es subir este número y nada más.
-VERSION_RECORRIDO = 5
+# La v6: el cursor propio se anclaba en el número de partido más chico, y
+# los números de 365scores no siguen el calendario. Pidiendo los anteriores
+# al 4728058 devuelve el 4728053 pero también el 4728065: el mínimo no se
+# movía, el cursor se repetía y el recorrido se daba por terminado en la
+# primera vuelta. Ahora el ancla es la fecha.
+VERSION_RECORRIDO = 6
 
 
 def reparar_recorridos():
@@ -6005,7 +6026,42 @@ def api_recorrido(q):
                 "adelante": fut or {},
                 "edadSegundos": round(edad) if edad else None,
             })
-        salida.append({"id": lid, "nombre": cfg["nombre"], "comps": comps})
+        # Lo que la página muestra de verdad, que no es lo mismo que lo
+        # guardado de 365scores. La Liga Profesional, la Nacional y la B
+        # Metro arman su calendario con AFA y usan 365scores sólo para
+        # engancharle el minuto a minuto: mirar nada más el almacén de
+        # 365scores para esas ligas es mirar el lugar equivocado.
+        servido = None
+        try:
+            if lid == "lpf":
+                juegos = all_games(ttl=300)
+                fuente = "AFA / DataFactory"
+            else:
+                r = api_liga_games({"id": [lid]})
+                juegos = r.get("games") or []
+                fuente = ("AFA / DataFactory" if cfg.get("base")
+                          else "laliga.com" if cfg.get("fixture_propio")
+                          else "365scores")
+            porRonda = {}
+            for m in juegos:
+                d = porRonda.setdefault(m.get("round") or m.get("etapa") or "—",
+                                        {"partidos": 0, "conResultado": 0,
+                                         "conLiveId": 0})
+                d["partidos"] += 1
+                if m.get("gh") is not None:
+                    d["conResultado"] += 1
+                if m.get("liveId"):
+                    d["conLiveId"] += 1
+            servido = {"fuente": fuente, "partidos": len(juegos),
+                       "fechas": len(porRonda),
+                       "sinLiveId": sum(1 for m in juegos if not m.get("liveId")),
+                       "porFecha": {str(k): v for k, v in
+                                    sorted(porRonda.items(), key=lambda x: str(x[0]))}}
+        except Exception as e:
+            servido = {"error": "%s: %s" % (type(e).__name__, e)}
+
+        salida.append({"id": lid, "nombre": cfg["nombre"], "comps": comps,
+                       "loQueSeMuestra": servido})
 
     return {"version": VERSION_RECORRIDO, "ligas": salida, "rehecho": hecho,
             "como": ("Agregá ?id=lib para una sola, o ?rehacer=lib para "

@@ -25,6 +25,35 @@ def chequear(titulo, cond, detalle=""):
         fallas.append(titulo)
 
 
+
+# ── un 365scores de mentira, fiel en lo que importa ─────────────────────
+# Los números de partido no siguen el calendario. Cualquier prueba del
+# recorrido que use ids ordenados se miente a sí misma.
+import datetime as _dtu, random as _rndu
+def universo(comp, cuantos, desde=4700000, temporada=69, semilla=1):
+    _rndu.seed(semilla)
+    ids = list(range(desde, desde + cuantos)); _rndu.shuffle(ids)
+    cuando = {i: _dtu.datetime(2026, 2, 1) + _dtu.timedelta(days=k * 3)
+              for k, i in enumerate(ids)}
+    orden = sorted(cuando, key=lambda i: cuando[i])
+    def crudo(i):
+        return {"id": i, "competitionId": comp, "seasonNum": temporada,
+                "roundNum": None, "stageName": "Fase de grupos",
+                "startTime": cuando[i].isoformat(), "statusGroup": 4,
+                "statusText": "Finalizado", "gameTime": 90,
+                "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
+    def guardado(i):
+        return {"id": i, "comp": comp, "temporada": temporada, "round": None,
+                "start": cuando[i].isoformat(), "stage": "Fase de grupos"}
+    def haciaAtras(ruta):
+        d = int(re.search(r"aftergame=(\d+)", ruta).group(1))
+        pos = orden.index(d) if d in orden else 0
+        return {"games": [crudo(i) for i in orden[max(0, pos - 7):pos]],
+                "paging": {}}
+    return orden, guardado, haciaAtras
+
+
 print("\n── camisetas ──")
 SABE = set(re.findall(r"k\.patron\s*===?\s*'(\w+)'", HTML)) | {"liso"}
 malos = [(n, c) for n, d in server.CLUBES_INFO.items()
@@ -284,166 +313,40 @@ chequear("un error de la fuente no se disfraza de 'listo'",
 server.fetch = _guardado
 
 
-print("\n── un 'listo' sin explicación no se le cree ──")
-# El caso real: la reparación corrió cuando el recorrido todavía se cortaba
-# solo, dejó los marcadores en "listo" de nuevo y la marca de versión ya
-# gastada impedía reintentar. Un marcador sin motivo lo escribió una versión
-# que no sabía explicarse: se rehace sin depender de acordarse de nada.
-_C5 = 102
-server.almacen.guardar("temporada:%d" % _C5, 69)
-server.almacen.guardar("fixture:%d" % _C5,
-    [{"id": i, "comp": _C5, "temporada": 69, "round": 5} for i in range(48)])
-server.almacen.guardar("hist:%d" % _C5, {"listo": True, "total": 48})       # viejo
-server.almacen.guardar("fut:%d" % _C5, {"listo": True, "total": 48,
-                                        "motivo": "la fuente no ofrece más páginas"})
-server.almacen.guardar("migrado2:%d" % _C5, True)
-server.almacen.guardar("reabierto:%d" % _C5, True)
-_pg = {"n": 0}
-def _r5(r):
-    _pg["n"] += 1
-    _hay = _pg["n"] <= 6
-    return {"games": [{"id": 5000 + _pg["n"] * 7 + k, "competitionId": _C5,
-                       "seasonNum": 69, "roundNum": 4, "stageName": "Fase de grupos",
-                       "startTime": "2026-06-10T22:00:00+00:00",
-                       "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
-                       "homeCompetitor": {"id": 1, "name": "A", "score": 1},
-                       "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
-                      for k in range(7)],
-            "paging": {"previousPage": "/p%d" % (_pg["n"] + 1)} if _hay else {}}
+print("\n── un marcador de otra version no se le cree ──")
+# Tres veces seguidas la reparacion corrio con el recorrido todavia roto y
+# dejo todo sellado en "listo". Ahora la version va adentro del marcador.
+_C5 = 3102
+_orden5, _guardado5, _atras5 = universo(_C5, 60, 4728100, semilla=5)
+for _k, _v in (("temporada:%d" % _C5, 69), ("migrado2:%d" % _C5, True),
+               ("reabierto:%d" % _C5, True)):
+    server.almacen.guardar(_k, _v)
+server.almacen.guardar("fixture:%d" % _C5, [_guardado5(i) for i in _orden5[-16:]])
+server.almacen.guardar("hist:%d" % _C5,      # sin "v": version anterior
+    {"listo": True, "total": 16, "motivo": "la fuente no ofrece mas paginas"})
 server.fetch = lambda p, q, ttl=15: (
     {"competitions": [{"id": _C5, "currentSeasonNum": 69}]} if p == "competitions"
-    else {"games": [], "paging": {"previousPage": "/p1"}})
-server.fetch_ruta = _r5
-server.time.sleep = lambda s: None
-_ra = server.caminar_fixture(_C5, -1, paginas=40)
-chequear("el marcador sin motivo se rehace", _ra["paginas"] > 0, _ra)
-chequear("y trae los partidos que faltaban", _ra["nuevos"] > 40, _ra["nuevos"])
-# Un marcador de la versión actual que ya terminó sólo se rechequea de a
-# poco: el futuro crece, pero no hace falta releer el torneo entero.
+    else {"games": [], "paging": {}})
+server.fetch_ruta = _atras5
+_r7 = server.caminar_fixture(_C5, -1, paginas=30)
+chequear("un marcador de otra version se rehace", _r7["paginas"] > 3, _r7["paginas"])
+chequear("y trae lo que faltaba", _r7["total"] == 60, _r7["total"])
+chequear("el marcador nuevo guarda su version",
+         server.almacen.leer("hist:%d" % _C5)[0].get("v") == server.VERSION_RECORRIDO)
+chequear("y no se repite",
+         server.caminar_fixture(_C5, -1, paginas=30).get("paginas", 0) == 0)
+_vieja = server.VERSION_RECORRIDO
+server.VERSION_RECORRIDO += 1
+chequear("subir la version alcanza para rehacer todo",
+         server.caminar_fixture(_C5, -1, paginas=30).get("paginas", 0) > 0)
+server.VERSION_RECORRIDO = _vieja
 server.almacen.guardar("fut:%d" % _C5,
-    {"listo": True, "total": 48, "motivo": "listo", "ultimo": "/u",
+    {"listo": True, "total": 60, "motivo": "listo", "ultimo": "/u",
      "v": server.VERSION_RECORRIDO})
 _rf = server.caminar_fixture(_C5, 1, paginas=40)
 chequear("hacia adelante rechequea pero no rehace todo",
          _rf.get("paginas", 0) <= 3, _rf.get("paginas"))
-chequear("y una vez explicado, tampoco",
-         server.caminar_fixture(_C5, -1, paginas=40).get("paginas", 0) == 0)
-# lo que rehace no es una reparación global sino la versión del marcador
-server.almacen.guardar("hist:%d" % _C5,
-                       {"listo": True, "motivo": "x", "v": 0})
-chequear("un marcador de versión vieja se rehace solo",
-         server.caminar_fixture(_C5, -1, paginas=5).get("paginas", 0) > 0)
 server.fetch = _guardado
-
-
-print("\n── el recorrido no depende del paginado de la fuente ──")
-# El caso que trabó la Libertadores: 365scores dejó de mandar previousPage
-# —a mí sí me lo daba, así que depende de algo que no controlamos— y el
-# recorrido se daba por terminado con media copa sin bajar. El cursor no
-# tiene misterio: "dame los anteriores a este partido". Se arma solo.
-_C6 = 1102
-for _k, _v in (("temporada:%d" % _C6, 69), ("migrado2:%d" % _C6, True),
-               ("reabierto:%d" % _C6, True), ("hist:%d" % _C6, {})):
-    server.almacen.guardar(_k, _v)
-server.almacen.guardar("fixture:%d" % _C6,
-    [{"id": 4728053 + i, "comp": _C6, "temporada": 69, "round": 5} for i in range(16)])
-def _sinPaginado(ruta):
-    _d = int(re.search(r"aftergame=(\d+)", ruta).group(1))
-    return {"games": [{"id": i, "competitionId": _C6, "seasonNum": 69,
-                       "roundNum": 4, "stageName": "Fase de grupos",
-                       "startTime": "2026-06-10T22:00:00+00:00",
-                       "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
-                       "homeCompetitor": {"id": 1, "name": "A", "score": 1},
-                       "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
-                      for i in range(_d - 7, _d) if i >= 4727950],
-            "paging": {}}          # la fuente NUNCA manda paginado
-server.fetch = lambda p, q, ttl=15: (
-    {"competitions": [{"id": _C6, "currentSeasonNum": 69}]} if p == "competitions"
-    else {"games": [], "paging": {}})
-server.fetch_ruta = _sinPaginado
-server.time.sleep = lambda s: None
-_rc = server.caminar_fixture(_C6, -1, paginas=30)
-chequear("camina sin que la fuente le dé el cursor", _rc["paginas"] > 10, _rc["paginas"])
-chequear("y baja los partidos que faltaban", _rc["nuevos"] > 80, _rc["nuevos"])
-chequear("después no se queda dando vueltas",
-         server.caminar_fixture(_C6, -1, paginas=30).get("paginas", 0) <= 2)
-
-# distinguir "página vacía" de "página de otra temporada" es la diferencia
-# entre terminar bien y cortar una copa por la mitad
-def _armarHueco(comp, viejas):
-    for _k, _v in (("temporada:%d" % comp, 40), ("fixture:%d" % comp, []),
-                   ("hist:%d" % comp, {}), ("migrado2:%d" % comp, True),
-                   ("reabierto:%d" % comp, True)):
-        server.almacen.guardar(_k, _v)
-    server.fetch = lambda p, q, ttl=15, c=comp: (
-        {"competitions": [{"id": c, "currentSeasonNum": 40}]} if p == "competitions"
-        else {"games": [], "paging": {"previousPage": "/p1"}})
-    _n = {"i": 0}
-    def _r(ruta):
-        _n["i"] += 1
-        _vacia = _n["i"] > 6
-        _vieja = _n["i"] in viejas
-        return {"games": [] if _vacia else [
-                    {"id": comp * 100 + _n["i"], "competitionId": comp,
-                     "seasonNum": 39 if _vieja else 40, "roundNum": 1,
-                     "startTime": "2026-04-01T16:00:00-03:00", "statusGroup": 4,
-                     "statusText": "Finalizado", "gameTime": 90,
-                     "homeCompetitor": {"id": 1, "name": "A", "score": 1},
-                     "awayCompetitor": {"id": 2, "name": "B", "score": 0}}],
-                "paging": {"previousPage": "/q%d" % (_n["i"] + 1)}}
-    server.fetch_ruta = _r
-_armarHueco(1201, (2, 3))
-_rh = server.caminar_fixture(1201, -1, paginas=12)
-chequear("un hueco de otra temporada en el medio no corta", _rh["paginas"] >= 5, _rh)
-_armarHueco(1202, ())
-_rv = server.caminar_fixture(1202, -1, paginas=12)
-chequear("una página vacía sí termina, y lo dice",
-         _rv["listo"] and "sin partidos" in _rv["motivo"], _rv.get("motivo"))
-server.fetch = _guardado
-
-
-print("\n── la versión va adentro de cada marcador ──")
-# Tres veces seguidas pasó lo mismo: la reparación global corría en un
-# momento en que el recorrido todavía estaba roto, dejaba todo sellado en
-# "listo" y no había forma de reintentar. Ahora cada marcador lleva la
-# versión que lo escribió y se descarta solo cuando no coincide.
-_C7 = 3102
-for _k, _v in (("temporada:%d" % _C7, 69), ("migrado2:%d" % _C7, True),
-               ("reabierto:%d" % _C7, True)):
-    server.almacen.guardar(_k, _v)
-server.almacen.guardar("fixture:%d" % _C7,
-    [{"id": 4728053 + i, "comp": _C7, "temporada": 69, "round": 5} for i in range(16)])
-# el marcador que trabó la Libertadores: listo, con motivo, pero sin versión
-server.almacen.guardar("hist:%d" % _C7,
-    {"listo": True, "total": 48, "motivo": "la fuente no ofrece más páginas",
-     "cuando": "2026-08-18T17:35:25"})
-def _p7(i):
-    return {"id": i, "competitionId": _C7, "seasonNum": 69, "roundNum": 4,
-            "stageName": "Fase de grupos", "startTime": "2026-06-10T22:00:00+00:00",
-            "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
-            "homeCompetitor": {"id": 1, "name": "A", "score": 1},
-            "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
-server.fetch_ruta = lambda r: {"games": [
-    _p7(i) for i in range(int(re.search(r"aftergame=(\d+)", r).group(1)) - 7,
-                          int(re.search(r"aftergame=(\d+)", r).group(1)))
-    if i >= 4727950], "paging": {}}
-server.fetch = lambda p, q, ttl=15: (
-    {"competitions": [{"id": _C7, "currentSeasonNum": 69}]} if p == "competitions"
-    else {"games": [_p7(4728053 + i) for i in range(16)],
-          "competitions": [{"id": _C7, "currentSeasonNum": 69}], "paging": {}})
-server.time.sleep = lambda s: None
-_r7 = server.caminar_fixture(_C7, -1, paginas=30)
-chequear("un marcador de otra versión se rehace", _r7["paginas"] > 10, _r7["paginas"])
-chequear("y trae lo que faltaba", _r7["nuevos"] > 80, _r7["nuevos"])
-chequear("el marcador nuevo guarda su versión",
-         server.almacen.leer("hist:%d" % _C7)[0].get("v") == server.VERSION_RECORRIDO)
-chequear("y no se repite", server.caminar_fixture(_C7, -1, paginas=30).get("paginas", 0) == 0)
-_vieja = server.VERSION_RECORRIDO
-server.VERSION_RECORRIDO += 1
-chequear("subir la versión alcanza para rehacer todo",
-         server.caminar_fixture(_C7, -1, paginas=30).get("paginas", 0) > 0)
-server.VERSION_RECORRIDO = _vieja
-
 
 print("\n── reconstruir guarda copia y se puede deshacer ──")
 _C8 = 4102
@@ -577,6 +480,50 @@ server.fixture_de_liga, server._sc_standings, server._sc_goleadores = _fx2, _st2
 server.fetch = _guardado
 chequear("la fase por defecto es la de la fecha en curso, no la última",
          "f.rounds.includes(S.current)" in HTML)
+
+
+print("\n── el cursor se ancla en la fecha, no en el número ──")
+# Los números de partido de 365scores no siguen el calendario: pidiendo los
+# anteriores al 4728058 devuelve el 4728053 pero también el 4728065. Anclando
+# en el número más chico el cursor no se movía y el recorrido moría en la
+# primera vuelta — media Copa Argentina sin bajar.
+import datetime as _dt3, random as _rnd
+_C9 = 9640
+server.almacen.guardar("temporada:%d" % _C9, 16)
+server.almacen.guardar("migrado2:%d" % _C9, True)
+server.almacen.guardar("reabierto:%d" % _C9, True)
+server.almacen.guardar("hist:%d" % _C9, {})
+_rnd.seed(5)
+_ids = list(range(4648800, 4648860)); _rnd.shuffle(_ids)
+_cuando = {i: _dt3.datetime(2026, 3, 1) + _dt3.timedelta(days=k * 3)
+           for k, i in enumerate(_ids)}
+_porFecha = sorted(_cuando, key=lambda i: _cuando[i])
+server.almacen.guardar("fixture:%d" % _C9,
+    [{"id": i, "comp": _C9, "temporada": 16, "round": None,
+      "start": _cuando[i].isoformat(), "stage": "32avos de final"}
+     for i in _porFecha[-19:]])
+chequear("el borde por fecha no es el número más chico",
+         server._borde(server.almacen.leer("fixture:%d" % _C9)[0], _C9, -1)
+         != min(_porFecha[-19:]))
+def _cr9(i):
+    return {"id": i, "competitionId": _C9, "seasonNum": 16, "roundNum": None,
+            "stageName": "32avos de final", "startTime": _cuando[i].isoformat(),
+            "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
+            "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+            "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
+server.fetch_ruta = lambda r: {"games": [
+    _cr9(i) for i in _porFecha[max(0, _porFecha.index(
+        int(re.search(r"aftergame=(\d+)", r).group(1))) - 7):
+        _porFecha.index(int(re.search(r"aftergame=(\d+)", r).group(1)))]],
+    "paging": {}}
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C9, "currentSeasonNum": 16}]} if p == "competitions"
+    else {"games": [], "paging": {}})
+server.time.sleep = lambda s: None
+_r9 = server.caminar_fixture(_C9, -1, paginas=30)
+chequear("y con ese ancla el recorrido llega hasta el final",
+         _r9["total"] == 60, _r9["total"])
+server.fetch = _guardado
 
 
 print("\n── partidazo del día ──")

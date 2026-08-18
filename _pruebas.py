@@ -140,6 +140,32 @@ chequear("un calendario completo lo deja en paz",
          server.almacen.leer("hist:%d" % C4)[0]["listo"] is True)
 
 
+print("\n── reparación de todos los recorridos ──")
+# Los partidos guardados y el marcador de por dónde iba el recorrido son
+# dos cosas distintas, y pueden quedar peleadas: sin esto, un calendario
+# que se perdió no se recupera nunca porque el marcador dice "ya está".
+for _cfg in server.LIGAS.values():
+    for _c in server.comps_de(_cfg):
+        server.almacen.guardar("hist:%s" % _c, {"listo": True})
+        server.almacen.guardar("fut:%s" % _c, {"listo": True})
+        server.almacen.guardar("fixture:%s" % _c, [{"id": 1, "round": 1, "comp": _c}])
+server.almacen.guardar("recorrido:version", 0)
+server.reparar_recorridos()
+_comps = sorted({c for f in server.LIGAS.values() for c in server.comps_de(f)})
+chequear("reabre el recorrido de todas las competencias",
+         not [c for c in _comps
+              if (server.almacen.leer("hist:%s" % c)[0] or {}).get("listo")])
+chequear("sin borrar un solo partido",
+         all(len(server.almacen.leer("fixture:%s" % c)[0] or []) == 1 for c in _comps))
+server.almacen.guardar("hist:72", {"listo": True})
+server.reparar_recorridos()
+chequear("y no se repite dentro de la misma versión",
+         server.almacen.leer("hist:72")[0] == {"listo": True})
+_src = open(os.path.join(AQUI, "server.py"), encoding="utf-8").read()
+chequear("el cliente que se va no ensucia el log",
+         "except self.SE_FUE:" in _src and "def handle_one_request" in _src)
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

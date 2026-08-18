@@ -2597,6 +2597,45 @@ def migrar_fixture(comp):
     almacen.guardar("migrado2:%s" % comp, True)
 
 
+# Cada vez que hay que volver a recorrer TODOS los calendarios desde cero
+# se sube este número. Sirve para dos cosas: cuando cambia lo que guardamos
+# de cada partido, y cuando hay que reparar la base porque se perdió algo.
+#
+# La v3 existe por lo segundo: una migración mal hecha borró los partidos
+# guardados de todos los torneos y dejó los marcadores diciendo que ya se
+# había recorrido todo. Con eso, el rescate arrancaba, leía el marcador,
+# concluía que no faltaba nada y se iba. Los calendarios no se recuperaban
+# nunca solos, por más vueltas que diera.
+VERSION_RECORRIDO = 3
+
+
+def reparar_recorridos():
+    """
+    Reabre el recorrido de todos los torneos, una sola vez por versión.
+
+    Los partidos guardados y el marcador de por dónde iba el recorrido son
+    dos cosas distintas en la base, y pueden quedar peleadas. Cuando eso
+    pasa no alcanza con adivinar torneo por torneo: se reabren todos y se
+    vuelve a bajar lo que haga falta. Lo que ya está guardado no se toca; el
+    recorrido sólo agrega lo que falta.
+    """
+    hecho, _ = almacen.leer("recorrido:version")
+    if hecho == VERSION_RECORRIDO:
+        return
+    reabiertos = 0
+    for cfg in LIGAS.values():
+        for comp in comps_de(cfg):
+            for molde in ("hist:%s", "fut:%s"):
+                estado, _ = almacen.leer(molde % comp)
+                if estado:
+                    almacen.guardar(molde % comp, {})
+                    reabiertos += 1
+    almacen.guardar("recorrido:version", VERSION_RECORRIDO)
+    print("\n  Reparación v%d: se reabren %d recorridos. Los calendarios se "
+          "vuelven a bajar enteros; lo guardado no se toca.\n"
+          % (VERSION_RECORRIDO, reabiertos), flush=True)
+
+
 def reabrir_si_falta(comp):
     """
     Reabre el recorrido cuando el calendario quedó corto pero dice "listo".
@@ -5797,19 +5836,36 @@ class Handler(SimpleHTTPRequestHandler):
             return body, None
         return gzip.compress(body, 6), "gzip"
 
+    # Cuando alguien cierra la pestaña o cambia de pantalla, la conexión se
+    # corta a mitad de la respuesta. Eso no es un error nuestro: es lo normal
+    # en un navegador. Pero Python lo trata como excepción, y como el manejo
+    # de errores intenta contestar por la misma conexión ya rota, se
+    # encadenaban tres trazas de veinte líneas por cada persona que se iba.
+    # El log terminaba siendo eso y nada más.
+    SE_FUE = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except self.SE_FUE:
+            self.close_connection = True
+
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         body, enc = self._comprimir(body)
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Cache-Control", "no-store")
-        if enc:
-            self.send_header("Content-Encoding", enc)
-            self.send_header("Vary", "Accept-Encoding")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
+            if enc:
+                self.send_header("Content-Encoding", enc)
+                self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except self.SE_FUE:
+            self.close_connection = True
 
     def _archivo(self, ruta, ctype):
         """
@@ -6024,6 +6080,12 @@ def rescatar_todo():
     quedó, así que si el servidor se reinicia sigue desde ahí.
     """
     time.sleep(20)          # que la página arranque tranquila primero
+    # Primero lo primero: si hay que volver a recorrer todo, se reabre acá.
+    try:
+        reparar_recorridos()
+    except Exception as e:
+        print("  · no se pudo reparar el recorrido (%s)" % type(e).__name__,
+              flush=True)
     # Las páginas viejas ya no se guardan: las que quedaron de antes ocupan
     # lugar al pedo. Se limpian una vez y listo.
     try:

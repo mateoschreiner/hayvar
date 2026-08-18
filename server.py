@@ -2349,6 +2349,7 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
     temporada = temporada_actual(comp)
     clave = "fixture:%s" % comp
     migrar_fixture(comp)
+    reabrir_si_falta(comp)
     guardado, _ = almacen.leer(clave)
     acumulado = {str(m["id"]): m for m in (guardado or [])}
     antes = len(acumulado)
@@ -2594,6 +2595,49 @@ def migrar_fixture(comp):
               "competencia (%d partidos intactos)"
               % (comp, len(guardado)), flush=True)
     almacen.guardar("migrado2:%s" % comp, True)
+
+
+def reabrir_si_falta(comp):
+    """
+    Reabre el recorrido cuando el calendario quedó corto pero dice "listo".
+
+    Hace falta porque los marcadores de por dónde iba el recorrido y los
+    partidos guardados son dos cosas separadas, y pueden quedar peleados: si
+    los partidos se pierden —como pasó cuando la primera migración los
+    borró— los marcadores siguen diciendo que ya se recorrió todo, y
+    entonces nadie los vuelve a bajar nunca. El torneo se queda con las dos
+    fechas de la ventana para siempre.
+
+    La señal es simple: si el torneo tiene 38 fechas y hay 2 guardadas, algo
+    está mal. Se reabre y el rescate lo vuelve a llenar.
+
+    Se prueba una vez por día por competencia. Los torneos que traen su
+    calendario de otra fuente —LaLiga— siempre van a estar cortos acá y no
+    tiene sentido insistirles.
+    """
+    ultimo, edad = almacen.leer("reabierto:%s" % comp, 60 * 60 * 24)
+    if ultimo:
+        return
+    almacen.guardar("reabierto:%s" % comp, True)
+
+    tope = fechas_del_torneo(comp)
+    if not tope or tope < 4:
+        return
+    guardado, _ = almacen.leer("fixture:%s" % comp)
+    rondas = {m.get("round") for m in (guardado or []) if m.get("round")}
+    if len(rondas) >= tope:
+        return
+
+    reabiertos = []
+    for molde, como in (("hist:%s", "atrás"), ("fut:%s", "adelante")):
+        estado, _ = almacen.leer(molde % comp)
+        if (estado or {}).get("listo"):
+            almacen.guardar(molde % comp, {})
+            reabiertos.append(como)
+    if reabiertos:
+        print("  · calendario %s: %d de %d fechas y el recorrido decía estar "
+              "completo. Se reabre hacia %s."
+              % (comp, len(rondas), tope, " y ".join(reabiertos)), flush=True)
 
 
 def comps_de(cfg):
@@ -5997,20 +6041,31 @@ def rescatar_todo():
                     r = caminar_fixture(comp, direccion, paginas=20)
                     if not r.get("listo"):
                         pendientes += 1
-                    if r.get("nuevos"):
-                        print("  · %-18s +%d partidos hacia %s (total %d)"
-                              % (cfg["nombre"], r["nuevos"], como,
-                                 r.get("total", 0)), flush=True)
-                except Exception:
-                    pass
+                    # Se cuenta siempre, no sólo cuando trae algo. Cuando el
+                    # recorrido no avanzaba, el log quedaba mudo y parecía
+                    # que no estaba corriendo: había que poder ver que
+                    # corrió, leyó cero páginas y se dio por terminado.
+                    print("  · %-18s %-8s %2d pág · +%-3d · total %-4d %s"
+                          % (cfg["nombre"], como, r.get("paginas", 0),
+                             r.get("nuevos", 0), r.get("total", 0),
+                             "listo" if r.get("listo") else "sigue"),
+                          flush=True)
+                except Exception as e:
+                    print("  · %-18s %-8s falló (%s)"
+                          % (cfg["nombre"], como, type(e).__name__), flush=True)
                 time.sleep(2)
             # cuántas fechas debería tener: si faltan, se avisa en el log
+            # Cuántas fechas hay de las que debería haber. Se cuentan sobre
+            # el calendario que la página sirve, no sobre el crudo de
+            # 365scores: LaLiga arma el suyo con laliga.com y ahí el crudo
+            # siempre va a estar corto, así que avisaba de un problema que
+            # no existía.
             try:
                 tope = fechas_del_torneo(cfg["sc"])
                 if tope and not cfg.get("copa"):
-                    hay, _ = almacen.leer("fixture:%s" % cfg["sc"])
-                    vistas = {m.get("round") for m in (hay or []) if m.get("round")}
-                    if vistas and max(vistas) < tope:
+                    servido = api_liga_games({"id": [lid]})
+                    vistas = servido.get("rounds") or []
+                    if vistas and len(vistas) < tope:
                         print("  · %-18s van %d de %d fechas"
                               % (cfg["nombre"], len(vistas), tope), flush=True)
             except Exception:

@@ -111,6 +111,35 @@ chequear("y el recorrido quedó reabierto",
          server.almacen.leer("hist:%d" % C2)[0] == {})
 
 
+print("\n── el recorrido se autorepara ──")
+# El caso que se dio en Render: el calendario quedó corto pero los
+# marcadores decían "ya recorrí todo", así que nadie lo volvía a bajar.
+C3 = 7
+server.almacen.guardar("fechas:%d" % C3, 38)
+server.almacen.guardar("fixture:%d" % C3,
+    [{"id": i, "round": i, "comp": C3, "temporada": 132} for i in (1, 2)])
+server.almacen.guardar("hist:%d" % C3, {"listo": True})
+server.almacen.guardar("fut:%d" % C3, {"listo": True})
+server.reabrir_si_falta(C3)
+chequear("2 de 38 fechas y 'listo' -> reabre el recorrido",
+         server.almacen.leer("hist:%d" % C3)[0] == {}
+         and server.almacen.leer("fut:%d" % C3)[0] == {})
+chequear("y no borra los partidos",
+         len(server.almacen.leer("fixture:%d" % C3)[0]) == 2)
+server.almacen.guardar("hist:%d" % C3, {"listo": True})
+server.reabrir_si_falta(C3)
+chequear("no insiste más de una vez por día",
+         server.almacen.leer("hist:%d" % C3)[0] == {"listo": True})
+C4 = 25
+server.almacen.guardar("fechas:%d" % C4, 34)
+server.almacen.guardar("fixture:%d" % C4,
+    [{"id": i, "round": i % 34 + 1, "comp": C4} for i in range(400)])
+server.almacen.guardar("hist:%d" % C4, {"listo": True})
+server.reabrir_si_falta(C4)
+chequear("un calendario completo lo deja en paz",
+         server.almacen.leer("hist:%d" % C4)[0]["listo"] is True)
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

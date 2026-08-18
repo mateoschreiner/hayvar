@@ -4343,6 +4343,74 @@ def _prom_eje(prom, e):
 MIN_PARTIDOS_JUGADOR = 3
 
 
+def ranking_jugadores(liga, grupo, eje_nombre):
+    """
+    La tabla de un eje: todos los del puesto, ordenados por esa estadística.
+
+    Es la misma cuenta con la que el gráfico dice "3° de 137", y por eso
+    vive acá y no en dos lugares: si el orden se calculara aparte, tarde o
+    temprano el puesto del gráfico y el de la lista dejarían de coincidir.
+
+    Los empates comparten posición —dos primeros y ningún segundo—, que es
+    como se lee cualquier tabla.
+    """
+    edef = next((e for e in EJES_JUGADOR.get(grupo, [])
+                 if e["eje"] == eje_nombre), None)
+    if not edef:
+        return None
+
+    filas = []
+    for v in agregado_jugadores(liga).values():
+        if v.get("puesto") != grupo or v["partidos"] < MIN_PARTIDOS_JUGADOR:
+            continue
+        val = _prom_eje(v.get("prom") or {}, edef)
+        if val is None:
+            continue
+        filas.append({"name": v["nombre"], "club": v.get("club") or "",
+                      "valor": round(val, 2), "partidos": v["partidos"]})
+    if not filas:
+        return None
+
+    invertido = bool(edef.get("invertido"))
+    filas.sort(key=lambda r: (r["valor"] if invertido else -r["valor"],
+                              norm(r["name"])))
+    for r in filas:
+        mejores = sum(1 for o in filas
+                      if (o["valor"] < r["valor"] if invertido
+                          else o["valor"] > r["valor"]))
+        r["pos"] = mejores + 1
+
+    return {"eje": eje_nombre, "grupo": grupo, "invertido": invertido,
+            "total": len(filas), "filas": filas}
+
+
+def api_ranking(q):
+    """
+    Las listas por estadística. /api/ranking?grupo=delantero&eje=Goles
+
+    Sin `eje` devuelve qué se puede pedir: los cuatro puestos con sus ejes.
+    """
+    lid = (q.get("liga") or ["lpf"])[0]
+    grupo = (q.get("grupo") or [""])[0].strip().lower()
+    eje = (q.get("eje") or [""])[0].strip()
+
+    if not grupo or not eje:
+        return {"liga": lid, "puestos": [
+            {"grupo": g, "ejes": [e["eje"] for e in EJES_JUGADOR[g]]}
+            for g in GRUPOS_PUESTO]}
+
+    r = ranking_jugadores(lid, grupo, eje)
+    if not r:
+        return {"error": "todavía no hay datos de %s para %s" % (eje, grupo),
+                "grupo": grupo, "eje": eje}
+    tope = max(1, min(300, _int((q.get("limite") or ["25"])[0], 25)))
+    return {"liga": lid, "grupo": grupo, "eje": eje,
+            "invertido": r["invertido"], "total": r["total"],
+            "minPartidos": MIN_PARTIDOS_JUGADOR,
+            "filas": r["filas"][:tope],
+            "ejes": [e["eje"] for e in EJES_JUGADOR[grupo]]}
+
+
 def radar_jugador(liga, nombre, puesto=None):
     """
     El gráfico del jugador contra el promedio de los que juegan en su puesto.
@@ -4385,15 +4453,22 @@ def radar_jugador(liga, nombre, puesto=None):
         fila = {"eje": e["eje"], "jugador": round(mio, 2),
                 "media": round(media, 2), "invertido": bool(e.get("invertido")),
                 "indice": max(0, min(220, indice))}
-        orden = sorted(otros, reverse=not e.get("invertido"))
-        mejores = sum(1 for v in orden
-                      if (v > mio if not e.get("invertido") else v < mio))
-        fila["puesto"], fila["de"] = mejores + 1, len(orden)
+        # El puesto sale de la misma tabla que sirve la lista completa: si
+        # se calculara acá aparte, tarde o temprano dirían cosas distintas.
+        tabla = ranking_jugadores(liga, grupo, e["eje"])
+        if tabla:
+            mia = next((f for f in tabla["filas"]
+                        if norm(f["name"]) == norm(nombre)), None)
+            if mia:
+                fila["puesto"], fila["de"] = mia["pos"], tabla["total"]
         ejes.append(fila)
 
     if len(ejes) < 3:
         return None
     return {"grupo": grupo, "partidos": yo["partidos"], "club": yo["club"],
+            # el nombre tal cual está en la tabla: con él se lo encuentra
+            # después en la lista completa de cada estadística
+            "quien": yo["nombre"],
             "ejes": ejes, "compara": len(pares)}
 
 
@@ -5595,6 +5670,7 @@ ROUTES = {
     "/api/home": api_home,
     "/api/clubes": api_clubes,
     "/api/buscar": api_buscar,
+    "/api/ranking": api_ranking,
     "/api/club": api_club,
     "/api/club-info": api_club_info,
     "/api/competencias": api_competencias,

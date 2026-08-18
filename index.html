@@ -285,6 +285,25 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
   background:var(--line);color:var(--txt2)}
 .cmp-rk.bien{background:rgba(45,164,110,.16);color:var(--live)}
 .cmp-rk.mal{background:rgba(224,90,90,.14);color:var(--red)}
+button.cmp-rk{border:0;font-family:inherit;cursor:pointer}
+button.cmp-rk.abre::after{content:" ›";opacity:.7}
+button.cmp-rk.abre.on::after{content:" ⌄"}
+button.cmp-rk:hover{filter:brightness(.94)}
+/* La lista de esa estadística, desplegada abajo del eje */
+.cmp-lista:empty{display:none}
+.cmp-lista{margin:6px 0 2px;border:1px solid var(--line);border-radius:8px;
+  overflow:hidden;background:var(--bg2)}
+.cmp-lista .fl{display:grid;grid-template-columns:26px 1fr auto;gap:8px;
+  align-items:baseline;padding:5px 9px;font-size:12.5px}
+.cmp-lista .fl+.fl{border-top:1px solid var(--line)}
+.cmp-lista .fl.yo{background:rgba(47,111,237,.12);font-weight:700}
+.cmp-lista .fl .p{color:var(--txt3);font-size:11.5px;text-align:right}
+.cmp-lista .fl .cl{color:var(--txt3);font-size:11px}
+.cmp-lista .fl b{font-variant-numeric:tabular-nums}
+.cmp-lista .pie{padding:6px 9px;font-size:11px;color:var(--txt3);
+  border-top:1px solid var(--line)}
+.cmp-lista .corte{padding:3px 9px;font-size:11px;color:var(--txt3);
+  border-top:1px solid var(--line);text-align:center}
 /* El escudo y el nombre llevan a la página del club. */
 /* El escudo de la Champions y el de la Premier son casi blancos: sobre el
    menú claro desaparecían. Se les pone el fondo oscuro de su propia marca
@@ -1152,7 +1171,13 @@ const App=(()=>{
           let chip='';
           if(e.puesto&&e.de){
             const t=e.puesto<=e.de/3?'bien':(e.puesto>e.de*2/3?'mal':'');
-            chip=`<span class="cmp-rk ${t}">${e.puesto}° de ${e.de}</span>`;
+            // En la ficha del jugador el chip abre la lista completa de esa
+            // estadística, ahí abajo, sin salir de la ficha.
+            chip=o.grupo
+              ? `<button class="cmp-rk ${t} abre" title="Ver la lista de ${esc(e.eje)}"
+                   onclick="App.verLista(this,'${js(o.grupo)}','${js(e.eje)}','${js(o.quien||'')}')"
+                   >${e.puesto}° de ${e.de}</button>`
+              : `<span class="cmp-rk ${t}">${e.puesto}° de ${e.de}</span>`;
           }
           return `<div class="cmp-fila">
             <div class="cmp-eje">${esc(e.eje)}${chip}${e.invertido
@@ -1161,7 +1186,7 @@ const App=(()=>{
               <b style="color:${col}">${o.mio(e)}${u}</b>
               <span>${esc(o.etiqueta)} ${o.medio(e)}${u}</span>
               <em class="${mejor?'up':'down'}">${mejor?'+':''}${dif}%</em>
-            </div></div>`;}).join('')}
+            </div><div class="cmp-lista"></div></div>`;}).join('')}
       </div></div>`;
   }
 
@@ -1198,7 +1223,7 @@ const App=(()=>{
       <span style="font-weight:400;color:var(--txt3)">
         · ${r.partidos} partidos, contra ${quienes} de la liga</span></div>
       ${radarPanel(r,{color:'var(--acc)', etiqueta:'media',
-        notaInvertido:'menos es mejor',
+        notaInvertido:'menos es mejor', grupo:r.grupo, quien:r.quien||'',
         mio:e=>e.jugador, medio:e=>e.media})}
       <div class="note" style="padding:0 4px 8px">La línea punteada es el promedio
       de ${quienes} con al menos tres partidos (${r.compara} jugadores). A un
@@ -3224,6 +3249,45 @@ const App=(()=>{
     },
     irClub(nombre){ api.cerrarBuscador(); api.club(nombre); },
     irJugador(nombre){ api.cerrarBuscador(); openPlayer(nombre,'',null); },
+    /* La lista completa de una estadística, desplegada abajo del eje.
+       Se muestra el podio y, si el jugador está más abajo, su vecindario:
+       ver los diez primeros no dice nada de alguien que salió 42°. */
+    async verLista(btn, grupo, eje, quien){
+      const caja=btn.closest('.cmp-fila').querySelector('.cmp-lista');
+      if(btn.classList.contains('on')){        // segundo clic: se cierra
+        btn.classList.remove('on'); caja.innerHTML=''; return;
+      }
+      // sólo una lista abierta por vez, para no llenar la ficha
+      const ficha=btn.closest('.cmp');
+      ficha.querySelectorAll('button.cmp-rk.on').forEach(b=>{
+        b.classList.remove('on');
+        b.closest('.cmp-fila').querySelector('.cmp-lista').innerHTML='';
+      });
+      btn.classList.add('on');
+      caja.innerHTML='<div class="pie">Buscando…</div>';
+      let d;
+      try{ d=await get(`/api/ranking?liga=lpf&grupo=${encodeURIComponent(grupo)}`
+                      +`&eje=${encodeURIComponent(eje)}&limite=200`); }
+      catch(e){ caja.innerHTML=`<div class="pie">No se pudo traer la lista.</div>`; return; }
+      if(d.error||!d.filas||!d.filas.length){
+        caja.innerHTML=`<div class="pie">${esc(d.error||'Todavía sin datos.')}</div>`; return;
+      }
+      const yo=quien?d.filas.findIndex(f=>sinTildes(f.name)===sinTildes(quien)):-1;
+      const fila=(f,i)=>`<div class="fl ${i===yo?'yo':''}">
+        <span class="p">${f.pos}°</span>
+        <span>${esc(f.name)}<span class="cl"> · ${esc(f.club)}</span></span>
+        <b>${f.valor}</b></div>`;
+      // el podio, y si el jugador quedó lejos, también su entorno
+      const podio=d.filas.slice(0,8);
+      let cuerpo=podio.map((f,i)=>fila(f,i)).join('');
+      if(yo>8){
+        const desde=Math.max(8,yo-2), hasta=Math.min(d.filas.length,yo+3);
+        cuerpo+=`<div class="corte">···</div>`
+          + d.filas.slice(desde,hasta).map((f,i)=>fila(f,desde+i)).join('');
+      }
+      caja.innerHTML=cuerpo+`<div class="pie">${d.total} ${esc(grupo)}s con al menos
+        ${d.minPartidos} partidos${d.invertido?' · menos es mejor':''}.</div>`;
+    },
     elegirBusqueda(i){ const h=qHits[i]; if(!h) return;
       if(h.t==='club') api.irClub(h.name); else api.irJugador(h.name); },
     cerrarBuscador(){ const c=$('#qres'), i=$('#q');

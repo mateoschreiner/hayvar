@@ -3486,18 +3486,53 @@ def api_liga_games(q):
             for x in fixture_de_liga(cfg):
                 clave = (norm(x["home"]["name"])[:8], norm(x["away"]["name"])[:8])
                 porNombre.setdefault(clave, []).append(x)
+            # Un partido de 365scores no puede engancharse a dos de AFA.
+            usados = {str(m["liveId"]) for m in games if m.get("liveId")}
+
+            def dia_de(x):
+                try:
+                    return dt.date.fromisoformat((x.get("start") or "")[:10])
+                except ValueError:
+                    return None
+
             for m in games:
                 if m.get("liveId"):
                     continue
-                cand = porNombre.get((norm(m["home"]["name"])[:8],
-                                      norm(m["away"]["name"])[:8]))
+                cand = [x for x in porNombre.get((norm(m["home"]["name"])[:8],
+                                                  norm(m["away"]["name"])[:8]), [])
+                        if str(x["id"]) not in usados]
                 if not cand:
                     continue
-                dia = (m.get("start") or "")[:10]
-                elegido = next((x for x in cand if (x.get("start") or "")[:10] == dia),
-                               cand[0] if len(cand) == 1 else None)
+
+                # Se prefiere el mismo día. Pero si el partido se postergó,
+                # AFA sigue publicando la fecha original y 365scores la real,
+                # y ahí no coinciden: entonces vale el más cercano.
+                #
+                # El límite de tres semanas es lo que separa una postergación
+                # de la otra rueda: los mismos dos equipos se vuelven a
+                # cruzar recién a los cuatro o cinco meses, así que no hay
+                # forma de confundirlas. Sin esto, las fechas 23 y 24 de la
+                # Primera Nacional quedaban con seis de dieciocho partidos
+                # enganchados y el resto sin poder abrirse.
+                mio = dia_de(m)
+                elegido = next((x for x in cand if dia_de(x) == mio and mio), None)
+                if not elegido and mio:
+                    cerca = [(abs((dia_de(x) - mio).days), x)
+                             for x in cand if dia_de(x)]
+                    cerca = [(d, x) for d, x in cerca if d <= 21]
+                    if cerca:
+                        elegido = min(cerca, key=lambda p: p[0])[1]
+                # Un único candidato sólo vale si no hay fechas que comparar.
+                # Con fechas manda la cercanía: si el único candidato está a
+                # cuatro meses es el partido de la otra rueda, y engancharlo
+                # acá se lo roba a la fecha que de verdad le corresponde.
+                if not elegido and len(cand) == 1 and (
+                        not mio or not dia_de(cand[0])):
+                    elegido = cand[0]
+
                 if elegido:
                     m["liveId"] = elegido["id"]
+                    usados.add(str(elegido["id"]))
                     m["venue"] = m.get("venue") or elegido.get("venue") or ""
         except Exception:
             pass

@@ -526,6 +526,59 @@ chequear("y con ese ancla el recorrido llega hasta el final",
 server.fetch = _guardado
 
 
+print("\n── enganchar el fixture de AFA con 365scores ──")
+# Sin ese enganche un partido no se puede abrir: no hay goles, ni formaciones,
+# ni canal. En la Primera Nacional las fechas 23 y 24 tenian seis de dieciocho
+# porque los partidos se postergaron: AFA sigue publicando la fecha original
+# y 365scores la real, y al no coincidir se rendia.
+def _afa(gid, a, b, dia, ronda):
+    return {"id": gid, "round": ronda,
+            "start": (dia + "T15:00:00-03:00") if dia else None,
+            "status": "FIN", "gh": 1, "ga": 0, "zone": None, "interzonal": False,
+            "stage": "", "liveId": None, "venue": "",
+            "home": {"name": a, "canon": a, "short": a[:3], "logo": None},
+            "away": {"name": b, "canon": b, "short": b[:3], "logo": None}}
+def _sc(gid, a, b, dia):
+    return {"id": gid, "liveId": gid, "comp": 419, "temporada": 46,
+            "start": (dia + "T15:00:00-03:00") if dia else None, "status": "FIN",
+            "gh": 1, "ga": 0, "round": None, "stage": "", "zone": None,
+            "interzonal": False,
+            "home": {"name": a, "canon": a, "short": a[:3], "logo": None},
+            "away": {"name": b, "canon": b, "short": b[:3], "logo": None}}
+_dfg, _fxg = server.df_fixture_generico, server.fixture_de_liga
+_stg, _glg = server._sc_standings, server._sc_goleadores
+server._sc_standings = lambda comp, ttl=25: []
+server._sc_goleadores = lambda comp, escudos=None: []
+server.fetch = lambda p, q, ttl=15: {"games": []}
+def _enganche(afas, scs):
+    server.df_fixture_generico = lambda lid, _a=afas: [dict(g) for g in _a]
+    server.fixture_de_liga = lambda cfg, ttl=120, _s=scs: _s
+    return {m["id"]: m.get("liveId")
+            for m in server.api_liga_games({"id": ["nacional"]})["games"]}
+chequear("un partido postergado engancha con el mas cercano",
+         _enganche([_afa(1, "Colon", "San Telmo", "2026-07-05", 23),
+                    _afa(2, "Colon", "San Telmo", "2026-11-20", 34)],
+                   [_sc(9001, "Colon", "San Telmo", "2026-07-12"),
+                    _sc(9002, "Colon", "San Telmo", "2026-11-20")])
+         == {1: 9001, 2: 9002})
+chequear("y la otra rueda no se roba el de una fecha ajena",
+         _enganche([_afa(1, "Colon", "San Telmo", "2026-07-05", 23),
+                    _afa(2, "Colon", "San Telmo", "2026-11-20", 34)],
+                   [_sc(9101, "Colon", "San Telmo", "2026-11-20")])
+         == {1: None, 2: 9101})
+chequear("sin fecha de un lado vale el unico candidato",
+         _enganche([_afa(4, "Ferro", "All Boys", None, 23)],
+                   [_sc(9004, "Ferro", "All Boys", "2026-07-05")]) == {4: 9004})
+chequear("un partido de 365scores no se reparte entre dos",
+         _enganche([_afa(5, "Ferro", "All Boys", "2026-07-05", 23),
+                    _afa(6, "Ferro", "All Boys", "2026-07-06", 24)],
+                   [_sc(9005, "Ferro", "All Boys", "2026-07-05")])
+         == {5: 9005, 6: None})
+server.df_fixture_generico, server.fixture_de_liga = _dfg, _fxg
+server._sc_standings, server._sc_goleadores = _stg, _glg
+server.fetch = _guardado
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

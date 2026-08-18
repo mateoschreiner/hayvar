@@ -2307,6 +2307,36 @@ _CLAVE_CAMINO = {-1: "hist:%s", 1: "fut:%s"}
 TOLERA_VACIAS = 3
 
 
+def cursor_manual(comp, direccion, desde_id):
+    """
+    El cursor del paginado, armado por nosotros.
+
+    365scores devuelve en cada respuesta la dirección de la página de al
+    lado, y el recorrido la venía siguiendo a ciegas. El problema es que a
+    veces no la manda —le pedí a mano la misma dirección que le tocó al
+    servidor y a mí sí me la dio, así que depende de algo que no controlo—
+    y entonces el recorrido se daba por terminado con media copa sin bajar.
+
+    Pero la dirección no tiene misterio: es "dame los partidos anteriores a
+    este". Con el número del partido más viejo que ya tenemos alcanza para
+    armarla. Así el recorrido deja de depender de que la fuente se acuerde
+    de incluir el campo.
+    """
+    return ("/web/games/?appTypeId=5&langId=%s&timezoneName=%s"
+            "&userCountryId=382&competitions=%s&games=1&aftergame=%s"
+            "&direction=%d" % (LANG, TZ, comp, desde_id, direccion))
+
+
+def _borde(juegos, comp, direccion):
+    """El partido más viejo (o más nuevo) que tenemos de esa competencia."""
+    suyos = [m for m in juegos
+             if m.get("comp") in (None, comp) and str(m.get("id")).isdigit()]
+    if not suyos:
+        return None
+    elegir = min if direccion < 0 else max
+    return elegir(int(m["id"]) for m in suyos)
+
+
 def caminar_fixture(comp, direccion=-1, paginas=25):
     """
     Recorre el calendario de un torneo página por página y lo va guardando.
@@ -2345,6 +2375,12 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         estado = {}
 
     ruta = estado.get("siguiente")
+    if estado.get("listo") and direccion > 0:
+        # Un recorrido hacia adelante que ya terminó igual se rechequea: el
+        # futuro crece, aparecen fechas nuevas. Pero es un vistazo, no una
+        # recorrida entera — si no, cada vuelta del rescate volvería a leer
+        # el torneo completo para no encontrar nada.
+        paginas = min(paginas, 3)
     if estado.get("listo"):
         if direccion < 0:
             return {"comp": comp, "dir": direccion, "listo": True,
@@ -2360,9 +2396,16 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             return {"comp": comp, "dir": direccion, "error": str(e)}
         ruta = (data.get("paging") or {}).get(campo) or ""
         if not ruta:
-            # La fuente no ofrece página anterior ni siguiente: no hay por
-            # dónde caminar. Antes esto quedaba en "sigue" para siempre y
-            # mantenía vivo el rescate sin tener nada que hacer.
+            # Sin paginado de la fuente, se arranca con el cursor propio:
+            # "dame los anteriores al partido más viejo que tengo".
+            guardados, _ = almacen.leer("fixture:%s" % comp)
+            borde = _borde(guardados or [], comp, direccion)
+            if borde:
+                ruta = cursor_manual(comp, direccion, borde)
+        if not ruta:
+            # Ni eso: no hay ni un partido del que colgarse. Antes esto
+            # quedaba en "sigue" para siempre y mantenía vivo el rescate
+            # sin tener nada que hacer.
             almacen.guardar(_CLAVE_CAMINO[direccion] % comp,
                             {"siguiente": None, "ultimo": None, "listo": True,
                              "total": 0})
@@ -2398,7 +2441,9 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         vueltas += 1
         ultimo = ruta
         time.sleep(0.4)     # veinte páginas seguidas sin respirar es abuso
-        juegos = data.get("games") or []
+        crudos = data.get("games") or []
+        juegos = crudos
+
         # El paginado sigue de largo hacia la temporada anterior. Sin este
         # corte, el rescate volvía a meter en la base los partidos viejos
         # que `_sc_fixture` acababa de podar, y la Europa League mostraba
@@ -2410,36 +2455,34 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
                     otra = temporada_actual(suya)
                     return otra is None or g.get("seasonNum") in (None, otra)
                 return g.get("seasonNum") in (None, temporada)
-            juegos = [g for g in juegos if sirve(g)]
-            # Una página que queda vacía después de filtrar no quiere decir
-            # que se terminó el torneo: el paginado de 365scores mezcla, y
-            # una sola página de otra temporada en el medio cortaba el
-            # recorrido de golpe y dejaba la mitad de la copa sin bajar. Se
-            # tolera un par y recién ahí se da por terminado.
-            if not juegos:
+            juegos = [g for g in crudos if sirve(g)]
+
+        if not juegos:
+            # Dos cosas distintas que antes se confundían en una:
+            #
+            #   · la página vino vacía  -> se acabó el torneo, se corta;
+            #   · vino llena pero toda de otra temporada -> es un hueco en
+            #     el medio del paginado, se saltea y se sigue.
+            #
+            # Confundirlas cortaba la bajada de una copa entera en el primer
+            # hueco. Se toleran unas cuantas seguidas y recién ahí se cierra.
+            if crudos:
                 vacias += 1
                 if vacias < TOLERA_VACIAS:
-                    siguiente = (data.get("paging") or {}).get(campo)
-                    if siguiente and siguiente != ruta:
+                    borde = _borde(acumulado.values(), comp, direccion)
+                    siguiente = ((data.get("paging") or {}).get(campo)
+                                 or (cursor_manual(comp, direccion, borde)
+                                     if borde else None))
+                    if siguiente and siguiente not in vistas:
                         ruta = siguiente
                         continue
                 motivo = "%d páginas seguidas de otra temporada" % vacias
             else:
-                vacias = 0
-        if not juegos:
-                listo = True
-                ruta = None
-                break
-        if not juegos:
-            # Se acabó el torneo. Hace falta cortar acá y no sólo cuando
-            # falta la página siguiente: al final del calendario 365scores
-            # igual devuelve una dirección más, y sin este corte el rescate
-            # se quedaría pidiendo páginas vacías para siempre.
-            listo = True
-            if motivo.startswith("límite"):
                 motivo = "la fuente devolvió una página sin partidos"
+            listo = True
             ruta = None
             break
+        vacias = 0
         for g in juegos:
             m = map_game(g)
             m["liveId"] = g.get("id")
@@ -2459,9 +2502,20 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             else:
                 acumulado[k] = m
         siguiente = (data.get("paging") or {}).get(campo)
+        # Si la fuente no lo manda —o manda el mismo— se arma a mano con el
+        # partido del borde de lo que ya tenemos. El recorrido no puede
+        # depender de un campo que a veces viene y a veces no.
         if not siguiente or siguiente == ruta:
+            borde = _borde(acumulado.values(), comp, direccion)
+            propio = cursor_manual(comp, direccion, borde) if borde else None
+            if propio and propio not in vistas:
+                if not siguiente:
+                    motivo = "sigo con cursor propio (la fuente no lo dio)"
+                ruta = propio
+                continue
             listo = True
-            motivo = ("la fuente no ofrece más páginas" if not siguiente
+            motivo = ("la fuente no ofrece más páginas y el cursor propio ya "
+                      "se usó" if not siguiente
                       else "la página siguiente es la misma")
             ruta = None
             break

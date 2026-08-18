@@ -323,8 +323,12 @@ server.time.sleep = lambda s: None
 _ra = server.caminar_fixture(_C5, -1, paginas=40)
 chequear("el marcador sin motivo se rehace", _ra["paginas"] > 0, _ra)
 chequear("y trae los partidos que faltaban", _ra["nuevos"] > 40, _ra["nuevos"])
-chequear("el que sí se explicaba no se repite",
-         server.caminar_fixture(_C5, 1, paginas=40).get("paginas", 0) == 0)
+# Hacia adelante sí rechequea aunque esté "listo": el futuro crece, se
+# agregan fechas. Lo que no puede hacer es volver a recorrer todo: con el
+# cursor propio arranca del último partido que ya tiene y se corta enseguida.
+_rf = server.caminar_fixture(_C5, 1, paginas=40)
+chequear("hacia adelante rechequea pero no rehace todo",
+         _rf.get("paginas", 0) <= 3, _rf.get("paginas"))
 chequear("y una vez explicado, tampoco",
          server.caminar_fixture(_C5, -1, paginas=40).get("paginas", 0) == 0)
 server.almacen.guardar("recorrido:version", 3)
@@ -332,6 +336,72 @@ server.almacen.guardar("hist:%d" % _C5, {"listo": True, "motivo": "x"})
 server.reparar_recorridos()
 chequear("y la reparación vuelve a correr con la versión nueva",
          server.almacen.leer("hist:%d" % _C5)[0] == {})
+server.fetch = _guardado
+
+
+print("\n── el recorrido no depende del paginado de la fuente ──")
+# El caso que trabó la Libertadores: 365scores dejó de mandar previousPage
+# —a mí sí me lo daba, así que depende de algo que no controlamos— y el
+# recorrido se daba por terminado con media copa sin bajar. El cursor no
+# tiene misterio: "dame los anteriores a este partido". Se arma solo.
+_C6 = 1102
+for _k, _v in (("temporada:%d" % _C6, 69), ("migrado2:%d" % _C6, True),
+               ("reabierto:%d" % _C6, True), ("hist:%d" % _C6, {})):
+    server.almacen.guardar(_k, _v)
+server.almacen.guardar("fixture:%d" % _C6,
+    [{"id": 4728053 + i, "comp": _C6, "temporada": 69, "round": 5} for i in range(16)])
+def _sinPaginado(ruta):
+    _d = int(re.search(r"aftergame=(\d+)", ruta).group(1))
+    return {"games": [{"id": i, "competitionId": _C6, "seasonNum": 69,
+                       "roundNum": 4, "stageName": "Fase de grupos",
+                       "startTime": "2026-06-10T22:00:00+00:00",
+                       "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
+                       "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                       "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
+                      for i in range(_d - 7, _d) if i >= 4727950],
+            "paging": {}}          # la fuente NUNCA manda paginado
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C6, "currentSeasonNum": 69}]} if p == "competitions"
+    else {"games": [], "paging": {}})
+server.fetch_ruta = _sinPaginado
+server.time.sleep = lambda s: None
+_rc = server.caminar_fixture(_C6, -1, paginas=30)
+chequear("camina sin que la fuente le dé el cursor", _rc["paginas"] > 10, _rc["paginas"])
+chequear("y baja los partidos que faltaban", _rc["nuevos"] > 80, _rc["nuevos"])
+chequear("después no se queda dando vueltas",
+         server.caminar_fixture(_C6, -1, paginas=30).get("paginas", 0) <= 2)
+
+# distinguir "página vacía" de "página de otra temporada" es la diferencia
+# entre terminar bien y cortar una copa por la mitad
+def _armarHueco(comp, viejas):
+    for _k, _v in (("temporada:%d" % comp, 40), ("fixture:%d" % comp, []),
+                   ("hist:%d" % comp, {}), ("migrado2:%d" % comp, True),
+                   ("reabierto:%d" % comp, True)):
+        server.almacen.guardar(_k, _v)
+    server.fetch = lambda p, q, ttl=15, c=comp: (
+        {"competitions": [{"id": c, "currentSeasonNum": 40}]} if p == "competitions"
+        else {"games": [], "paging": {"previousPage": "/p1"}})
+    _n = {"i": 0}
+    def _r(ruta):
+        _n["i"] += 1
+        _vacia = _n["i"] > 6
+        _vieja = _n["i"] in viejas
+        return {"games": [] if _vacia else [
+                    {"id": comp * 100 + _n["i"], "competitionId": comp,
+                     "seasonNum": 39 if _vieja else 40, "roundNum": 1,
+                     "startTime": "2026-04-01T16:00:00-03:00", "statusGroup": 4,
+                     "statusText": "Finalizado", "gameTime": 90,
+                     "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                     "awayCompetitor": {"id": 2, "name": "B", "score": 0}}],
+                "paging": {"previousPage": "/q%d" % (_n["i"] + 1)}}
+    server.fetch_ruta = _r
+_armarHueco(1201, (2, 3))
+_rh = server.caminar_fixture(1201, -1, paginas=12)
+chequear("un hueco de otra temporada en el medio no corta", _rh["paginas"] >= 5, _rh)
+_armarHueco(1202, ())
+_rv = server.caminar_fixture(1202, -1, paginas=12)
+chequear("una página vacía sí termina, y lo dice",
+         _rv["listo"] and "sin partidos" in _rv["motivo"], _rv.get("motivo"))
 server.fetch = _guardado
 
 

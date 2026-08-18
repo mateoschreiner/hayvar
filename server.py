@@ -2365,13 +2365,15 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
     estado, _ = almacen.leer(_CLAVE_CAMINO[direccion] % comp)
     estado = estado or {}
 
-    # Un recorrido que dice "listo" pero no dice por qué lo escribió una
-    # versión que no sabía explicarse, y esas son justo las que se cortaban
-    # antes de tiempo. No se les cree: se rehace.
+    # Un marcador escrito por otra versión del recorrido no vale: la lógica
+    # cambió y lo que esa versión dio por terminado puede estar a medias.
+    # Se descarta y se rehace.
     #
-    # Esto vale más que la marca de versión, porque no hay que acordarse de
-    # subirla: cualquier marcador viejo se detecta solo.
-    if estado.get("listo") and not estado.get("motivo"):
+    # Este chequeo es el que hace que subir VERSION_RECORRIDO alcance para
+    # que todo se vuelva a bajar. Sin él hacía falta una reparación global
+    # que se ejecutaba una sola vez y, si corría con el recorrido roto,
+    # dejaba el problema sellado.
+    if estado.get("v") != VERSION_RECORRIDO:
         estado = {}
 
     ruta = estado.get("siguiente")
@@ -2408,7 +2410,10 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             # sin tener nada que hacer.
             almacen.guardar(_CLAVE_CAMINO[direccion] % comp,
                             {"siguiente": None, "ultimo": None, "listo": True,
-                             "total": 0})
+                             "total": 0, "v": VERSION_RECORRIDO,
+                             "motivo": "no hay ni un partido del que colgarse",
+                             "cuando": dt.datetime.now().isoformat(
+                                 timespec="seconds")})
             return {"comp": comp, "dir": direccion, "paginas": 0,
                     "listo": True, "nuevos": 0,
                     "total": len(almacen.leer("fixture:%s" % comp)[0] or []),
@@ -2525,6 +2530,7 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
     almacen.guardar(_CLAVE_CAMINO[direccion] % comp,
                     {"siguiente": ruta, "ultimo": ultimo, "listo": listo,
                      "total": len(acumulado), "motivo": motivo,
+                     "v": VERSION_RECORRIDO,
                      "cuando": dt.datetime.now().isoformat(timespec="seconds")})
     return {"comp": comp, "dir": direccion, "paginas": vueltas, "listo": listo,
             "nuevos": len(acumulado) - antes, "total": len(acumulado),
@@ -2717,39 +2723,43 @@ def migrar_fixture(comp):
 # guardados de todos los torneos y dejó los marcadores diciendo que ya se
 # había recorrido todo.
 #
-# La v4 existe por un error encima de ese: la v3 corrió cuando el recorrido
-# todavía se cortaba en la primera página de otra temporada. Reabrió todo,
-# el recorrido volvió a cortarse enseguida y dejó los marcadores en "listo"
-# otra vez — y la marca de versión ya gastada impedía reintentarlo. Reparar
-# con la herramienta rota y después dar el arreglo por hecho.
-VERSION_RECORRIDO = 4
+# La v4 existió por un error encima de ese, y la v5 por otro encima: cada
+# reparación corrió con el recorrido todavía roto, dejó los marcadores en
+# "listo" de nuevo y la marca ya gastada impedía reintentar. Tres veces el
+# mismo error: reparar con la herramienta rota y dar el arreglo por hecho.
+#
+# Por eso ahora la versión va ADENTRO de cada marcador. Un marcador escrito
+# por otra versión no se le cree y se rehace, sin depender de una reparación
+# global que puede haber corrido en mal momento. Cambiar la lógica del
+# recorrido es subir este número y nada más.
+VERSION_RECORRIDO = 5
 
 
 def reparar_recorridos():
     """
-    Reabre el recorrido de todos los torneos, una sola vez por versión.
+    Avisa cuántos recorridos quedaron viejos. No toca nada.
 
-    Los partidos guardados y el marcador de por dónde iba el recorrido son
-    dos cosas distintas en la base, y pueden quedar peleadas. Cuando eso
-    pasa no alcanza con adivinar torneo por torneo: se reabren todos y se
-    vuelve a bajar lo que haga falta. Lo que ya está guardado no se toca; el
-    recorrido sólo agrega lo que falta.
+    Antes esto reabría los marcadores a mano y se ejecutaba una sola vez por
+    versión. Ese diseño falló tres veces seguidas: si la única corrida
+    tocaba en un momento en que el recorrido todavía estaba roto, dejaba
+    todo sellado en "listo" y no había forma de reintentarlo.
+
+    Ahora cada marcador lleva adentro la versión que lo escribió y se
+    descarta solo cuando no coincide. No hay una corrida que pueda salir mal
+    y arruinarlo para siempre: cada recorrido se arregla la próxima vez que
+    le toca. Esto queda sólo para dejarlo dicho en el log.
     """
-    hecho, _ = almacen.leer("recorrido:version")
-    if hecho == VERSION_RECORRIDO:
-        return
-    reabiertos = 0
+    viejos = 0
     for cfg in LIGAS.values():
         for comp in comps_de(cfg):
             for molde in ("hist:%s", "fut:%s"):
                 estado, _ = almacen.leer(molde % comp)
-                if estado:
-                    almacen.guardar(molde % comp, {})
-                    reabiertos += 1
-    almacen.guardar("recorrido:version", VERSION_RECORRIDO)
-    print("\n  Reparación v%d: se reabren %d recorridos. Los calendarios se "
-          "vuelven a bajar enteros; lo guardado no se toca.\n"
-          % (VERSION_RECORRIDO, reabiertos), flush=True)
+                if estado and estado.get("v") != VERSION_RECORRIDO:
+                    viejos += 1
+    if viejos:
+        print("\n  Recorrido v%d: %d marcadores quedaron de una versión "
+              "anterior. Se rehacen solos al pasar; lo guardado no se toca.\n"
+              % (VERSION_RECORRIDO, viejos), flush=True)
 
 
 def reabrir_si_falta(comp):
@@ -5822,15 +5832,98 @@ def api_recorrido(q):
     competencia: cuántos partidos hay, de qué temporadas, qué fases y qué
     fechas, y qué dicen los marcadores del recorrido.
 
-      /api/recorrido            → todo
-      /api/recorrido?id=lib     → sólo esa liga
-      /api/recorrido?rehacer=lib → borra los marcadores y la vuelve a bajar
-                                   ahora mismo, sin esperar al rescate
+      /api/recorrido             → todo
+      /api/recorrido?id=lib      → sólo esa liga
+      /api/recorrido?rehacer=lib → reabre los marcadores y la vuelve a
+                                   recorrer ahora, sin borrar nada
+      /api/recorrido?reconstruir=lib&confirmar=si
+                                 → borra los partidos de ese torneo y los
+                                   baja de cero. Con `todo` en vez de `lib`,
+                                   todos. Pide confirmación porque borra.
     """
     pedido = (q.get("id") or [""])[0]
     rehacer = (q.get("rehacer") or [""])[0]
+    reconstruir = (q.get("reconstruir") or [""])[0]
 
     hecho = None
+
+    # ── volver a la copia de antes de reconstruir ───────────────────────
+    restaurar = (q.get("restaurar") or [""])[0]
+    if restaurar:
+        if (q.get("confirmar") or [""])[0] != "si":
+            return {"error": "esto reemplaza lo bajado por la copia guardada",
+                    "comoHacerlo": "/api/recorrido?restaurar=%s&confirmar=si"
+                                   % restaurar}
+        objetivo = [l for l in LIGAS] if restaurar == "todo" else [restaurar]
+        if any(l not in LIGAS for l in objetivo):
+            return {"error": "liga desconocida: %s" % restaurar}
+        vueltos = []
+        for lid in objetivo:
+            for comp in comps_de(LIGAS[lid]):
+                copia, _ = almacen.leer("respaldo:%s" % comp)
+                if not copia:
+                    continue
+                almacen.guardar("fixture:%s" % comp, copia["juegos"])
+                for molde in ("hist:%s", "fut:%s"):
+                    almacen.guardar(molde % comp, {})
+                vueltos.append({"comp": comp, "partidos": len(copia["juegos"]),
+                                "eraDe": copia.get("cuando")})
+        return {"restaurado": vueltos or "no había copia guardada",
+                "nota": "los marcadores quedaron reabiertos: el recorrido "
+                        "vuelve a pasar y completa lo que falte"}
+
+    # ── borrar y bajar de nuevo, desde cero ─────────────────────────────
+    # Esto sí borra partidos, así que pide confirmación explícita en la
+    # dirección. Es para cuando la base quedó en un estado raro y sale más
+    # barato empezar de nuevo que adivinar qué le pasó.
+    if reconstruir:
+        if (q.get("confirmar") or [""])[0] != "si":
+            return {"error": "esto borra los partidos guardados de ese torneo",
+                    "comoHacerlo": "/api/recorrido?reconstruir=%s&confirmar=si"
+                                   % reconstruir,
+                    "ojo": ("Con reconstruir=todo se borran los de todos los "
+                            "torneos. Se vuelven a bajar solos, pero tarda.")}
+        objetivo = ([l for l in LIGAS] if reconstruir == "todo"
+                    else [reconstruir])
+        if any(l not in LIGAS for l in objetivo):
+            return {"error": "liga desconocida: %s" % reconstruir}
+        hecho, borrados, respaldo = [], 0, []
+        cuando = dt.datetime.now().isoformat(timespec="seconds")
+        for lid in objetivo:
+            cfg = LIGAS[lid]
+            for comp in comps_de(cfg):
+                previos, _ = almacen.leer("fixture:%s" % comp)
+                borrados += len(previos or [])
+                # Copia de seguridad antes de borrar. Ocupa lugar, pero
+                # perder meses de partidos por un botón mal apretado sale
+                # bastante más caro que unos megas.
+                if previos:
+                    almacen.guardar("respaldo:%s" % comp,
+                                    {"cuando": cuando, "juegos": previos})
+                    respaldo.append(comp)
+                almacen.guardar("fixture:%s" % comp, [])
+                for molde in ("hist:%s", "fut:%s"):
+                    almacen.guardar(molde % comp, {})
+                # Primero la semilla: la ventana de partidos que la fuente
+                # muestra ahora. Sin al menos uno guardado no hay de dónde
+                # colgar el cursor y el recorrido no tiene por dónde empezar.
+                try:
+                    _sc_fixture(comp, ttl=0)
+                except Exception:
+                    pass
+                for direccion, como in ((-1, "atrás"), (1, "adelante")):
+                    r = caminar_fixture(comp, direccion, paginas=60)
+                    hecho.append({"liga": lid, "comp": comp, "hacia": como,
+                                  "paginas": r.get("paginas", 0),
+                                  "nuevos": r.get("nuevos", 0),
+                                  "total": r.get("total", 0),
+                                  "listo": r.get("listo"),
+                                  "motivo": r.get("motivo") or r.get("estado")})
+        pedido = pedido or (reconstruir if reconstruir != "todo" else "")
+        hecho = {"borrados": borrados, "recorridos": hecho,
+                 "respaldo": {"competencias": respaldo, "cuando": cuando,
+                              "comoVolver": "/api/recorrido?restaurar=%s&confirmar=si"
+                                            % reconstruir} if respaldo else None}
     if rehacer:
         cfg = LIGAS.get(rehacer)
         if not cfg:

@@ -515,11 +515,11 @@ html[data-theme="dark"] .cancha{background:linear-gradient(0deg,#14532d,#166534)
 .cancha .lineas::after{content:"";position:absolute;left:50%;top:50%;width:64px;height:64px;
   transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.35);border-radius:50%}
 .jug{position:absolute;transform:translate(-50%,-50%);text-align:center;width:52px;cursor:pointer}
-/* La bolita lleva el color del club, y hay clubes verdes: sobre el césped
-   desaparecían. El aro blanco la separa del fondo sea cual sea el color. */
+/* El número, un punto más grande y con un halo del color contrario: sobre
+   camisetas a dos colores cruza los dos y con uno solo siempre perdía
+   contra alguno. */
 .jug .dorsal{display:block;width:26px;height:26px;margin:0 auto;border-radius:50%;
-  font-size:11px;font-weight:800;line-height:26px;
-  box-shadow:0 0 0 2px rgba(255,255,255,.92),0 1px 4px rgba(0,0,0,.55)}
+  font-size:12px;font-weight:800;line-height:26px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .jug.loc .dorsal{background:#fff;color:#111}
 .jug.vis .dorsal{background:#111;color:#fff}
 /* Y el apellido va sobre una pastilla oscura en vez de fiarse de una
@@ -1115,8 +1115,17 @@ const App=(()=>{
     const N=r.ejes.length, R=56, CX=116, CY=104;
     const punto=(i,rad)=>{const a=-Math.PI/2+i*2*Math.PI/N;
       return [CX+Math.cos(a)*rad, CY+Math.sin(a)*rad];};
-    const poly=f=>r.ejes.map((e,i)=>punto(i,
-      Math.max(12,Math.min(R*1.8, R*f(e)/100))).map(n=>n.toFixed(1)).join(',')).join(' ');
+    /* La escala se comprime por arriba del promedio. Con la escala lineal,
+       un +120% se dibujaba fuera del hexágono y el polígono se salía del
+       dibujo. Así el promedio cae justo en el anillo del medio y el tope
+       que manda el servidor (220%) cae justo en el borde de afuera:
+       adentro entra todo, y las diferencias se siguen viendo. */
+    const radio=v=>{
+      const x=Math.max(0,Math.min(220,+v||0));
+      return R*(x<=100 ? 0.25+x/100*0.75 : 1+(x-100)/120*0.5);
+    };
+    const poly=f=>r.ejes.map((e,i)=>punto(i,radio(f(e)))
+      .map(n=>n.toFixed(1)).join(',')).join(' ');
     const rejilla=[1.5,1,.5].map(f=>`<polygon points="${r.ejes.map((_,i)=>
       punto(i,R*f).map(n=>n.toFixed(1)).join(',')).join(' ')}" fill="none"
       stroke="var(--line)" stroke-width="1"/>`).join('');
@@ -2294,16 +2303,26 @@ const App=(()=>{
       // 100 arco rival). El local se dibuja de abajo hacia arriba y el
       // visitante espejado, como se ve una transmisión.
       // el color del club en cada bolita; si tiene dos, mitad y mitad
+      /* El color del número decide sobre el promedio de los dos colores de
+         la camiseta, no sobre el primero: en una mitad y mitad el número
+         cruza las dos y eligiendo por una sola se perdía contra la otra.
+         Y encima lleva un halo del color opuesto, que es lo que lo hace
+         legible pase por donde pase. */
       const pinta=(cols,arriba)=>{
-        if(!cols||!cols.length) return arriba?'background:#111;color:#fff'
-                                             :'background:#fff;color:#111';
+        const luma=h=>{const n=parseInt(String(h||'').slice(1),16);
+          return isNaN(n)?0:(0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))/255;};
+        if(!cols||!cols.length) return arriba
+          ? 'background:#111;color:#fff;text-shadow:0 0 2px rgba(0,0,0,.9)'
+          : 'background:#fff;color:#111;text-shadow:0 0 2px rgba(255,255,255,.9)';
         const [a,bb]=cols;
-        const oscuro=h=>{const n=parseInt(h.slice(1),16);
-          return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))/255<.55;};
+        const medio=(bb&&bb!==a)?(luma(a)+luma(bb))/2:luma(a);
+        const claro=medio>=.58;
         const fondo = bb&&bb!==a
           ? `background:linear-gradient(90deg,${a} 0 50%,${bb} 50% 100%)`
           : `background:${a}`;
-        return `${fondo};color:${oscuro(a)?'#fff':'#111'}`;
+        const halo = claro ? 'rgba(255,255,255,.95)' : 'rgba(0,0,0,.75)';
+        return `${fondo};color:${claro?'#111':'#fff'};`
+             + `text-shadow:0 0 2px ${halo},0 0 3px ${halo}`;
       };
       const colLoc=pinta((m.home||{}).colores,false), colVis=pinta((m.away||{}).colores,true);
 
@@ -2473,11 +2492,14 @@ const App=(()=>{
        pestaña por fase en vez de una sola con todo mezclado. */
     S.fasesZona=agruparZonas(d.zonas);
     const juntos=d.zonas.length>2;
-    const tabs=[...(S.fasesZona.length>1
+    // El cuadro va primero: en una copa es lo que uno quiere ver, y en la
+    // Champions arranca meses antes que la tabla, que hasta septiembre
+    // está vacía.
+    const tabs=[...(hayCuadro?[['cuadro','Cuadro']]:[]),
+                ...(S.fasesZona.length>1
                     ? S.fasesZona.map((f,i)=>['f'+i,f.nombre])
                     : juntos?[['zonas','Grupos']]
                             :d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)])),
-                ...(hayCuadro?[['cuadro','Cuadro']]:[]),
                 ...(d.conAnual===false?[]:[['anual','Anual']]),
                 ['gol','Goles']];
     // En una copa, si estás parado en una etapa eliminatoria lo que querés

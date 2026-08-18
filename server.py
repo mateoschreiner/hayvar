@@ -546,6 +546,7 @@ LIGAS = {
                      "afuera": (25, 36)},
         "etapas_extra": ["Octavos de final", "Cuartos de final",
                          "Semifinal", "Final"],
+        "sc_extra": [596],       # la clasificación, igual que la Champions
     },
     # ── Copas ────────────────────────────────────────────────────────────
     # Los números salen de /api/competencias, no de la memoria: 365scores
@@ -1004,6 +1005,14 @@ def map_game(g):
         # que termine la anterior.
         "slot": g.get("groupNum"),
         "stageNum": g.get("stageNum"),
+        # De qué competencia es. Importa más de lo que parece: cuando se le
+        # piden los partidos a la Europa League, 365scores mete adentro los
+        # de su clasificación, que es OTRA competencia (la 596) y numera sus
+        # temporadas por su cuenta —va por la 11 mientras la Europa League
+        # va por la 61—. Sin este dato, filtrar por temporada los borraba a
+        # todos y el torneo quedaba con la edición pasada y nada más.
+        "comp": g.get("competitionId"),
+        "etapaFuente": g.get("stageName") or "",
         "start": g.get("startTime"),
         "status": st,
         "statusText": g.get("statusText") or "",
@@ -2249,10 +2258,18 @@ def tablas_por_resultados(juegos, etiqueta):
 
 
 def arranco_el_torneo(cfg):
-    """¿Ya se jugó algo de esta edición? Si no, media página miente."""
+    """
+    ¿Ya se jugó algo del torneo propiamente dicho?
+
+    Sólo cuenta la competencia principal. La clasificación se juega en
+    julio y agosto, meses antes de la primera fecha, y tomarla como
+    "arrancó" hacía que la Champions mostrara los goleadores de la edición
+    anterior mientras se jugaban las eliminatorias.
+    """
     try:
         return any(m.get("status") in ("FIN", "LIVE")
-                   for m in fixture_de_liga(cfg, ttl=600))
+                   and (m.get("comp") in (None, cfg["sc"]))
+                   for m in _sc_fixture(cfg["sc"], ttl=600))
     except Exception:
         return True      # ante la duda, se muestra lo que haya
 
@@ -2331,6 +2348,7 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
 
     temporada = temporada_actual(comp)
     clave = "fixture:%s" % comp
+    migrar_fixture(comp)
     guardado, _ = almacen.leer(clave)
     acumulado = {str(m["id"]): m for m in (guardado or [])}
     antes = len(acumulado)
@@ -2355,8 +2373,13 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         # que `_sc_fixture` acababa de podar, y la Europa League mostraba
         # entera la edición pasada.
         if temporada is not None:
-            juegos = [g for g in juegos
-                      if g.get("seasonNum") in (None, temporada)]
+            def sirve(g):
+                suya = g.get("competitionId")
+                if suya and suya != comp:
+                    otra = temporada_actual(suya)
+                    return otra is None or g.get("seasonNum") in (None, otra)
+                return g.get("seasonNum") in (None, temporada)
+            juegos = [g for g in juegos if sirve(g)]
             if not juegos:
                 listo = True
                 ruta = None
@@ -2376,9 +2399,17 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             m["zone"], m["interzonal"] = None, False
             for s in ("home", "away"):
                 m[s]["canon"] = m[s]["name"]
-            # lo guardado manda: puede tener el marcador ya cargado y esto
-            # viene del listado, que a veces llega sin él
-            acumulado.setdefault(str(m["id"]), m)
+            # Lo guardado manda para el marcador, pero los datos de forma
+            # —de qué competencia es, en qué zona, qué fase— se refrescan:
+            # los partidos viejos se guardaron sin ellos.
+            k = str(m["id"])
+            if k in acumulado:
+                for campo in ("comp", "slot", "stageNum", "stage",
+                              "etapaFuente", "temporada"):
+                    if m.get(campo) is not None:
+                        acumulado[k][campo] = m[campo]
+            else:
+                acumulado[k] = m
         siguiente = (data.get("paging") or {}).get(campo)
         if not siguiente or siguiente == ruta:
             listo = True
@@ -2509,8 +2540,20 @@ def _sc_fixture(comp, ttl=120):
         # Lo viejo se borra de la base, no se filtra al vuelo: si no, cada
         # arranque lo vuelve a leer y el archivo crece con partidos que ya
         # no se van a mostrar nunca.
-        limpio = {k: m for k, m in acumulado.items()
-                  if m.get("temporada") in (None, actual)}
+        #
+        # Cada partido se compara contra la temporada de SU competencia. Los
+        # de la clasificación vienen mezclados acá y llevan otro número: si
+        # se los mide con la vara de la competencia principal, se van todos.
+        def es_de_ahora(m):
+            suya = m.get("comp")
+            if suya and suya != comp:
+                actual_suya = temporada_actual(suya)
+                if actual_suya is None:
+                    return True     # sin dato de la otra, no se descarta
+                return m.get("temporada") in (None, actual_suya)
+            return m.get("temporada") in (None, actual)
+
+        limpio = {k: m for k, m in acumulado.items() if es_de_ahora(m)}
         if len(limpio) != len(acumulado):
             acumulado = limpio
             frescos = True          # forzar el guardado con la poda hecha
@@ -2520,6 +2563,32 @@ def _sc_fixture(comp, ttl=120):
         almacen.guardar(clave, todos)
 
     return sorted(todos, key=lambda x: (x["round"] or 0, x["start"] or ""))
+
+
+def migrar_fixture(comp):
+    """
+    Vuelve a recorrer un calendario cuando lo guardado quedó viejo de forma.
+
+    Los partidos que se guardaron antes de que empezáramos a anotar de qué
+    competencia son —y en qué zona se jugaron— no tienen esos campos, y el
+    recorrido usa `setdefault`, así que nunca se los volvía a mirar. Sin la
+    zona, la Primera Fase del Federal A no puede armar sus tablas.
+
+    Se detecta una vez, se borran los marcadores de por dónde iba el
+    recorrido y la próxima vuelta del rescate los vuelve a leer con todo.
+    """
+    hecho, _ = almacen.leer("migrado:%s" % comp)
+    if hecho:
+        return
+    guardado, _ = almacen.leer("fixture:%s" % comp)
+    if guardado and any("comp" not in m for m in guardado):
+        almacen.guardar("fixture:%s" % comp,
+                        [m for m in guardado if "comp" in m])
+        for molde in ("hist:%s", "fut:%s"):
+            almacen.guardar(molde % comp, {})
+        print("  · calendario %s: se vuelve a leer para sumarle zona y "
+              "competencia" % comp, flush=True)
+    almacen.guardar("migrado:%s" % comp, True)
 
 
 def comps_de(cfg):
@@ -2561,11 +2630,14 @@ def fixture_de_liga(cfg, ttl=120):
             if comp == cfg["sc"]:
                 raise        # si falla la principal, falla el torneo
             continue
-        if comp != cfg["sc"]:
-            # son las previas: se les pone el nombre de ronda que usa el
-            # torneo y se marcan, así el cuadro sabe que van antes de todo
-            for m in traidos:
-                m["stage"] = nombre_de_previa(m.get("stage") or "")
+        # Una previa es una previa por la competencia a la que pertenece,
+        # no por a quién se la pedimos: los partidos de la clasificación
+        # llegan mezclados también cuando se pide la competencia principal.
+        for m in traidos:
+            suya = m.get("comp") or comp
+            if suya != cfg["sc"]:
+                m["stage"] = nombre_de_previa(m.get("etapaFuente")
+                                              or m.get("stage") or "")
                 m["previa"] = True
                 m["stageNum"] = -10 + rango_etapa(m["stage"])
         juegos.extend(traidos)
@@ -3143,6 +3215,12 @@ def api_liga_games(q):
         # interzonal cuando de los dos se sabe y no coinciden.
         zona = za or zb
         m["zone"] = (zona or "").replace("Zona ", "").replace("Grupo ", "") or None
+        # Si ninguno de los dos está en las tablas de ahora —pasa con toda
+        # la Primera Fase del Federal A, que ya terminó— se usa el número de
+        # zona que trae el propio partido. Antes quedaban todos como
+        # "Interzonal", que era lo único que no eran.
+        if not m["zone"] and m.get("slot"):
+            m["zone"] = str(m["slot"])
         m["interzonal"] = bool(za and zb and za != zb)
 
     # El id de 365scores para cada partido del fixture de AFA. Se busca en

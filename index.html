@@ -505,20 +505,28 @@ td.l{text-align:left;padding-left:8px}
   letter-spacing:.5px;color:var(--txt2);margin-top:-7px}
 
 /* ── la cancha ── */
+/* El césped, un punto más apagado que antes: con el verde saturado las
+   camisetas claras se comían el contraste. */
 .cancha{position:relative;width:100%;aspect-ratio:105/68;margin:0 auto 16px;
-  background:linear-gradient(0deg,#1f7a45,#258a4f);border-radius:10px;overflow:hidden}
+  background:linear-gradient(0deg,#1c6b3e,#217a46);border-radius:10px;overflow:hidden}
 html[data-theme="dark"] .cancha{background:linear-gradient(0deg,#14532d,#166534)}
 .cancha .lineas{position:absolute;inset:6px;border:2px solid rgba(255,255,255,.35);border-radius:4px}
 .cancha .lineas::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.35)}
 .cancha .lineas::after{content:"";position:absolute;left:50%;top:50%;width:64px;height:64px;
   transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.35);border-radius:50%}
 .jug{position:absolute;transform:translate(-50%,-50%);text-align:center;width:52px;cursor:pointer}
+/* La bolita lleva el color del club, y hay clubes verdes: sobre el césped
+   desaparecían. El aro blanco la separa del fondo sea cual sea el color. */
 .jug .dorsal{display:block;width:26px;height:26px;margin:0 auto;border-radius:50%;
-  font-size:11px;font-weight:800;line-height:26px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  font-size:11px;font-weight:800;line-height:26px;
+  box-shadow:0 0 0 2px rgba(255,255,255,.92),0 1px 4px rgba(0,0,0,.55)}
 .jug.loc .dorsal{background:#fff;color:#111}
 .jug.vis .dorsal{background:#111;color:#fff}
-.jug .ape{display:block;font-size:9.5px;color:#fff;margin-top:2px;text-shadow:0 1px 2px rgba(0,0,0,.8);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Y el apellido va sobre una pastilla oscura en vez de fiarse de una
+   sombra: contra el verde claro la sombra sola no alcanzaba. */
+.jug .ape{display:inline-block;max-width:100%;font-size:9.5px;color:#fff;
+  margin-top:3px;padding:1px 4px;border-radius:4px;background:rgba(12,26,18,.62);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
 .jug:hover .dorsal{outline:2px solid var(--acc)}
 .eq-nom{position:absolute;bottom:8px;font-size:10px;color:rgba(255,255,255,.8);
   text-transform:uppercase;letter-spacing:.6px;font-weight:700}
@@ -1538,6 +1546,15 @@ const App=(()=>{
   // Ojo con el orden: "32avos de final" también contiene "final", así que
   // las rondas específicas tienen que probarse antes que la final.
   const ETAPA_CORTA=[[/fase de grupos|group/i,'Grupos'],
+    // Las eliminatorias europeas van primero: "repechaje de acceso" lleva
+    // la palabra repechaje y sin esto caía en "Pre octavos", que es otra
+    // cosa —el de febrero, entre la fase de liga y los octavos—.
+    [/ronda preliminar/i,'Preliminar'],
+    [/fase previa 3|tercera fase previa/i,'Previa 3'],
+    [/fase previa 2|segunda fase previa/i,'Previa 2'],
+    [/fase previa 1|primera fase previa/i,'Previa 1'],
+    [/de acceso/i,'Repechaje'],
+    [/fase de liga|league phase/i,'Fase de liga'],
     [/repechaje|play.?off|pre.?octavos/i,'Pre octavos'],
     // las previas se numeran: en la Libertadores son tres y "Previa" a secas
     // las dejaba a las tres iguales

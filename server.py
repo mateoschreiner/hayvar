@@ -454,6 +454,10 @@ LIGAS = {
         "nombre": "Federal A", "torneo": "Temporada 2026",
         "base": None, "pages": {}, "propia": False, "sc": 5078,
         "pais": "Argentina", "anual": False,
+        # La Primera Fase terminó y 365scores ya no publica sus posiciones:
+        # pedírselas devuelve las de la Segunda. Como los partidos sí los
+        # tenemos guardados, esa tabla la calculamos nosotros.
+        "fases_calculadas": ["Primera Fase"],
     },
     "fem": {
         # Igual que arriba: el canal es "primeraafemenino", según la página
@@ -2073,6 +2077,20 @@ def api_liga(q):
     # posiciones por zona, con escudos
     try:
         out["zonas"] = _sc_standings(cfg["sc"])
+        # Las fases que ya terminaron no las publica más la fuente. Si de
+        # alguna tenemos los partidos y no tenemos la tabla, se calcula.
+        if cfg.get("fases_calculadas"):
+            try:
+                juegos = fixture_de_liga(cfg, ttl=600)
+                nombres = " ".join(norm(z["name"]) for z in out["zonas"])
+                for fase in cfg["fases_calculadas"]:
+                    if norm(fase) in nombres:
+                        continue      # la fuente ya la da: no la pisamos
+                    suyos = [m for m in juegos
+                             if norm(fase) in norm(m.get("stage") or "")]
+                    out["zonas"] = tablas_por_resultados(suyos, fase) + out["zonas"]
+            except Exception:
+                pass
         marcar_destinos(out["zonas"], cfg.get("zonas_de"))
         # sólo las referencias que esta liga usa de verdad
         usadas = set(cfg.get("zonas_de") or {})
@@ -2122,6 +2140,14 @@ def api_liga(q):
     # Goleadores. AFA los da con el desglose por tipo de gol, que es mejor,
     # pero sólo para las categorías argentinas. Para el resto, 365scores.
     if not cfg.get("base"):
+        # Si el torneo todavía no jugó nada, la tabla de goleadores que
+        # publica 365scores es la de la edición anterior. Mostrarla acá era
+        # decir que Dembélé lleva 6 goles en una Champions que no empezó.
+        if not arranco_el_torneo(cfg):
+            out["goleadores"] = []
+            out["notaGoleadores"] = ("El torneo todavía no empezó: los "
+                                     "goleadores aparecen con la primera fecha.")
+            return out
         try:
             out["goleadores"] = _sc_goleadores(cfg["sc"], escudos)
         except Exception as e:
@@ -2166,6 +2192,69 @@ def api_liga(q):
             pass
 
     return out
+
+
+def tablas_por_resultados(juegos, etiqueta):
+    """
+    Arma las tablas de una fase con los partidos que tenemos guardados.
+
+    Existe por el Federal A. Cuando una fase termina, 365scores deja de
+    publicar sus posiciones: pedirle las de la Primera Fase devuelve las de
+    la Segunda. Pero los partidos sí los tenemos —los fuimos guardando fecha
+    a fecha— y una tabla no es más que sumar tres, uno o cero.
+
+    Se agrupa por el número de zona que trae cada partido. Si no viene, no
+    se inventa una tabla única con todos mezclados: se devuelve vacío y la
+    pestaña no aparece, que es preferible a mostrar algo falso.
+    """
+    porZona = {}
+    for m in juegos:
+        z = m.get("slot")
+        if z is None or m.get("status") != "FIN":
+            continue
+        porZona.setdefault(z, []).append(m)
+    if len(porZona) < 2:
+        return []
+
+    salida = []
+    for z in sorted(porZona):
+        acc = {}
+        for m in porZona[z]:
+            if m["gh"] is None or m["ga"] is None:
+                continue
+            for yo, rival, mios, suyos in (
+                    (m["home"], m["away"], m["gh"], m["ga"]),
+                    (m["away"], m["home"], m["ga"], m["gh"])):
+                nombre = yo.get("canon") or yo.get("name")
+                if not nombre:
+                    continue
+                r = acc.setdefault(nombre, {
+                    "team": {"name": nombre, "short": yo.get("short") or "",
+                             "logo": yo.get("logo"), "site": None},
+                    "pts": 0, "pj": 0, "gf": 0, "gc": 0, "dif": 0, "form": []})
+                r["pj"] += 1
+                r["gf"] += mios
+                r["gc"] += suyos
+                r["dif"] = r["gf"] - r["gc"]
+                r["pts"] += 3 if mios > suyos else (1 if mios == suyos else 0)
+                r["form"].append("G" if mios > suyos else
+                                 ("E" if mios == suyos else "P"))
+        filas = sort_rows_simple(list(acc.values()))
+        for r in filas:
+            r["form"] = r["form"][-5:]
+        if len(filas) >= 4:
+            salida.append({"name": "%s - Zona %s" % (etiqueta, z),
+                           "num": z, "rows": filas, "calculada": True})
+    return salida
+
+
+def arranco_el_torneo(cfg):
+    """¿Ya se jugó algo de esta edición? Si no, media página miente."""
+    try:
+        return any(m.get("status") in ("FIN", "LIVE")
+                   for m in fixture_de_liga(cfg, ttl=600))
+    except Exception:
+        return True      # ante la duda, se muestra lo que haya
 
 
 def sort_rows_simple(rows):
@@ -2438,6 +2527,24 @@ def comps_de(cfg):
     return [cfg["sc"]] + list(cfg.get("sc_extra") or [])
 
 
+# Cómo se llama cada ronda de la clasificación europea. Se traduce en el
+# borde, apenas entra: es más confiable que adivinar después con textos que
+# 365scores escribe de diez formas distintas ("3rd Qualifying Round",
+# "Tercera Ronda de Clasificación", "Q3"...).
+def nombre_de_previa(crudo):
+    t = norm(crudo)
+    if "prelim" in t:
+        return "Ronda preliminar"
+    if "play" in t or "repechaje" in t:
+        return "Repechaje de acceso"
+    for palabra, nombre in ((("3", "tercera", "third"), "Fase previa 3"),
+                            (("2", "segunda", "second"), "Fase previa 2"),
+                            (("1", "primera", "first"), "Fase previa 1")):
+        if any(p in t for p in palabra):
+            return nombre
+    return "Fase previa 1"
+
+
 def fixture_de_liga(cfg, ttl=120):
     """
     El calendario de un torneo, juntando las competencias que lo componen.
@@ -2449,19 +2556,31 @@ def fixture_de_liga(cfg, ttl=120):
     juegos = []
     for comp in comps_de(cfg):
         try:
-            juegos.extend(_sc_fixture(comp, ttl=ttl))
+            traidos = _sc_fixture(comp, ttl=ttl)
         except Exception:
             if comp == cfg["sc"]:
                 raise        # si falla la principal, falla el torneo
-    # el mismo partido no puede venir dos veces
-    vistos, unicos = set(), []
+            continue
+        if comp != cfg["sc"]:
+            # son las previas: se les pone el nombre de ronda que usa el
+            # torneo y se marcan, así el cuadro sabe que van antes de todo
+            for m in traidos:
+                m["stage"] = nombre_de_previa(m.get("stage") or "")
+                m["previa"] = True
+                m["stageNum"] = -10 + rango_etapa(m["stage"])
+        juegos.extend(traidos)
+    # El mismo partido no puede venir dos veces. Y si vino por los dos
+    # lados, manda el nombre de ronda de la previa: la competencia principal
+    # lo lista sin decir a qué eliminatoria pertenece.
+    unicos = {}
     for m in juegos:
         k = str(m.get("id"))
-        if k in vistos:
-            continue
-        vistos.add(k)
-        unicos.append(m)
-    return sorted(unicos, key=lambda x: (x.get("start") or ""))
+        if k not in unicos:
+            unicos[k] = m
+        elif m.get("previa") and not unicos[k].get("previa"):
+            unicos[k].update({"stage": m["stage"], "previa": True,
+                              "stageNum": m.get("stageNum")})
+    return sorted(unicos.values(), key=lambda x: (x.get("start") or ""))
 
 
 def temporada_actual(comp):
@@ -2729,13 +2848,23 @@ def fecha_actual(rounds, por_fecha):
 # agregamos a mano: si no, "Cuartos de final" caía después de la final sólo
 # porque se sumó al final de la lista.
 _RANGO_ETAPA = [
+    # Las eliminatorias europeas van todas antes de la fase de liga. El
+    # "repechaje de acceso" es el play-off de agosto —el que da entrada al
+    # torneo— y tiene que quedar antes; el "play-off" a secas es el de
+    # febrero, entre la fase de liga y los octavos. Van primero en la lista
+    # porque gana la primera coincidencia.
+    (("ronda preliminar",), 0.05),
+    (("fase previa 1", "primera fase previa"), 0.1),
+    (("fase previa 2", "segunda fase previa"), 0.2),
+    (("fase previa 3", "tercera fase previa"), 0.4),
+    (("repechaje de acceso", "play-off de acceso"), 0.8),
+    (("fase de liga", "league phase"), 1),
     # Las previas van antes que los grupos y son tres en la Libertadores, no
     # una: cada una tiene su rango para que no se pisen entre ellas.
     (("fase 3", "tercera fase", "third stage"), 0.6),
     (("fase 2", "segunda fase", "second stage"), 0.3),
     (("fase 1", "primera fase", "preliminar", "previa", "first stage"), 0),
     (("fase de grupos", "grupo", "group"), 1),
-    (("fase de liga", "league phase"), 1),
     (("repechaje", "play off", "playoff", "play-off", "pre octavos"), 2),
     (("64avos", "sesentaicuatroavos"), 3),
     (("32avos", "treintaidosavos", "treintaydosavos"), 4),
@@ -2767,10 +2896,16 @@ FASES_COPA = {
             "Cuartos de final", "Semifinal", "Final"],
     "ca":  ["32avos de final", "16avos de final", "Octavos de final",
             "Cuartos de final", "Semifinal", "Final"],
-    "champions": ["Fase de liga", "Play-offs", "Octavos de final",
-                  "Cuartos de final", "Semifinal", "Final"],
-    "europa": ["Fase de liga", "Play-offs", "Octavos de final",
-               "Cuartos de final", "Semifinal", "Final"],
+    # Ojo con los dos "play-off" de la Champions, que no son el mismo: el
+    # de agosto es para ENTRAR a la fase de liga —acá "Repechaje de
+    # acceso"— y el de febrero es para entrar a octavos.
+    "champions": ["Ronda preliminar", "Fase previa 1", "Fase previa 2",
+                  "Fase previa 3", "Repechaje de acceso", "Fase de liga",
+                  "Play-offs", "Octavos de final", "Cuartos de final",
+                  "Semifinal", "Final"],
+    "europa": ["Fase previa 1", "Fase previa 2", "Fase previa 3",
+               "Repechaje de acceso", "Fase de liga", "Play-offs",
+               "Octavos de final", "Cuartos de final", "Semifinal", "Final"],
 }
 
 

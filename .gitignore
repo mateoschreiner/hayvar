@@ -1,13 +1,18 @@
+
 __pycache__/
 *.pyc
 .DS_Store
 *.command
 clave.txt
-
+ 
 # borradores míos: no son parte de la página
+# (_pruebas.py sí va: es la regresión del proyecto)
 _*.py
-
+_*.js
+!_pruebas.py
+ 
 # la base de datos es de cada maquina: en el servidor se crea sola
 *.db
 *.db-wal
 *.db-shm
+ 

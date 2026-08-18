@@ -31,6 +31,7 @@ Uso:
 Sólo biblioteca estándar.
 """
 
+import base64
 import datetime as dt
 import gzip
 import json
@@ -522,6 +523,20 @@ LIGAS = {
         "etapas_extra": ["Octavos de final", "Cuartos de final",
                          "Semifinal", "Final"],
     },
+    "europa": {
+        # Mismo formato nuevo que la Champions y con el mismo reparto:
+        # 36 equipos en una tabla, ocho partidos cada uno, del 1° al 8° a
+        # octavos, del 9° al 24° al playoff y del 25° para abajo afuera.
+        # Desde 2024 el que queda eliminado ya no baja a la Conference:
+        # se termina ahí.
+        "nombre": "Europa League", "torneo": "Temporada 2026-27",
+        "base": None, "pages": {}, "propia": False, "sc": 573,
+        "pais": "Europa", "anual": False, "copa": True,
+        "zonas_de": {"avanza": (1, 8), "repechaje": (9, 24),
+                     "afuera": (25, 36)},
+        "etapas_extra": ["Octavos de final", "Cuartos de final",
+                         "Semifinal", "Final"],
+    },
     # ── Copas ────────────────────────────────────────────────────────────
     # Los números salen de /api/competencias, no de la memoria: 365scores
     # tiene 799 torneos cargados y varios se llaman parecido (está la
@@ -870,27 +885,58 @@ _IMG_CACHE = {}
 _IMG_MAX = 400          # los escudos pesan pocos KB: entran todos de sobra
 
 
+# Un escudo pesa unos pocos KB y no cambia nunca. Guardarlos en la base
+# ahorra volver a bajarlos en cada arranque —y sobre todo hace que la
+# página siga mostrando los escudos aunque el CDN de 365scores no conteste—.
+# El tope está para que un archivo raro no infle la base.
+_IMG_MAX_BYTES = 60 * 1024
+
+
 def traer_imagen(tipo, ver, ident):
-    """Descarga y cachea un escudo. Devuelve (bytes, content-type)."""
+    """Devuelve (bytes, content-type) de un escudo, de donde sea más barato."""
     clave = (tipo, ver, ident)
     with _lock:
         if clave in _IMG_CACHE:
             return _IMG_CACHE[clave]
+
+    def recordar(datos, ctype):
+        with _lock:
+            if len(_IMG_CACHE) >= _IMG_MAX:
+                _IMG_CACHE.clear()
+            _IMG_CACHE[clave] = (datos, ctype)
+        return datos, ctype
+
+    en_base = "img:%s:%s:%s" % (tipo, ver, ident)
+    guardado, _ = almacen.leer(en_base)
+    if guardado:
+        try:
+            return recordar(base64.b64decode(guardado["b64"]), guardado["ct"])
+        except Exception:
+            pass        # entrada dañada: se vuelve a bajar y se pisa
 
     carpeta = {"competidor": "Competitors", "competencia": "Competitions"}.get(tipo)
     if not carpeta:
         raise ValueError("tipo de imagen desconocido")
     url = "%s/v%s/%s/%s" % (_CDN, ver, carpeta, ident)
     req = Request(url, headers={"User-Agent": UA, "Accept": "image/png,image/*"})
-    with urlopen(req, timeout=15) as r:
-        datos = r.read()
-        ctype = r.headers.get("Content-Type", "image/png")
+    try:
+        with urlopen(req, timeout=15) as r:
+            datos = r.read()
+            ctype = r.headers.get("Content-Type", "image/png")
+    except Exception:
+        # si la fuente falla, sirve cualquier versión vieja del mismo escudo
+        # antes que dejar el hueco
+        for k in almacen.claves():
+            if k.startswith("img:%s:" % tipo) and k.endswith(":%s" % ident):
+                v, _ = almacen.leer(k)
+                if v:
+                    return recordar(base64.b64decode(v["b64"]), v["ct"])
+        raise
 
-    with _lock:
-        if len(_IMG_CACHE) >= _IMG_MAX:
-            _IMG_CACHE.clear()
-        _IMG_CACHE[clave] = (datos, ctype)
-    return datos, ctype
+    if len(datos) <= _IMG_MAX_BYTES:
+        almacen.guardar(en_base, {"ct": ctype,
+                                  "b64": base64.b64encode(datos).decode("ascii")})
+    return recordar(datos, ctype)
 
 
 def status_of(g):
@@ -913,6 +959,12 @@ def side(c):
         "canon": match_team(c.get("name")),
         "short": c.get("symbolicName") or "",
         "logo": logo(c),
+        # El país sirve para detectar el clásico internacional: dos clubes
+        # del mismo país cruzados en una copa. Y `rank` es lo que 365scores
+        # llama popularidad, que es lo más cercano a "qué tan grande es el
+        # club" que hay sin inventar un ranking propio.
+        "pais": c.get("countryId"),
+        "rank": c.get("popularityRank"),
         "score": None if sc in (None, -1) else int(sc),
         # En las copas, 365scores dice quién clasificó. Ojo con el campo:
         # `isQualified` es definitivo, `toQualify` es provisional —marca al
@@ -945,6 +997,13 @@ def map_game(g):
         "start": g.get("startTime"),
         "status": st,
         "statusText": g.get("statusText") or "",
+        # En el entretiempo 365scores manda gameTime 45, y mostrar "45'"
+        # parecía un partido corriendo. Se marca aparte para que la portada
+        # pueda decir "entretiempo" en vez de un minuto que no avanza.
+        "entretiempo": st == "LIVE" and any(
+            w in norm(g.get("statusText"))
+            for w in ("entretiempo", "descanso", "medio tiempo",
+                      "half time", "halftime")),
         "minute": live_min,
         "home": h, "away": a,
         "gh": h["score"], "ga": a["score"],
@@ -2323,21 +2382,62 @@ def _sc_fixture(comp, ttl=120):
                 temporadas["actual"] = c["currentSeasonNum"]
 
     todos = list(acumulado.values())
-    if frescos:
-        almacen.guardar(clave, todos)
 
     # 365scores mezcla el final de la temporada pasada con el arranque de la
     # nueva: para LaLiga devolvía las fechas 36, 37 y 38 del torneo anterior
     # junto a la 1 y la 2. Nos quedamos sólo con la temporada en curso.
-    actual = temporadas.get("actual")
+    #
+    # El número de temporada se le pregunta al torneo, no a los partidos.
+    # La diferencia importa cuando el torneo todavía no arrancó: la
+    # Champions 2026-27 juega su primera fecha en septiembre, así que hoy
+    # 365scores sólo tiene partidos de la temporada anterior. Deduciendo el
+    # año "del más alto que se vio" salía el año pasado y la página mostraba
+    # una Champions vieja como si fuera la de ahora.
+    actual = temporada_actual(comp) or temporadas.get("actual")
     if actual is None:
         vistas = [m.get("temporada") for m in todos if m.get("temporada")]
         actual = max(vistas) if vistas else None
+
     if actual is not None:
-        todos = [m for m in todos
-                 if m.get("temporada") in (None, actual)] or todos
+        # Lo viejo se borra de la base, no se filtra al vuelo: si no, cada
+        # arranque lo vuelve a leer y el archivo crece con partidos que ya
+        # no se van a mostrar nunca.
+        limpio = {k: m for k, m in acumulado.items()
+                  if m.get("temporada") in (None, actual)}
+        if len(limpio) != len(acumulado):
+            acumulado = limpio
+            frescos = True          # forzar el guardado con la poda hecha
+        todos = list(acumulado.values())
+
+    if frescos:
+        almacen.guardar(clave, todos)
 
     return sorted(todos, key=lambda x: (x["round"] or 0, x["start"] or ""))
+
+
+def temporada_actual(comp):
+    """
+    Qué temporada está corriendo, según el propio torneo.
+
+    Se le pregunta a la ficha de la competencia y no a los partidos, porque
+    entre una temporada y la otra los partidos que hay son los viejos y
+    deducirlo de ahí da siempre el año anterior. Se guarda por un día: no
+    cambia más seguido que eso.
+    """
+    clave = "temporada:%s" % comp
+    guardado, edad = almacen.leer(clave, 60 * 60 * 24)
+    if guardado:
+        return guardado
+    try:
+        data = fetch("competitions", {"competitions": comp}, ttl=3600)
+        for c in (data.get("competitions") or []):
+            if c.get("id") == comp and c.get("currentSeasonNum"):
+                almacen.guardar(clave, c["currentSeasonNum"])
+                return c["currentSeasonNum"]
+    except Exception:
+        pass
+    viejo, _ = almacen.leer(clave)
+    return viejo
 
 
 # ── Canal de TV y goleadores de cada partido ─────────────────────────────
@@ -2620,6 +2720,8 @@ FASES_COPA = {
             "Cuartos de final", "Semifinal", "Final"],
     "champions": ["Fase de liga", "Play-offs", "Octavos de final",
                   "Cuartos de final", "Semifinal", "Final"],
+    "europa": ["Fase de liga", "Play-offs", "Octavos de final",
+               "Cuartos de final", "Semifinal", "Final"],
 }
 
 
@@ -3898,6 +4000,8 @@ def anotar_jugadores(liga, game_id, filas):
 
 # Recorrer quinientos partidos por cada jugador que alguien mire sería
 # absurdo, así que la tabla entera se arma una vez y se guarda un rato.
+# Va también a la base: sin eso, cada reinicio del servidor obliga a leer
+# los quinientos de nuevo y el primero que entra espera todo eso.
 _AGG_JUG, _AGG_JUG_CUANDO = {}, {}
 _AGG_JUG_VIDA = 30 * 60
 
@@ -3906,12 +4010,18 @@ def agregado_jugadores(liga, forzar=False):
     """
     El promedio por partido de cada jugador de la liga, con su puesto.
 
-    Devuelve {nombre: {puesto, partidos, club, ejes: {eje: promedio}}}.
+    Devuelve {nombre: {puesto, partidos, club, prom: {clave: promedio}}}.
     """
     ahora = time.time()
     if (not forzar and liga in _AGG_JUG
             and ahora - _AGG_JUG_CUANDO.get(liga, 0) < _AGG_JUG_VIDA):
         return _AGG_JUG[liga]
+
+    if not forzar:
+        guardado, _ = almacen.leer("jugagg:%s" % liga, _AGG_JUG_VIDA)
+        if guardado:
+            _AGG_JUG[liga], _AGG_JUG_CUANDO[liga] = guardado, ahora
+            return guardado
 
     idx, _ = almacen.leer("jugidx:%s" % liga)
     acum = {}
@@ -3948,6 +4058,8 @@ def agregado_jugadores(liga, forzar=False):
                      "prom": {c: a["suma"][c] / a["cuenta"][c]
                               for c in a["suma"] if a["cuenta"].get(c)}}
     _AGG_JUG[liga], _AGG_JUG_CUANDO[liga] = salida, ahora
+    if salida:
+        almacen.guardar("jugagg:%s" % liga, salida)
     return salida
 
 
@@ -4222,7 +4334,7 @@ def api_atleta(q):
 # Qué torneos entran en la portada, y en qué orden aparecen. Cada bloque se
 # muestra sólo si ese día hay partidos, así que las copas aparecen y
 # desaparecen solas según la semana. Se agrega o saca sumando la clave acá.
-HOME_LIGAS = ("lpf", "nacional", "ca", "lib", "sud", "champions",
+HOME_LIGAS = ("lpf", "nacional", "ca", "lib", "sud", "champions", "europa",
               "laliga", "premier", "seriea", "bundesliga")
 
 
@@ -4268,49 +4380,115 @@ def api_home(q):
             "partidazo": partidazo_del_dia(bloques)}
 
 
+# Los clásicos del fútbol argentino. Un interzonal no es cualquier partido
+# cruzado entre zonas: la fecha de clásicos los junta a propósito, y es esa
+# la que interesa. Van sólo los que nadie discute.
+CLASICOS_AR = [
+    {"Boca Juniors", "River Plate"},
+    {"Racing", "Independiente"},
+    {"San Lorenzo", "Huracán"},
+    {"Newell's Old Boys", "Rosario Central"},
+    {"Estudiantes (LP)", "Gimnasia y Esgrima (LP)"},
+    {"Belgrano", "Talleres (C)"},
+    {"Talleres (C)", "Instituto"},
+    {"Belgrano", "Instituto"},
+    {"Lanús", "Banfield"},
+    {"Vélez Sarsfield", "Argentinos Juniors"},
+    {"Tigre", "Platense"},
+    {"Unión", "Colón"},
+    {"Atlético Tucumán", "San Martín (T)"},
+    {"Gimnasia y Esgrima (M)", "Independiente Rivadavia"},
+    {"Aldosivi", "Alvarado"},
+    {"Central Córdoba (SdE)", "Mitre"},
+]
+
+
+def es_clasico_ar(a, b):
+    """¿Es un clásico argentino? Se compara con la regla estricta de clubes."""
+    for par in CLASICOS_AR:
+        x, y = tuple(par)
+        if ((mismo_club(a, x) and mismo_club(b, y))
+                or (mismo_club(a, y) and mismo_club(b, x))):
+            return True
+    return False
+
+
 def partidazo_del_dia(bloques):
     """
-    El partido más importante de la jornada, entre los de Primera.
+    El partido del día, con los criterios en este orden:
 
-    La regla es la de cualquier hincha: el que tiene al equipo mejor ubicado
-    en la tabla. La excepción es la fecha de los interzonales, donde se juegan
-    los clásicos: ese día el clásico es el partido, aunque los dos equipos
-    vengan últimos.
+      1. El interzonal de Primera, si además es clásico. La fecha de
+         interzonales existe justamente para cruzar a los clásicos, y ese
+         día el clásico es el partido aunque los dos vengan últimos.
+      2. El que tenga al mejor equipo argentino de la Tabla Anual.
+      3. El clásico internacional: dos equipos del mismo país cruzados en
+         la Libertadores, la Sudamericana, la Champions o la Europa League.
+      4. El equipo más grande según el ranking de la fuente.
+
+    Sobre el punto 4: FIFA no publica un ranking de clubes —el suyo es de
+    selecciones—. Lo más parecido que tenemos sin inventar nada es el
+    `popularityRank` que 365scores le asigna a cada club, que ordena bastante
+    bien de Real Madrid para abajo. Si querés otro criterio, se cambia acá.
     """
-    lpf = next((b["games"] for b in bloques if b["liga"] == "lpf"), [])
-    if not lpf:
+    todos = [(b["liga"], m) for b in bloques for m in b["games"]]
+    if not todos:
         return None
+    lpf = [m for lid, m in todos if lid == "lpf"]
 
-    # posición de cada equipo: la anual ordena a los 30 en una sola lista
+    def lado(m, s):
+        return m[s].get("canon") or m[s].get("name") or ""
+
+    # ── 1. interzonal de Primera que además sea clásico ──────────────────
+    for m in lpf:
+        if m.get("interzonal") and es_clasico_ar(lado(m, "home"), lado(m, "away")):
+            return m["id"]
+
+    # ── 2. el mejor argentino de la Anual ────────────────────────────────
     puesto = {}
-    try:
-        for r in api_annual({"live": ["0"]}).get("rows", []):
-            puesto[norm(r.get("canon") or r["team"]["name"])] = r.get("pos") or 99
-    except Exception:
-        pass
-    if not puesto:
+    for traer in (lambda: api_annual({"live": ["0"]}).get("rows", []),
+                  lambda: [r for z in api_standings({"live": ["0"]}).get("zones", [])
+                           for r in z["rows"]]):
         try:
-            for z in api_standings({"live": ["0"]}).get("zones", []):
-                for r in z["rows"]:
-                    puesto[norm(r.get("canon") or r["team"]["name"])] = r.get("pos") or 99
+            for r in traer():
+                puesto[norm(r.get("canon") or r["team"]["name"])] = r.get("pos") or 99
+            if puesto:
+                break
         except Exception:
-            return lpf[0]["id"]
+            continue
 
-    def mejor_puesto(m):
-        return min(puesto.get(norm(m[s].get("canon") or m[s]["name"]), 99)
-                   for s in ("home", "away"))
+    if puesto:
+        conocidos = [(min(puesto.get(norm(lado(m, s)), 999)
+                          for s in ("home", "away")), m)
+                     for _, m in todos]
+        mejor = min(conocidos, key=lambda x: x[0])
+        if mejor[0] < 999:
+            return mejor[1]["id"]
 
-    clasicos = [m for m in lpf if m.get("interzonal")]
-    elegibles = clasicos or lpf
-    return min(elegibles, key=mejor_puesto)["id"]
+    # ── 3. clásico internacional: dos del mismo país en una copa ─────────
+    for lid, m in todos:
+        cfg = LIGAS.get(lid) or {}
+        if not cfg.get("copa") and lid not in ("champions", "europa"):
+            continue
+        pa, pb = m["home"].get("pais"), m["away"].get("pais")
+        if pa and pb and pa == pb:
+            return m["id"]
+
+    # ── 4. el club más grande según la fuente ────────────────────────────
+    def tamano(m):
+        return max(m[s].get("rank") or 0 for s in ("home", "away"))
+
+    conRank = [m for _, m in todos if tamano(m)]
+    if conRank:
+        return max(conRank, key=tamano)["id"]
+    return todos[0][1]["id"]
 
 
 # Emblemas: sólo de las ligas que efectivamente andan. Las que están en
 # "pronto" van sin escudo: poner uno estimado quedaba mal y confundía.
 EMBLEMAS = {"lpf": 72, "nacional": 419, "pbm": 5077, "fa": 5078,
             "fem": 6224, "laliga": 11, "premier": 7, "seriea": 17,
-            "bundesliga": 25, "champions": 572, "lib": 102, "sud": 389,
-            "ca": 640}
+            "bundesliga": 25, "champions": 572, "europa": 573,
+            "lib": 102, "sud": 389, "ca": 640}
 
 
 def api_ligas(q):
@@ -5058,6 +5236,48 @@ def api_clubes(q):
         key=lambda x: norm(x["name"]))}
 
 
+def api_buscar(q):
+    """
+    Buscador: clubes y jugadores. /api/buscar?q=aldosivi
+
+    Los jugadores salen de lo que se fue juntando partido a partido, así que
+    al principio hay pocos y con las fechas aparecen todos. Es a propósito:
+    la única lista completa de planteles que existe es la que armamos
+    nosotros mirando las formaciones.
+    """
+    texto = norm((q.get("q") or [""])[0])
+    lid = (q.get("liga") or ["lpf"])[0]
+    if len(texto) < 2:
+        return {"q": texto, "clubes": [], "jugadores": []}
+
+    def ordenar(items, clave):
+        empiezan = [x for x in items if clave(x).startswith(texto)]
+        contienen = [x for x in items
+                     if texto in clave(x) and not clave(x).startswith(texto)]
+        return empiezan + contienen
+
+    try:
+        clubes = ordenar(api_clubes({})["clubes"], lambda c: norm(c["name"]))[:6]
+    except Exception:
+        clubes = []
+
+    jugadores = []
+    try:
+        tabla = agregado_jugadores(lid)
+        candidatos = [{"name": v["nombre"], "club": v.get("club") or "",
+                       "puesto": v.get("puesto") or "",
+                       "partidos": v.get("partidos") or 0}
+                      for v in tabla.values()]
+        # los que más jugaron primero: es lo que más se busca
+        candidatos.sort(key=lambda x: -x["partidos"])
+        jugadores = ordenar(candidatos, lambda j: norm(j["name"]))[:8]
+    except Exception:
+        pass
+
+    return {"q": texto, "clubes": clubes, "jugadores": jugadores,
+            "liga": lid}
+
+
 def api_diagnostico(q):
     """
     Revisión general: la clave, el plan, la base y el estado de las fuentes.
@@ -5092,6 +5312,7 @@ ROUTES = {
     "/api/base": lambda q: almacen.estado(),
     "/api/home": api_home,
     "/api/clubes": api_clubes,
+    "/api/buscar": api_buscar,
     "/api/club": api_club,
     "/api/club-info": api_club_info,
     "/api/competencias": api_competencias,

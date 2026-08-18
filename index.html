@@ -683,7 +683,7 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
     <span class="tag">Liga Profesional · Clausura 2026</span>
     <div class="hsearch">
       <span class="ic">⌕</span>
-      <input id="q" placeholder="Buscar club…" autocomplete="off"
+      <input id="q" placeholder="Buscar club o jugador…" autocomplete="off"
              oninput="App.buscar(this.value)" onkeydown="App.buscarTecla(event)"
              onfocus="App.buscar(this.value)">
       <div class="res" id="qres" style="display:none"></div>
@@ -866,8 +866,9 @@ const App=(()=>{
     ['Argentina',[['lpf','Liga Profesional',1],['nacional','Primera Nacional',1],
                   ['pbm','Primera B Metro',1],['fa','Federal A',1],
                   ['ca','Copa Argentina',1]]],
-    ['Internacional',[['lib','Libertadores',1],['sud','Sudamericana',1],['ucl','Champions',0]]],
-    ['Europa',[['laliga','LaLiga',1],['premier','Premier League',1],
+    ['Internacional',[['lib','Libertadores',1],['sud','Sudamericana',1]]],
+    ['Europa',[['champions','Champions League',1],['europa','Europa League',1],
+               ['laliga','LaLiga',1],['premier','Premier League',1],
                ['seriea','Serie A',1],['bundesliga','Bundesliga',1]]],
     ['Fútbol femenino',[['fem','Primera División Argentina',1]]]
   ];
@@ -898,7 +899,33 @@ const App=(()=>{
   /* La lista de clubes con página propia. Se baja una sola vez al arrancar
      y sirve para dos cosas: saber qué escudos se pueden clickear y buscar
      sin pedirle nada al servidor por cada letra. */
-  let qHits=[], qSel=-1;
+  let qHits=[], qSel=-1, qGen=0;
+
+  /* Los resultados del buscador: clubes arriba, jugadores abajo.
+     Se dibuja dos veces por búsqueda —primero con los clubes, que ya están
+     acá, y después otra vez cuando el servidor contesta con los jugadores—
+     para que escribir se sienta instantáneo. */
+  function pintarBusqueda(clubes, jugadores){
+    const caja=$('#qres'); if(!caja) return;
+    qHits=clubes.concat(jugadores);
+    if(qSel>=qHits.length||qSel<0) qSel=qHits.length?0:-1;
+    let html='';
+    if(clubes.length) html+=`<b>Clubes</b>`+clubes.map((c,i)=>
+      `<a class="${i===qSel?'sel':''}" onmousedown="event.preventDefault();App.elegirBusqueda(${i})">
+         ${c.logo?`<img src="${esc(c.logo)}" alt="" onerror="this.remove()">`
+                 :`<span class="crest" style="width:20px;height:20px"></span>`}
+         <span>${esc(c.name)}</span></a>`).join('');
+    if(jugadores.length) html+=`<b>Jugadores</b>`+jugadores.map((j,k)=>{
+      const i=clubes.length+k;
+      return `<a class="${i===qSel?'sel':''}" onmousedown="event.preventDefault();App.elegirBusqueda(${i})">
+         <span class="crest" style="width:20px;height:20px"></span>
+         <span>${esc(j.name)}<span style="color:var(--txt3);font-size:11.5px">
+           ${[j.club,j.puesto].filter(Boolean).map(esc).join(' · ')}</span></span></a>`;}).join('');
+    if(!html) html=`<div class="vacio">No hay ningún club ni jugador que se llame así.
+      Los jugadores aparecen a medida que se juegan las fechas.</div>`;
+    caja.style.display='block';
+    caja.innerHTML=html;
+  }
   async function cargarClubes(){
     try{
       const d=await get('/api/clubes');
@@ -1556,6 +1583,9 @@ const App=(()=>{
   // la fila para poder reescribir sólo eso sin volver a dibujar nada más.
   function htmlTiempo(m){
     const lv=m.status==='LIVE', fin=m.status==='FIN', susp=m.status==='SUSP';
+    // En el entretiempo el minuto se queda clavado en 45 y parecía un
+    // partido en curso. Se dice lo que pasa y listo.
+    if(lv&&m.entretiempo) return `<div class="m-time live"><span class="mm" style="font-size:12px">ET</span><span class="st">entretiempo</span></div>`;
     if(lv) return `<div class="m-time live"><span class="mm">${m.minute??''}'</span><span class="st">en vivo</span></div>`;
     if(fin) return `<div class="m-time fin">${hhmm(m.start)}<span class="st">final</span></div>`;
     if(susp) return `<div class="m-time fin">—<span class="st">susp.</span></div>`;
@@ -1734,7 +1764,11 @@ const App=(()=>{
       const tit=r.descendiendo?'Hoy desciende'
         :r.enRiesgo?`Puede ser alcanzado — le quedan ${r.restantes} partidos (peor promedio posible: ${r.promMin.toFixed(3)})`
         :`Matemáticamente salvado (peor promedio posible: ${r.promMin.toFixed(3)})`;
-      return `<tr class="${r.descendiendo?'fila-desciende':r.enRiesgo?'fila-repechaje':''}"
+      // Sólo se pinta la fila del que hoy desciende. Al que todavía puede
+      // ser alcanzado le alcanza con la marca del costado: en esta tabla
+      // son muchos y con el fondo amarillo quedaba media tabla resaltada,
+      // que es como no resaltar nada.
+      return `<tr class="${r.descendiendo?'fila-desciende':''}"
         title="${esc(tit)}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.prom.toFixed(3)}</td><td>${r.pts}</td><td>${r.pj}</td>
@@ -2137,8 +2171,13 @@ const App=(()=>{
     else if(mTab==='res'){
       const todos=(mData&&mData.events)||[];
       // la tanda va aparte, abajo: mezclada en el minuto a minuto se pierde
-      const tanda=todos.filter(e=>e.penales), ev=todos.filter(e=>!e.penales);
-      let cruzado=false;   // para separar los dos tiempos
+      const tanda=todos.filter(e=>e.penales);
+      /* Del final para arriba: lo último que pasó es lo que uno quiere ver
+         al abrir el partido, sobre todo si está en juego. Como se lee al
+         revés, el corte del entretiempo aparece cuando se vuelve del
+         segundo tiempo al primero. */
+      const ev=todos.filter(e=>!e.penales).slice().reverse();
+      let cruzado=false, vistoSegundo=false;
       body=ev.length?ev.map(e=>{
         const min=`${e.min??''}${e.added?'+'+e.added:''}'`;
         const nom=`<span class="ico">${e.anulado?'🚫':(ICONO[e.type]||'•')}</span> `
@@ -2147,23 +2186,27 @@ const App=(()=>{
           +(e.extra?`<span style="color:var(--txt2);font-size:11px"> ${e.type==='cambio'?'▼ ':''}${esc(e.extra)}</span>`:'')
           +(e.sub&&e.type==='gol'&&/contra|penal/i.test(e.sub)?`<span style="color:var(--txt2);font-size:11px"> (${esc(e.sub)})</span>`:'');
         let corte='';
-        if(!cruzado&&e.min>45){ cruzado=true; corte='<div class="ht"><span>Entretiempo</span></div>'; }
+        if(e.min>45) vistoSegundo=true;
+        else if(vistoSegundo&&!cruzado){
+          cruzado=true; corte='<div class="ht"><span>Entretiempo</span></div>';
+        }
         return corte+`<div class="ev"><div class="r">${e.side==='h'?nom:''}</div><div class="m">${min}</div><div>${e.side==='a'?nom:''}</div></div>`;
       }).join(''):'<div class="empty">Sin eventos registrados.</div>';
 
       // ── Definición por penales ──
+      // Van arriba: leyendo del final para atrás, es lo último que pasó.
       if(tanda.length){
         const cuenta=s=>tanda.filter(e=>e.side===s&&e.anotado).length;
         const pat=e=>`<div class="pen-pat ${e.anotado?'ok':'no'}">
           <span class="tic">${e.anotado?'✓':'✗'}</span>
           <span class="nm">${esc(e.player||'—')}</span></div>`;
-        body+=`<div class="pen-bloque">
+        body=`<div class="pen-bloque">
           <div class="pen-tit"><span>Definición por penales</span>
             <b>${cuenta('h')}-${cuenta('a')}</b></div>
           <div class="pen-cols">
             <div>${tanda.filter(e=>e.side==='h').map(pat).join('')||'<div class="pen-vacio">—</div>'}</div>
             <div>${tanda.filter(e=>e.side==='a').map(pat).join('')||'<div class="pen-vacio">—</div>'}</div>
-          </div></div>`;
+          </div></div>`+body;
       }
       const pie=[];
       if(m.referee) pie.push(`${SVG_SILBATO}Árbitro: <b style="font-weight:600">${esc(m.referee)}</b>`);
@@ -3097,24 +3140,24 @@ const App=(()=>{
     buscar(txt){
       const caja=$('#qres'); if(!caja) return;
       const q=claveClub(txt);
-      if(!q){ caja.style.display='none'; caja.innerHTML=''; qSel=-1; return; }
-      // primero los que empiezan con lo escrito, después los que lo contienen
+      if(q.length<2){ caja.style.display='none'; caja.innerHTML=''; qHits=[]; qSel=-1; return; }
+      // Los clubes se filtran acá, contra la lista que ya está bajada, así
+      // la respuesta es instantánea mientras se escribe. Los jugadores los
+      // trae el servidor, porque son cientos y cambian con cada fecha.
       const arranca=[], contiene=[];
       CLUBES.forEach(c=>{
         const k=claveClub(c.name);
-        if(k.startsWith(q)) arranca.push(c);
-        else if(k.includes(q)) contiene.push(c);
+        if(k.startsWith(q)) arranca.push({t:'club',name:c.name,logo:c.logo});
+        else if(k.includes(q)) contiene.push({t:'club',name:c.name,logo:c.logo});
       });
-      qHits=arranca.concat(contiene).slice(0,8);
-      qSel=qHits.length?0:-1;
-      caja.style.display='block';
-      caja.innerHTML=qHits.length
-        ? `<b>Clubes</b>`+qHits.map((c,i)=>
-            `<a class="${i===0?'sel':''}" onmousedown="event.preventDefault();App.irClub('${js(c.name)}')">
-               ${c.logo?`<img src="${esc(c.logo)}" alt="" onerror="this.remove()">`
-                       :`<span class="crest" style="width:20px;height:20px"></span>`}
-               <span>${esc(c.name)}</span></a>`).join('')
-        : `<div class="vacio">No hay ningún club que se llame así.</div>`;
+      const clubes=arranca.concat(contiene).slice(0,6);
+      pintarBusqueda(clubes,[]);
+      const miQ=++qGen;
+      get('/api/buscar?liga=lpf&q='+encodeURIComponent(txt)).then(d=>{
+        if(miQ!==qGen) return;      // llegó tarde: ya se escribió otra cosa
+        pintarBusqueda(clubes,(d.jugadores||[]).map(j=>({t:'jug',name:j.name,
+          club:j.club,puesto:j.puesto,partidos:j.partidos})));
+      }).catch(()=>{});
     },
     buscarTecla(ev){
       if(!qHits.length) return;
@@ -3123,10 +3166,13 @@ const App=(()=>{
         qSel=(qSel+(ev.key==='ArrowDown'?1:qHits.length-1))%qHits.length;
         document.querySelectorAll('#qres a').forEach((a,i)=>a.classList.toggle('sel',i===qSel));
       } else if(ev.key==='Enter'&&qSel>=0){
-        ev.preventDefault(); api.irClub(qHits[qSel].name);
+        ev.preventDefault(); api.elegirBusqueda(qSel);
       } else if(ev.key==='Escape'){ api.cerrarBuscador(); }
     },
     irClub(nombre){ api.cerrarBuscador(); api.club(nombre); },
+    irJugador(nombre){ api.cerrarBuscador(); openPlayer(nombre,'',null); },
+    elegirBusqueda(i){ const h=qHits[i]; if(!h) return;
+      if(h.t==='club') api.irClub(h.name); else api.irJugador(h.name); },
     cerrarBuscador(){ const c=$('#qres'), i=$('#q');
       if(c){ c.style.display='none'; c.innerHTML=''; }
       if(i){ i.value=''; i.blur(); } qHits=[]; qSel=-1; },

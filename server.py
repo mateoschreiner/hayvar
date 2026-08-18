@@ -2844,12 +2844,15 @@ def fixture_de_liga(cfg, ttl=120):
             if comp == cfg["sc"]:
                 raise        # si falla la principal, falla el torneo
             continue
-        # Una previa es una previa por la competencia a la que pertenece,
-        # no por a quién se la pedimos: los partidos de la clasificación
-        # llegan mezclados también cuando se pide la competencia principal.
+        # Una previa es la de una competencia declarada como previa en
+        # `sc_extra`. Ojo con no tomar "cualquier competencia que no sea la
+        # principal": a la Sudamericana le llegan partidos mezclados de
+        # otros torneos y con esa regla el pre octavos terminaba renombrado
+        # como "Fase previa 1" y metido en el cuadro equivocado.
+        clasificatorias = set(cfg.get("sc_extra") or [])
         for m in traidos:
             suya = m.get("comp") or comp
-            if suya != cfg["sc"]:
+            if suya in clasificatorias:
                 m["stage"] = nombre_de_previa(m.get("etapaFuente")
                                               or m.get("stage") or "")
                 m["previa"] = True
@@ -3650,15 +3653,26 @@ def api_liga_games(q):
         if len(por_stage) > 1:
             orden = sorted(por_stage, key=lambda k: (k[0], por_stage[k]["primero"]))
             numero = {k: i + 1 for i, k in enumerate(orden)}
+            # Una fase merece pestaña si tiene varias fechas. El repechaje
+            # de ascenso de la Bundesliga son dos partidos y armaba una
+            # pestaña "Descenso/Ascenso" al lado de las 34 fechas del
+            # torneo, que además es lo primero que se abría.
+            MIN_FECHAS_FASE = 3
             for k in orden:
                 d = por_stage[k]
-                if not d["rounds"]:
+                if len(d["rounds"]) < MIN_FECHAS_FASE:
                     continue
                 fases_liga.append({"num": numero[k],
                                    "nombre": k[1] or "Fase %s" % k[0],
                                    "rounds": sorted(d["rounds"])})
-            for g in games:
-                g["fase"] = numero.get(clave_fase(g))
+            # Con una sola fase que valga la pena no hay nada que elegir:
+            # el selector de fases sobra y encima se llevaba el lugar del
+            # selector de fechas.
+            if len(fases_liga) < 2:
+                fases_liga = []
+            else:
+                for g in games:
+                    g["fase"] = numero.get(clave_fase(g))
 
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})

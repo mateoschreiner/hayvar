@@ -1631,7 +1631,12 @@ const App=(()=>{
     // fecha, porque cada fase vuelve a numerar desde el uno.
     const fl=S.fasesLiga;
     if(fl&&fl.length){
-      const actual=fl.find(f=>f.num===S.fase)||fl[fl.length-1];
+      // Si no elegiste fase, la que corresponde es la que contiene la
+      // fecha en curso — no la última. Con la última, la Bundesliga abría
+      // en el repechaje de mayo en vez de en la fecha 1.
+      const actual=fl.find(f=>f.num===S.fase)
+        || fl.find(f=>f.rounds.includes(S.current))
+        || fl[0];
       S.fase=actual.num;
       const suyas=S.rounds.filter(r=>actual.rounds.includes(r.round));
       if(!suyas.some(r=>r.round===S.round)&&suyas.length)

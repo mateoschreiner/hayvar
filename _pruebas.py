@@ -511,6 +511,74 @@ chequear("la pestaña Previa existe en la página",
          "['previa','Previa']" in HTML and "cuadroLlaves(S.llavesPrevia)" in HTML)
 
 
+print("\n── qué es una previa y qué no ──")
+# Una previa es la de una competencia declarada en sc_extra. Tomar
+# "cualquier competencia que no sea la principal" hacía que a la
+# Sudamericana le renombraran el pre octavos como "Fase previa 1".
+def _sd(gid, etapa, comp):
+    return {"id": gid, "liveId": gid, "comp": comp, "temporada": 30,
+            "stage": etapa, "etapaFuente": etapa, "stageNum": 4, "round": None,
+            "slot": 1, "start": "2026-08-05T21:30:00-03:00", "status": "FIN",
+            "gh": 2, "ga": 0, "zone": None, "interzonal": False,
+            "home": {"name": "Lanús", "canon": "Lanús", "short": "LAN",
+                     "logo": None, "pasa": True},
+            "away": {"name": "Cienciano", "canon": "Cienciano", "short": "CIE",
+                     "logo": None, "pasa": False}}
+_sf = server._sc_fixture
+server._sc_fixture = lambda comp, ttl=120: (
+    [_sd(1, "Pre octavos", 9999), _sd(2, "Fase de grupos", 389)] if comp == 389 else [])
+_rs = server.fixture_de_liga(server.LIGAS["sud"])
+chequear("el pre octavos de la Sudamericana no es previa",
+         not any(m.get("previa") for m in _rs)
+         and "Pre octavos" in {m["stage"] for m in _rs},
+         sorted({m["stage"] for m in _rs}))
+server._sc_fixture = lambda comp, ttl=120: (
+    [dict(_sd(10, "Playoff", 332))] if comp == 332 else [])
+_rc2 = server.fixture_de_liga(server.LIGAS["champions"])
+chequear("la clasificación de la Champions sí lo es",
+         _rc2 and _rc2[0].get("previa")
+         and _rc2[0]["stage"] == "Repechaje de acceso")
+server._sc_fixture = _sf
+
+
+print("\n── una fase necesita varias fechas para tener pestaña ──")
+import datetime as _dtt
+def _bg(gid, ronda, etapa, sn, cuando):
+    return {"id": gid, "liveId": gid, "comp": 25, "temporada": 118,
+            "stage": etapa, "stageNum": sn, "round": ronda, "slot": None,
+            "start": cuando.isoformat(), "status": "PROG", "gh": None, "ga": None,
+            "zone": None, "interzonal": False,
+            "home": {"name": "A%d" % gid, "canon": "A%d" % gid, "short": "A", "logo": None},
+            "away": {"name": "B%d" % gid, "canon": "B%d" % gid, "short": "B", "logo": None}}
+_ini = _dtt.datetime(2026, 8, 28, 15, 30)
+_bund = [_bg(r * 10 + k, r, "", 1, _ini + _dtt.timedelta(days=7 * (r - 1)))
+         for r in range(1, 35) for k in range(9)]
+_bund += [_bg(900 + i, 35, "Descenso/Ascenso", 2, _dtt.datetime(2027, 5, 20 + i, 15, 30))
+          for i in range(2)]
+_fx2, _st2, _gl2 = server.fixture_de_liga, server._sc_standings, server._sc_goleadores
+server.fixture_de_liga = lambda cfg, ttl=120: _bund
+server._sc_standings = lambda comp, ttl=25: []
+server._sc_goleadores = lambda comp, escudos=None: []
+server.fetch = lambda p_, q, ttl=15: {"games": []}
+_rb = server.api_liga_games({"id": ["bundesliga"]})
+chequear("un repechaje de dos partidos no arma pestaña",
+         _rb["fasesLiga"] == [], _rb["fasesLiga"])
+chequear("y la liga abre en la fecha 1", _rb["current"] == 1, _rb["current"])
+_fed = [_bg(r * 10 + k, r, "Primera Fase", 1,
+            _dtt.datetime(2026, 3, 1) + _dtt.timedelta(days=7 * r))
+        for r in range(1, 14) for k in range(9)]
+_fed += [_bg(5000 + r * 10 + k, r, "Segunda Fase", 2,
+             _dtt.datetime(2026, 7, 1) + _dtt.timedelta(days=7 * r))
+         for r in range(1, 10) for k in range(9)]
+server.fixture_de_liga = lambda cfg, ttl=120: _fed
+chequear("dos fases de verdad sí lo hacen",
+         len(server.api_liga_games({"id": ["fa"]})["fasesLiga"]) == 2)
+server.fixture_de_liga, server._sc_standings, server._sc_goleadores = _fx2, _st2, _gl2
+server.fetch = _guardado
+chequear("la fase por defecto es la de la fecha en curso, no la última",
+         "f.rounds.includes(S.current)" in HTML)
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

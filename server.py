@@ -2290,11 +2290,25 @@ def fetch_ruta(ruta, ttl=86400):
     A propósito no se guarda nada: cada página se lee una sola vez en la
     vida y lo que importa —los partidos— queda en el fixture. Guardarlas
     llenaba la base de cientos de respuestas enormes que no se usaban más.
+
+    Reintenta, y no por prolijidad: un recorrido es una cadena de páginas
+    encadenadas por cursor, así que un solo tropiezo no cuesta una página,
+    corta la vuelta entera y todo lo que venía atrás queda sin bajar. A la
+    Primera Nacional le faltaba septiembre por eso: las dos direcciones
+    murieron en un TimeoutError y el recorrido nunca llegó a esas fechas.
     """
     url = ruta if ruta.startswith("http") else "https://webws.365scores.com" + ruta
     req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    with urlopen(req, timeout=25) as r:
-        return json.loads(r.read().decode("utf-8"))
+    ultimo = None
+    for intento in range(INTENTOS_PAGINA):
+        try:
+            with urlopen(req, timeout=20) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except Exception as e:
+            ultimo = e
+            if intento + 1 < INTENTOS_PAGINA:
+                time.sleep(1.5 * (intento + 1))
+    raise ultimo
 
 
 # El paginado de 365scores va para los dos lados. Cada dirección lleva su
@@ -2305,6 +2319,12 @@ _CLAVE_CAMINO = {-1: "hist:%s", 1: "fut:%s"}
 # recorrido por terminado. Con una sola, un hueco en el medio del paginado
 # cortaba la bajada de una copa entera.
 TOLERA_VACIAS = 3
+
+# Cuántas veces se le pide la misma página a la fuente antes de rendirse.
+# Tres y no más: si falla tres veces seguidas no es un tropiezo, es que la
+# fuente está caída, y en ese caso conviene cortar la vuelta y volver en la
+# siguiente antes que quedarse colgado insistiendo.
+INTENTOS_PAGINA = 3
 
 
 def cursor_manual(comp, direccion, desde_id):
@@ -3503,10 +3523,11 @@ def api_liga_games(q):
     # anteriores quedaban sin goleadores, sin canal y sin poder abrirse.
     if cfg.get("base"):
         try:
-            porNombre = {}
+            porNombre, porId = {}, {}
             for x in fixture_de_liga(cfg):
                 clave = (norm(x["home"]["name"])[:8], norm(x["away"]["name"])[:8])
                 porNombre.setdefault(clave, []).append(x)
+                porId[str(x["id"])] = x
             # Un partido de 365scores no puede engancharse a dos de AFA.
             usados = {str(m["liveId"]) for m in games if m.get("liveId")}
 
@@ -3555,6 +3576,24 @@ def api_liga_games(q):
                     m["liveId"] = elegido["id"]
                     usados.add(str(elegido["id"]))
                     m["venue"] = m.get("venue") or elegido.get("venue") or ""
+
+            # El resultado que AFA no cargó.
+            #
+            # Pasa: la fecha 21 de la Primera Nacional quedó con nueve
+            # marcadores de dieciocho, con los dieciocho partidos ya
+            # jugados y enganchados a 365scores. Si el partido terminó y
+            # el otro lado tiene el marcador, se completa.
+            #
+            # Sólo se llena lo que falta: si AFA cargó un resultado, ese
+            # manda. Es la fuente oficial y no se le pisa nada.
+            for m in games:
+                lv = porId.get(str(m.get("liveId") or ""))
+                if not lv or m.get("gh") is not None:
+                    continue
+                if lv.get("status") == "FIN" and lv.get("gh") is not None:
+                    m["gh"], m["ga"] = lv["gh"], lv["ga"]
+                    m["status"] = "FIN"
+                    m["statusText"] = lv.get("statusText") or m.get("statusText")
         except Exception:
             pass
 
@@ -6553,7 +6592,12 @@ def rescatar_todo():
     except Exception:
         pass
 
-    for vuelta in range(1, 13):
+    # Doce vueltas seguidas y después, si algo quedó pendiente, sigue de a
+    # ratos. Antes cortaba en la doce y no volvía hasta el próximo arranque:
+    # si la fuente se caía un par de veces —o si aparecía una fase nueva a
+    # mitad de temporada— el hueco se quedaba ahí hasta el siguiente deploy.
+    VUELTAS_SEGUIDAS, VUELTAS_TOTAL = 12, 60
+    for vuelta in range(1, VUELTAS_TOTAL + 1):
         pendientes, goles_pendientes = 0, 0
         for lid, cfg in LIGAS.items():
           # las previas de la Champions son otra competencia: se recorren igual
@@ -6625,7 +6669,10 @@ def rescatar_todo():
         if not pendientes and not goles_pendientes:
             print("  Historia completa: no queda nada por traer\n", flush=True)
             return
-        time.sleep(60)
+        if vuelta == VUELTAS_SEGUIDAS:
+            print("  Quedan %d recorridos sin terminar: sigo cada 15 minutos\n"
+                  % pendientes, flush=True)
+        time.sleep(60 if vuelta < VUELTAS_SEGUIDAS else 900)
     print("  Pausa del rescate: sigue en el próximo arranque\n", flush=True)
 
 

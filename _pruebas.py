@@ -16,6 +16,10 @@ for _e in ("", "-wal", "-shm"):
 sys.path.insert(0, AQUI)
 import server
 
+# Casi todas las pruebas del recorrido le cambian el fetch_ruta a server por
+# uno de mentira. El de verdad se guarda acá, antes de que nadie lo pise.
+FETCH_RUTA_REAL = server.fetch_ruta
+
 HTML = open(os.path.join(AQUI, "index.html"), encoding="utf-8").read()
 fallas = []
 def chequear(titulo, cond, detalle=""):
@@ -316,6 +320,41 @@ chequear("un error de la fuente no se disfraza de 'listo'",
          _r3.get("motivo"))
 server.fetch = _guardado
 
+# Un tropiezo de la fuente no cuesta una pagina: corta la vuelta entera y lo
+# que venia atras queda sin bajar. A la Primera Nacional le faltaba septiembre
+# por eso: las dos direcciones murieron en un TimeoutError.
+class _Respuesta:
+    def __init__(s, d): s.d = json.dumps(d).encode()
+    def read(s): return s.d
+    def __enter__(s): return s
+    def __exit__(s, *a): return False
+_veces = {"n": 0}
+def _flojo(req, timeout=20):
+    _veces["n"] += 1
+    if _veces["n"] < 3:
+        raise TimeoutError("timed out")
+    return _Respuesta({"games": [], "paging": {}})
+_urlopen, _dormir = server.urlopen, server.time.sleep
+_falso_fr, server.fetch_ruta = server.fetch_ruta, FETCH_RUTA_REAL
+server.urlopen, server.time.sleep = _flojo, lambda s: None
+try:
+    _ok = server.fetch_ruta("/web/games/?x=1")
+    chequear("dos timeouts seguidos no cortan el recorrido: reintenta",
+             _ok == {"games": [], "paging": {}} and _veces["n"] == 3, _veces["n"])
+    _veces["n"] = 0
+    def _siempre(req, timeout=20): raise TimeoutError("timed out")
+    server.urlopen = _siempre
+    try:
+        server.fetch_ruta("/web/games/?x=1")
+        _murio = False
+    except TimeoutError:
+        _murio = True
+    chequear("pero si la fuente esta caida no insiste para siempre",
+             _murio and server.INTENTOS_PAGINA == 3)
+finally:
+    server.urlopen, server.time.sleep = _urlopen, _dormir
+    server.fetch_ruta = _falso_fr
+
 
 print("\n── un marcador de otra version no se le cree ──")
 # Tres veces seguidas la reparacion corrio con el recorrido todavia roto y
@@ -578,6 +617,29 @@ chequear("un partido de 365scores no se reparte entre dos",
                     _afa(6, "Ferro", "All Boys", "2026-07-06", 24)],
                    [_sc(9005, "Ferro", "All Boys", "2026-07-05")])
          == {5: 9005, 6: None})
+
+# El marcador que AFA no cargo. La fecha 21 de la Primera Nacional quedo con
+# nueve resultados de dieciocho, con los dieciocho jugados y enganchados.
+def _marcador(afas, scs):
+    server.df_fixture_generico = lambda lid, _a=afas: [dict(g) for g in _a]
+    server.fixture_de_liga = lambda cfg, ttl=120, _s=scs: _s
+    return {m["id"]: (m.get("gh"), m.get("ga"), m.get("status"))
+            for m in server.api_liga_games({"id": ["nacional"]})["games"]}
+_sinR = _afa(7, "Quilmes", "Atlanta", "2026-07-19", 21)
+_sinR.update({"gh": None, "ga": None, "status": "PROG", "statusText": ""})
+_con3 = _sc(9007, "Quilmes", "Atlanta", "2026-07-19"); _con3.update({"gh": 3, "ga": 1})
+chequear("si AFA no cargo el resultado, lo completa 365scores",
+         _marcador([_sinR], [_con3])[7] == (3, 1, "FIN"))
+_yaR = _afa(8, "Quilmes", "Atlanta", "2026-07-19", 21)   # AFA dice 1-0
+_otro = _sc(9008, "Quilmes", "Atlanta", "2026-07-19"); _otro.update({"gh": 5, "ga": 5})
+chequear("pero un resultado de AFA no se pisa",
+         _marcador([_yaR], [_otro])[8] == (1, 0, "FIN"))
+_pend = _afa(9, "Quilmes", "Atlanta", "2026-09-19", 29)
+_pend.update({"gh": None, "ga": None, "status": "PROG", "statusText": ""})
+_nojug = _sc(9009, "Quilmes", "Atlanta", "2026-09-19")
+_nojug.update({"gh": None, "ga": None, "status": "PROG"})
+chequear("y un partido que no se jugo no se inventa",
+         _marcador([_pend], [_nojug])[9] == (None, None, "PROG"))
 server.df_fixture_generico, server.fixture_de_liga = _dfg, _fxg
 server._sc_standings, server._sc_goleadores = _stg, _glg
 server.fetch = _guardado

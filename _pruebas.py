@@ -289,6 +289,52 @@ chequear("un error de la fuente no se disfraza de 'listo'",
 server.fetch = _guardado
 
 
+print("\n── un 'listo' sin explicación no se le cree ──")
+# El caso real: la reparación corrió cuando el recorrido todavía se cortaba
+# solo, dejó los marcadores en "listo" de nuevo y la marca de versión ya
+# gastada impedía reintentar. Un marcador sin motivo lo escribió una versión
+# que no sabía explicarse: se rehace sin depender de acordarse de nada.
+_C5 = 102
+server.almacen.guardar("temporada:%d" % _C5, 69)
+server.almacen.guardar("fixture:%d" % _C5,
+    [{"id": i, "comp": _C5, "temporada": 69, "round": 5} for i in range(48)])
+server.almacen.guardar("hist:%d" % _C5, {"listo": True, "total": 48})       # viejo
+server.almacen.guardar("fut:%d" % _C5, {"listo": True, "total": 48,
+                                        "motivo": "la fuente no ofrece más páginas"})
+server.almacen.guardar("migrado2:%d" % _C5, True)
+server.almacen.guardar("reabierto:%d" % _C5, True)
+_pg = {"n": 0}
+def _r5(r):
+    _pg["n"] += 1
+    _hay = _pg["n"] <= 6
+    return {"games": [{"id": 5000 + _pg["n"] * 7 + k, "competitionId": _C5,
+                       "seasonNum": 69, "roundNum": 4, "stageName": "Fase de grupos",
+                       "startTime": "2026-06-10T22:00:00+00:00",
+                       "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
+                       "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                       "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
+                      for k in range(7)],
+            "paging": {"previousPage": "/p%d" % (_pg["n"] + 1)} if _hay else {}}
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C5, "currentSeasonNum": 69}]} if p == "competitions"
+    else {"games": [], "paging": {"previousPage": "/p1"}})
+server.fetch_ruta = _r5
+server.time.sleep = lambda s: None
+_ra = server.caminar_fixture(_C5, -1, paginas=40)
+chequear("el marcador sin motivo se rehace", _ra["paginas"] > 0, _ra)
+chequear("y trae los partidos que faltaban", _ra["nuevos"] > 40, _ra["nuevos"])
+chequear("el que sí se explicaba no se repite",
+         server.caminar_fixture(_C5, 1, paginas=40).get("paginas", 0) == 0)
+chequear("y una vez explicado, tampoco",
+         server.caminar_fixture(_C5, -1, paginas=40).get("paginas", 0) == 0)
+server.almacen.guardar("recorrido:version", 3)
+server.almacen.guardar("hist:%d" % _C5, {"listo": True, "motivo": "x"})
+server.reparar_recorridos()
+chequear("y la reparación vuelve a correr con la versión nueva",
+         server.almacen.leer("hist:%d" % _C5)[0] == {})
+server.fetch = _guardado
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

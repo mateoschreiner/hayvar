@@ -2335,6 +2335,15 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
     estado, _ = almacen.leer(_CLAVE_CAMINO[direccion] % comp)
     estado = estado or {}
 
+    # Un recorrido que dice "listo" pero no dice por qué lo escribió una
+    # versión que no sabía explicarse, y esas son justo las que se cortaban
+    # antes de tiempo. No se les cree: se rehace.
+    #
+    # Esto vale más que la marca de versión, porque no hay que acordarse de
+    # subirla: cualquier marcador viejo se detecta solo.
+    if estado.get("listo") and not estado.get("motivo"):
+        estado = {}
+
     ruta = estado.get("siguiente")
     if estado.get("listo"):
         if direccion < 0:
@@ -2650,12 +2659,16 @@ def migrar_fixture(comp):
 # se sube este número. Sirve para dos cosas: cuando cambia lo que guardamos
 # de cada partido, y cuando hay que reparar la base porque se perdió algo.
 #
-# La v3 existe por lo segundo: una migración mal hecha borró los partidos
+# La v3 existió por lo segundo: una migración mal hecha borró los partidos
 # guardados de todos los torneos y dejó los marcadores diciendo que ya se
-# había recorrido todo. Con eso, el rescate arrancaba, leía el marcador,
-# concluía que no faltaba nada y se iba. Los calendarios no se recuperaban
-# nunca solos, por más vueltas que diera.
-VERSION_RECORRIDO = 3
+# había recorrido todo.
+#
+# La v4 existe por un error encima de ese: la v3 corrió cuando el recorrido
+# todavía se cortaba en la primera página de otra temporada. Reabrió todo,
+# el recorrido volvió a cortarse enseguida y dejó los marcadores en "listo"
+# otra vez — y la marca de versión ya gastada impedía reintentarlo. Reparar
+# con la herramienta rota y después dar el arreglo por hecho.
+VERSION_RECORRIDO = 4
 
 
 def reparar_recorridos():

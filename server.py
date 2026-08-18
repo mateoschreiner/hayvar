@@ -6087,9 +6087,21 @@ def api_recorrido(q):
                     d["conResultado"] += 1
                 if m.get("liveId"):
                     d["conLiveId"] += 1
+            # Y cuáles son los que no engancharon, con nombre y fecha. Sin
+            # esto sólo se sabe cuántos son, y para saber si el problema es
+            # que faltan en la fuente o que no se aparean hay que poder
+            # buscarlos a mano.
+            sueltos = [{"fecha": m.get("round"),
+                        "partido": "%s - %s" % (m["home"].get("canon")
+                                                or m["home"]["name"],
+                                                m["away"].get("canon")
+                                                or m["away"]["name"]),
+                        "dia": (m.get("start") or "")[:10]}
+                       for m in juegos if not m.get("liveId")]
             servido = {"fuente": fuente, "partidos": len(juegos),
                        "fechas": len(porRonda),
-                       "sinLiveId": sum(1 for m in juegos if not m.get("liveId")),
+                       "sinLiveId": len(sueltos),
+                       "cualesSinLiveId": sueltos[:24],
                        "porFecha": {str(k): v for k, v in
                                     sorted(porRonda.items(), key=lambda x: str(x[0]))}}
         except Exception as e:

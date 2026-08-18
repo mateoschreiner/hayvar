@@ -166,6 +166,80 @@ chequear("el cliente que se va no ensucia el log",
          "except self.SE_FUE:" in _src and "def handle_one_request" in _src)
 
 
+print("\n── qué fecha se abre ──")
+import datetime as _dt
+def _g(dias, fin):
+    t = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=dias)
+    return {"start": t.isoformat(), "status": "FIN" if fin else "PROG"}
+for _titulo, _pf, _esp in [
+    ("una fecha en curso gana sobre la siguiente",
+     {1: [_g(-1, True), _g(1, False)], 2: [_g(6, False)]}, 1),
+    ("si hay partidos hoy, esa",
+     {2: [_g(-3, True)], 3: [_g(0, False)], 4: [_g(7, False)]}, 3),
+    ("un suspendido viejo no clava la página",
+     {1: [_g(-70, True), _g(-70, False)], 2: [_g(-1, True)], 3: [_g(3, False)]}, 3),
+    ("torneo terminado: la última",
+     {1: [_g(-40, True)], 2: [_g(-30, True)]}, 2)]:
+    chequear(_titulo, server.fecha_actual(sorted(_pf), _pf) == _esp,
+             server.fecha_actual(sorted(_pf), _pf))
+
+
+print("\n── esconder no es borrar ──")
+_C = 25
+server.almacen.guardar("temporada:%d" % _C, 118)
+server.almacen.guardar("fixture:%d" % _C,
+    [{"id": 900 + i, "round": 34, "comp": _C, "temporada": 117,
+      "start": "2026-05-22T10:30:00-03:00", "stage": "Descenso/Ascenso"} for i in range(9)]
+  + [{"id": 100 + i, "round": 1, "comp": _C, "temporada": 118,
+      "start": "2026-08-28T15:30:00-03:00", "stage": "Fase 1"} for i in range(9)])
+_guardado = server.fetch
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C, "currentSeasonNum": 118}]} if p == "competitions"
+    else {"games": [], "competitions": [{"id": _C, "currentSeasonNum": 118}]})
+_serv = server._sc_fixture(_C)
+chequear("la temporada pasada no se muestra", len(_serv) == 9, len(_serv))
+chequear("pero sigue guardada en la base",
+         len(server.almacen.leer("fixture:%d" % _C)[0]) == 18)
+chequear("y su fase desaparece del selector",
+         "Descenso/Ascenso" not in {m.get("stage") for m in _serv})
+server.fetch = _guardado
+
+
+print("\n── el recorrido aguanta una página de otra temporada ──")
+_C2 = 102
+server.almacen.guardar("temporada:%d" % _C2, 40)
+server.almacen.guardar("fixture:%d" % _C2, [])
+server.almacen.guardar("hist:%d" % _C2, {})
+_paso = {"n": 0}
+def _ruta(ruta):
+    _paso["n"] += 1
+    _otra = _paso["n"] == 2          # la segunda página es de otra temporada
+    return {"games": [{"id": 1000 + _paso["n"], "competitionId": _C2,
+                       "seasonNum": 39 if _otra else 40, "roundNum": 1,
+                       "startTime": "2026-04-01T16:00:00-03:00",
+                       "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
+                       "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                       "awayCompetitor": {"id": 2, "name": "B", "score": 0}}],
+            "paging": {"previousPage": "/p%d" % (_paso["n"] + 1)}}
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C2, "currentSeasonNum": 40}]} if p == "competitions"
+    else {"games": [], "paging": {"previousPage": "/p1"}})
+server.fetch_ruta = _ruta
+server.time.sleep = lambda s: None
+_r = server.caminar_fixture(_C2, -1, paginas=5)
+chequear("no corta en la página filtrada", _r["paginas"] >= 4, _r["paginas"])
+chequear("y trae los de las páginas buenas", _r["nuevos"] >= 4, _r["nuevos"])
+_C3 = 6224
+server.almacen.guardar("fixture:%d" % _C3, [])
+server.almacen.guardar("hist:%d" % _C3, {})
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C3, "currentSeasonNum": 5}]} if p == "competitions"
+    else {"games": [], "paging": {}})
+chequear("sin paginado se marca terminado, no 'sigue' eterno",
+         server.caminar_fixture(_C3, -1, paginas=9)["listo"] is True)
+server.fetch = _guardado
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

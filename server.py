@@ -2301,6 +2301,11 @@ def fetch_ruta(ruta, ttl=86400):
 # propio marcador de "por dónde iba", porque avanzan a ritmos distintos.
 _CLAVE_CAMINO = {-1: "hist:%s", 1: "fut:%s"}
 
+# Cuántas páginas seguidas de otra temporada se aguantan antes de dar el
+# recorrido por terminado. Con una sola, un hueco en el medio del paginado
+# cortaba la bajada de una copa entera.
+TOLERA_VACIAS = 3
+
 
 def caminar_fixture(comp, direccion=-1, paginas=25):
     """
@@ -2345,6 +2350,17 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         except Exception as e:
             return {"comp": comp, "dir": direccion, "error": str(e)}
         ruta = (data.get("paging") or {}).get(campo) or ""
+        if not ruta:
+            # La fuente no ofrece página anterior ni siguiente: no hay por
+            # dónde caminar. Antes esto quedaba en "sigue" para siempre y
+            # mantenía vivo el rescate sin tener nada que hacer.
+            almacen.guardar(_CLAVE_CAMINO[direccion] % comp,
+                            {"siguiente": None, "ultimo": None, "listo": True,
+                             "total": 0})
+            return {"comp": comp, "dir": direccion, "paginas": 0,
+                    "listo": True, "nuevos": 0,
+                    "total": len(almacen.leer("fixture:%s" % comp)[0] or []),
+                    "estado": "la fuente no da paginado"}
 
     temporada = temporada_actual(comp)
     clave = "fixture:%s" % comp
@@ -2355,7 +2371,7 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
     antes = len(acumulado)
 
     vueltas, listo, ultimo = 0, False, ruta
-    vistas = set()
+    vistas, vacias = set(), 0
     while ruta and vueltas < paginas:
         if ruta in vistas:        # el paginado se mordió la cola
             listo = True
@@ -2381,7 +2397,21 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
                     return otra is None or g.get("seasonNum") in (None, otra)
                 return g.get("seasonNum") in (None, temporada)
             juegos = [g for g in juegos if sirve(g)]
+            # Una página que queda vacía después de filtrar no quiere decir
+            # que se terminó el torneo: el paginado de 365scores mezcla, y
+            # una sola página de otra temporada en el medio cortaba el
+            # recorrido de golpe y dejaba la mitad de la copa sin bajar. Se
+            # tolera un par y recién ahí se da por terminado.
             if not juegos:
+                vacias += 1
+                if vacias < TOLERA_VACIAS:
+                    siguiente = (data.get("paging") or {}).get(campo)
+                    if siguiente and siguiente != ruta:
+                        ruta = siguiente
+                        continue
+            else:
+                vacias = 0
+        if not juegos:
                 listo = True
                 ruta = None
                 break
@@ -2538,10 +2568,6 @@ def _sc_fixture(comp, ttl=120):
         actual = max(vistas) if vistas else None
 
     if actual is not None:
-        # Lo viejo se borra de la base, no se filtra al vuelo: si no, cada
-        # arranque lo vuelve a leer y el archivo crece con partidos que ya
-        # no se van a mostrar nunca.
-        #
         # Cada partido se compara contra la temporada de SU competencia. Los
         # de la clasificación vienen mezclados acá y llevan otro número: si
         # se los mide con la vara de la competencia principal, se van todos.
@@ -2551,17 +2577,28 @@ def _sc_fixture(comp, ttl=120):
                 actual_suya = temporada_actual(suya)
                 if actual_suya is None:
                     return True     # sin dato de la otra, no se descarta
-                return m.get("temporada") in (None, actual_suya)
-            return m.get("temporada") in (None, actual)
+                return m.get("temporada") == actual_suya
+            return m.get("temporada") == actual
 
-        limpio = {k: m for k, m in acumulado.items() if es_de_ahora(m)}
-        if len(limpio) != len(acumulado):
-            acumulado = limpio
-            frescos = True          # forzar el guardado con la poda hecha
-        todos = list(acumulado.values())
+        # Ojo con la diferencia entre esconder y borrar.
+        #
+        # Antes esto perdonaba a los partidos sin temporada anotada —los
+        # guardados antes de que empezáramos a anotarla— y por eso la
+        # Bundesliga seguía abriendo en la fecha 34 de mayo pasado. Ahora no
+        # se muestran, pero TAMPOCO se borran: quedan en la base y, si el
+        # recorrido vuelve a pasar por ellos y confirma que son de esta
+        # temporada, les completa el dato y reaparecen solos.
+        #
+        # Borrarlos sería repetir el error que ya vació la base una vez.
+        todos = [m for m in acumulado.values() if es_de_ahora(m)]
 
+    # Se guarda TODO lo acumulado, no la lista filtrada. Guardar `todos`
+    # convertiría el filtro de pantalla en un borrado silencioso: cada vez
+    # que alguien abriera la liga, los partidos escondidos desaparecerían
+    # de la base para siempre. Se muestra una cosa y se guarda otra, y eso
+    # es a propósito.
     if frescos:
-        almacen.guardar(clave, todos)
+        almacen.guardar(clave, list(acumulado.values()))
 
     return sorted(todos, key=lambda x: (x["round"] or 0, x["start"] or ""))
 
@@ -2994,12 +3031,28 @@ def fecha_actual(rounds, por_fecha):
     for r in rounds:
         if any(g["status"] == "LIVE" for g in por_fecha.get(r, [])):
             return r
-    # 3. la próxima por empezar
-    futuras = [(min((g["start"] for g in por_fecha.get(r, []) if g["start"]), default=""), r)
-               for r in rounds]
-    futuras = [(f, r) for f, r in futuras if f and f > ahora]
-    if futuras:
-        return min(futuras)[1]
+    # 3. La primera que todavía no terminó.
+    #
+    # Ojo con dos casos opuestos. Una fecha puede estar EN CURSO —empezó el
+    # viernes, sigue el domingo— y entonces no entra en "la próxima por
+    # empezar": eso hacía que LaLiga abriera en la fecha 2 cuando la 1 se
+    # estaba jugando. Y por el otro lado, un partido suspendido hace dos
+    # meses no puede dejar la página clavada en esa fecha para siempre.
+    #
+    # Se toma la primera sin terminar, siempre que no haya arrancado hace
+    # más de dos semanas: lo que empezó hace más que eso y sigue abierto es
+    # un partido postergado, no la fecha en curso.
+    limite = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=14)).isoformat()
+    abiertas = []
+    for r in rounds:
+        juegos = por_fecha.get(r, [])
+        if not any(g["status"] != "FIN" for g in juegos):
+            continue
+        arranque = min((g["start"] for g in juegos if g["start"]), default="")
+        if arranque and arranque >= limite:
+            abiertas.append((arranque, r))
+    if abiertas:
+        return min(abiertas)[1]
     # 4. el torneo ya terminó
     return rounds[-1]
 
@@ -5681,6 +5734,83 @@ def api_clubes(q):
         key=lambda x: norm(x["name"]))}
 
 
+def api_recorrido(q):
+    """
+    Qué tiene guardado cada torneo y en qué anda su recorrido.
+
+    Existe porque estuve arreglando la bajada de calendarios a ciegas,
+    deduciendo del log lo que se puede ver directamente. Muestra, por
+    competencia: cuántos partidos hay, de qué temporadas, qué fases y qué
+    fechas, y qué dicen los marcadores del recorrido.
+
+      /api/recorrido            → todo
+      /api/recorrido?id=lib     → sólo esa liga
+      /api/recorrido?rehacer=lib → borra los marcadores y la vuelve a bajar
+                                   ahora mismo, sin esperar al rescate
+    """
+    pedido = (q.get("id") or [""])[0]
+    rehacer = (q.get("rehacer") or [""])[0]
+
+    hecho = None
+    if rehacer:
+        cfg = LIGAS.get(rehacer)
+        if not cfg:
+            return {"error": "liga desconocida: %s" % rehacer}
+        paginas = max(1, min(60, _int((q.get("paginas") or ["30"])[0], 30)))
+        hecho = []
+        for comp in comps_de(cfg):
+            for molde in ("hist:%s", "fut:%s"):
+                almacen.guardar(molde % comp, {})
+            for direccion, como in ((-1, "atrás"), (1, "adelante")):
+                r = caminar_fixture(comp, direccion, paginas=paginas)
+                hecho.append({"comp": comp, "hacia": como,
+                              "paginas": r.get("paginas", 0),
+                              "nuevos": r.get("nuevos", 0),
+                              "total": r.get("total", 0),
+                              "listo": r.get("listo"),
+                              "error": r.get("error")})
+        pedido = pedido or rehacer
+
+    salida = []
+    for lid, cfg in LIGAS.items():
+        if pedido and lid != pedido:
+            continue
+        comps = []
+        for comp in comps_de(cfg):
+            guardado, edad = almacen.leer("fixture:%s" % comp)
+            juegos = guardado or []
+            temporadas = {}
+            for m in juegos:
+                k = str(m.get("temporada"))
+                temporadas[k] = temporadas.get(k, 0) + 1
+            fases = {}
+            for m in juegos:
+                k = (m.get("stage") or "—")
+                fases[k] = fases.get(k, 0) + 1
+            rondas = sorted(r for r in {m.get("round") for m in juegos} if r)
+            hist, _ = almacen.leer("hist:%s" % comp)
+            fut, _ = almacen.leer("fut:%s" % comp)
+            comps.append({
+                "comp": comp,
+                "esPrevia": comp != cfg["sc"],
+                "guardados": len(juegos),
+                "temporadaActual": temporada_actual(comp),
+                "porTemporada": temporadas,
+                "fechasQueTiene": len(rondas),
+                "fechasDelTorneo": fechas_del_torneo(comp),
+                "rango": [rondas[0], rondas[-1]] if rondas else None,
+                "fases": fases,
+                "atras": hist or {},
+                "adelante": fut or {},
+                "edadSegundos": round(edad) if edad else None,
+            })
+        salida.append({"id": lid, "nombre": cfg["nombre"], "comps": comps})
+
+    return {"version": VERSION_RECORRIDO, "ligas": salida, "rehecho": hecho,
+            "como": ("Agregá ?id=lib para una sola, o ?rehacer=lib para "
+                     "borrar sus marcadores y volver a bajarla ahora.")}
+
+
 def api_buscar(q):
     """
     Buscador: clubes y jugadores. /api/buscar?q=aldosivi
@@ -5759,6 +5889,7 @@ ROUTES = {
     "/api/clubes": api_clubes,
     "/api/buscar": api_buscar,
     "/api/ranking": api_ranking,
+    "/api/recorrido": api_recorrido,
     "/api/club": api_club,
     "/api/club-info": api_club_info,
     "/api/competencias": api_competencias,
@@ -6065,6 +6196,10 @@ def juntar_stats(lid, limite=15):
     return hechos
 
 
+# Lo último que dijo cada recorrido, para no repetir el mismo renglón.
+_ULTIMO_CAMINO = {}
+
+
 def rescatar_todo():
     """
     Va llenando la base en segundo plano, sin que nadie tenga que pedirlo.
@@ -6103,15 +6238,18 @@ def rescatar_todo():
                     r = caminar_fixture(comp, direccion, paginas=20)
                     if not r.get("listo"):
                         pendientes += 1
-                    # Se cuenta siempre, no sólo cuando trae algo. Cuando el
-                    # recorrido no avanzaba, el log quedaba mudo y parecía
-                    # que no estaba corriendo: había que poder ver que
-                    # corrió, leyó cero páginas y se dio por terminado.
-                    print("  · %-18s %-8s %2d pág · +%-3d · total %-4d %s"
-                          % (cfg["nombre"], como, r.get("paginas", 0),
-                             r.get("nuevos", 0), r.get("total", 0),
-                             "listo" if r.get("listo") else "sigue"),
-                          flush=True)
+                    # Se escribe la primera vuelta —para poder ver que
+                    # corrió aunque no traiga nada— y después sólo cuando
+                    # algo cambió. Si no, el log son cien renglones por
+                    # minuto diciendo siempre lo mismo y no se lee nada.
+                    firma = (r.get("total"), r.get("listo"))
+                    if vuelta == 1 or firma != _ULTIMO_CAMINO.get((comp, direccion)):
+                        print("  · %-18s %-8s %2d pág · +%-3d · total %-4d %s"
+                              % (cfg["nombre"], como, r.get("paginas", 0),
+                                 r.get("nuevos", 0), r.get("total", 0),
+                                 "listo" if r.get("listo") else "sigue"),
+                              flush=True)
+                    _ULTIMO_CAMINO[(comp, direccion)] = firma
                 except Exception as e:
                     print("  · %-18s %-8s falló (%s)"
                           % (cfg["nombre"], como, type(e).__name__), flush=True)
@@ -6128,8 +6266,11 @@ def rescatar_todo():
                     servido = api_liga_games({"id": [lid]})
                     vistas = servido.get("rounds") or []
                     if vistas and len(vistas) < tope:
-                        print("  · %-18s van %d de %d fechas"
-                              % (cfg["nombre"], len(vistas), tope), flush=True)
+                        firma = ("fechas", len(vistas), tope)
+                        if _ULTIMO_CAMINO.get(("fechas", lid)) != firma:
+                            print("  · %-18s van %d de %d fechas"
+                                  % (cfg["nombre"], len(vistas), tope), flush=True)
+                        _ULTIMO_CAMINO[("fechas", lid)] = firma
             except Exception:
                 pass
         for lid in LIGAS:

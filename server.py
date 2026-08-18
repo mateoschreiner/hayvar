@@ -2577,18 +2577,23 @@ def migrar_fixture(comp):
     Se detecta una vez, se borran los marcadores de por dónde iba el
     recorrido y la próxima vuelta del rescate los vuelve a leer con todo.
     """
-    hecho, _ = almacen.leer("migrado:%s" % comp)
+    hecho, _ = almacen.leer("migrado2:%s" % comp)
     if hecho:
         return
     guardado, _ = almacen.leer("fixture:%s" % comp)
     if guardado and any("comp" not in m for m in guardado):
-        almacen.guardar("fixture:%s" % comp,
-                        [m for m in guardado if "comp" in m])
+        # NO se borra nada. La primera versión de esto descartaba los
+        # partidos sin el campo nuevo —o sea, todos los viejos— y vaciaba
+        # de un saque el calendario de cada torneo. Un campo que falta se
+        # agrega; no se tira el partido entero. Alcanza con reabrir el
+        # recorrido: al pasar de nuevo les completa lo que les falta y
+        # deja intacto lo que ya estaba.
         for molde in ("hist:%s", "fut:%s"):
             almacen.guardar(molde % comp, {})
-        print("  · calendario %s: se vuelve a leer para sumarle zona y "
-              "competencia" % comp, flush=True)
-    almacen.guardar("migrado:%s" % comp, True)
+        print("  · calendario %s: se relee para completarle zona y "
+              "competencia (%d partidos intactos)"
+              % (comp, len(guardado)), flush=True)
+    almacen.guardar("migrado2:%s" % comp, True)
 
 
 def comps_de(cfg):
@@ -5856,23 +5861,37 @@ def precalentar():
         ("tabla anual", lambda: api_annual({"live": ["0"]})),
         ("promedios", lambda: api_promedios({"live": ["0"]})),
         ("goleadores", lambda: api_scorers({})),
-        ("Primera Nacional", lambda: api_liga_games({"id": ["nacional"]})),
-        ("LaLiga", lambda: api_liga_games({"id": ["laliga"]})),
-        # las copas también: ahora salen en la portada y el primero que entra
-        # no tiene por qué esperarlas
-        ("Copa Argentina", lambda: api_liga_games({"id": ["ca"]})),
-        ("Libertadores", lambda: api_liga_games({"id": ["lib"]})),
-        ("Sudamericana", lambda: api_liga_games({"id": ["sud"]})),
     ]
+
+    # El resto se arma solo con las ligas que hay. Antes esta lista estaba
+    # escrita a mano y quedó vieja: la Premier, la Serie A, la Bundesliga,
+    # la Champions y el Federal A no se precalentaban, así que el primero
+    # que entraba a cualquiera de ellas pagaba toda la espera.
+    #
+    # El orden importa: primero las de la portada, que es lo que se ve al
+    # abrir la página, y después las demás.
+    orden = ([l for l in HOME_LIGAS if l in LIGAS and l != "lpf"]
+             + [l for l in LIGAS if l not in HOME_LIGAS and l != "lpf"])
+    for lid in orden:
+        tareas.append((LIGAS[lid]["nombre"],
+                       lambda x=lid: api_liga_games({"id": [x]})))
+
+    arranque_total = time.time()
+    listas, fallidas = 0, 0
     for nombre, tarea in tareas:
         arranque = time.time()
         try:
             tarea()
+            listas += 1
             print("  · %-22s listo en %.1fs" % (nombre, time.time() - arranque), flush=True)
         except Exception as e:
+            fallidas += 1
             print("  · %-22s falló (%s), se reintenta al pedirlo"
                   % (nombre, type(e).__name__), flush=True)
-    print("  Caché precalentado\n", flush=True)
+    print("  Caché precalentado: %d de %d en %.0fs%s\n"
+          % (listas, len(tareas), time.time() - arranque_total,
+             "" if not fallidas else " (%d quedaron para después)" % fallidas),
+          flush=True)
 
 
 def juntar_goles(lid, limite=25):

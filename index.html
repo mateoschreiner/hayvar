@@ -313,9 +313,15 @@ html[data-theme="light"] .lg-premier .lgimg{background:#38003c}
 html[data-theme="light"] .lg-champions .lgimg,
 html[data-theme="light"] .lg-premier .lgimg{border-radius:5px;padding:1.5px;
   box-sizing:border-box}
-[data-club]{cursor:pointer}
-.crest[data-club]:hover{outline:2px solid var(--acc);outline-offset:1px;border-radius:4px}
-.tn[data-club]:hover{text-decoration:underline;text-underline-offset:2px}
+/* El escudo y el nombre llevan a la página del club, pero sólo donde el
+   click no le pisa el lugar a otra cosa: no en la lista de partidos ni en
+   el cuadro de una copa. Es la misma lista que usa el JS. */
+#modalBox [data-club],table [data-club],.carrera [data-club],
+.cl-plantel [data-club]{cursor:pointer}
+#modalBox .crest[data-club]:hover,table .crest[data-club]:hover,
+.carrera .crest[data-club]:hover{outline:2px solid var(--acc);outline-offset:1px;border-radius:4px}
+#modalBox .tn[data-club]:hover,table .tn[data-club]:hover,
+.carrera .tn[data-club]:hover{text-decoration:underline;text-underline-offset:2px}
 /* Resultados del buscador */
 .hsearch .res{position:absolute;top:38px;left:0;right:0;z-index:60;max-height:60vh;
   overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;
@@ -849,12 +855,22 @@ const App=(()=>{
     requestAnimationFrame(()=>{ pendienteEnlazar=false; enlazarNombres(); });
   }).observe(document.documentElement,{childList:true,subtree:true});
 
-  // Un solo click para todos. En captura, porque el escudo casi siempre
-  // está adentro de una fila que abre el partido y el club tiene que ganar.
+  /* Dónde vale entrar al club tocando su escudo.
+
+     En la lista de partidos y en el cuadro de una copa, NO: ahí el click es
+     para abrir el partido o la llave, y que a veces te sacara a otra página
+     era una trampa. Vale en el detalle del partido, en las tablas y en la
+     ficha de un jugador, que son lugares donde no hay nada más que hacer
+     con un escudo.
+
+     La regla se escribe una vez acá: por defecto no se entra, y se habilita
+     sólo adentro de estos contenedores. Si mañana aparece una pantalla
+     nueva, se queda del lado seguro sola. */
+  const DONDE_SE_ENTRA='#modalBox, table, .carrera, .cl-plantel';
   document.addEventListener('click',ev=>{
     const t=ev.target;
     const el=t&&t.closest&&t.closest('[data-club]');
-    if(!el) return;
+    if(!el||!el.closest(DONDE_SE_ENTRA)) return;
     ev.stopPropagation(); ev.preventDefault();
     App.club(el.dataset.club);
   },true);

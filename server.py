@@ -3670,8 +3670,20 @@ def api_liga_games(q):
 
     sin_zona = sorted({g[s]["name"] for g in games for s in ("home", "away")
                        if not g["zone"]})
-    # el cuadro se arma antes de filtrar por etapa: necesita el torneo entero
-    llaves = armar_llaves(games, etapas, lid) if cfg.get("copa") else None
+    # El cuadro se arma antes de filtrar por etapa: necesita el torneo entero.
+    #
+    # Y va separado en dos. Las eliminatorias previas son un torneo aparte
+    # —los que las ganan recién entran al cuadro grande— así que mezclarlas
+    # con los octavos daba un cuadro gigante y sin sentido, con ramas que no
+    # se conectan con nada. Cada uno en su pestaña.
+    llaves = llaves_previa = None
+    if cfg.get("copa"):
+        previas = [e for e in etapas if rango_etapa(e) < 1]
+        del_torneo = [e for e in etapas if rango_etapa(e) >= 1]
+        llaves = armar_llaves(games, del_torneo, lid)
+        if previas:
+            suyos = [g for g in games if (g.get("etapa") or g.get("stage")) in previas]
+            llaves_previa = armar_llaves(suyos, previas, lid)
 
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]
@@ -3690,6 +3702,8 @@ def api_liga_games(q):
             res["bajando"] = True
     if llaves is not None:
         res["llaves"] = llaves
+    if llaves_previa and any(b.get("llaves") for b in llaves_previa):
+        res["llavesPrevia"] = llaves_previa
     if err:
         res["error"] = err
     return res

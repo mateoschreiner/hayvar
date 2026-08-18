@@ -2512,7 +2512,8 @@ const App=(()=>{
     S.current=g.current;
     S.totalFechas=g.bajando?g.totalFechas:null;
     S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
-    S.llaves=g.llaves||null; S.grupoAbierto=null; S.cuadroDesde=null;
+    S.llaves=g.llaves||null; S.llavesPrevia=g.llavesPrevia||null;
+    S.grupoAbierto=null; S.cuadroDesde=null;
     S.fasesLiga=(g.fasesLiga&&g.fasesLiga.length)?g.fasesLiga:null;
     if(S.fasesLiga&&!S.fasesLiga.some(f=>f.num===S.fase)) S.fase=null;
     if(S.round==null||!g.rounds.includes(S.round))
@@ -2527,6 +2528,10 @@ const App=(()=>{
     const nombreZona=(z,i)=>z && z.name ? z.name
       : (d.zonas.length>1 ? 'Zona '+(i+1) : 'Tabla');
     const hayCuadro=S.llaves&&S.llaves.some(b=>b.llaves.length);
+    // Las eliminatorias previas son un torneo aparte: los que las ganan
+    // recién entran al cuadro grande. Van en su propia pestaña en vez de
+    // colgar de los octavos, que es donde no se conectan con nada.
+    const hayPrevia=S.llavesPrevia&&S.llavesPrevia.some(b=>b.llaves.length);
     /* Ocho grupos son ocho pestañas y no entran. Van todos juntos bajo una
        sola, en tarjetas. Y si las zonas vienen con el nombre de su fase
        —"Segunda Fase - Zona A", como manda el Federal A— se arma una
@@ -2537,6 +2542,7 @@ const App=(()=>{
     // Champions arranca meses antes que la tabla, que hasta septiembre
     // está vacía.
     const tabs=[...(hayCuadro?[['cuadro','Cuadro']]:[]),
+                ...(hayPrevia?[['previa','Previa']]:[]),
                 ...(S.fasesZona.length>1
                     ? S.fasesZona.map((f,i)=>['f'+i,f.nombre])
                     : juntos?[['zonas','Grupos']]
@@ -2641,15 +2647,12 @@ const App=(()=>{
       }).catch(()=>{}))).then(()=>{ if(S.series[id]) drawSerie(id); });
   }
 
-  function cuadroLlaves(){
-    // el cuadro arranca en la primera ronda eliminatoria que tenga datos:
-    // en la Copa Argentina eso son los 32avos
-    // Si estás parado en una fase previa, el cuadro que corresponde es el de
-    // las previas; si no, el del torneo propiamente dicho.
-    const aquiEs=S.etapas&&S.etapas[S.round-1];
-    const enPrevia=/previa|fase 1|fase 2|fase 3|primera fase/i.test(aquiEs||'');
-    let bloques=(S.llaves||[])
-      .filter(b=>!!b.previa===enPrevia)
+  /* El cuadro. Recibe qué llaves dibujar —las del torneo o las de la
+     clasificación previa— porque son dos cosas separadas y cada una vive en
+     su pestaña. Antes se adivinaba cuál mostrar mirando en qué fase estabas
+     parado, y con las previas europeas esa adivinanza fallaba. */
+  function cuadroLlaves(cuales){
+    let bloques=(cuales||[])
       .map(b=>({etapa:b.etapa,llaves:b.llaves.slice()}));
     while(bloques.length&&!bloques[0].llaves.length) bloques.shift();
     if(!bloques.length)
@@ -2937,7 +2940,11 @@ const App=(()=>{
                         ['DIF',r=>(r.dif>0?'+':'')+r.dif]]) + leyenda()
         : '<div class="empty">Sin datos.</div>';
     } else if(S.tab==='cuadro'){
-      el.innerHTML=cuadroLlaves()+golesCorto(d.goleadores||[],d.errorGoleadores);
+      el.innerHTML=cuadroLlaves(S.llaves)+golesCorto(d.goleadores||[],d.errorGoleadores);
+    } else if(S.tab==='previa'){
+      el.innerHTML=`<div class="note" style="padding:2px 2px 10px">
+        Las eliminatorias para entrar al torneo. Los que las ganan pasan a la
+        fase de grupos.</div>`+cuadroLlaves(S.llavesPrevia);
     } else if(S.tab==='anual'){
       el.innerHTML=d.anual.length
         ? tabla(d.anual,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],
@@ -3354,7 +3361,12 @@ const App=(()=>{
       loadRound().then(()=>{ const live=S.games.filter(m=>m.status==='LIVE').length; schedule(live>0); }); },
     player: openPlayer,
     jugador(nombre,atletaId){ openPlayer(nombre,'',atletaId); },
-    tab(t){ S.tab=t; document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+    tab(t){
+      // el cuadro del torneo y el de la previa tienen distinta cantidad de
+      // rondas: al cambiar de pestaña se arranca de nuevo en la que toca
+      if((t==='cuadro')!==(S.tab==='cuadro')||t==='previa'||S.tab==='previa')
+        S.cuadroDesde=null;
+      S.tab=t; document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
       S.liga==='lpf'?drawRight():drawOtra(); },
     onlyLive(){ S.onlyLive=!S.onlyLive; drawMatches(); },
     mtab(t){ mTab=t; drawModal(current(),false); },

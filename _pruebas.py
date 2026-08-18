@@ -473,6 +473,44 @@ server.LIGAS["lib"]["sc"] = _LIB
 server.fetch = _guardado
 
 
+print("\n── el cuadro de las previas va aparte ──")
+# Las eliminatorias para entrar al torneo son otro torneo: los que las ganan
+# recién aparecen en la fase de grupos. Colgadas del cuadro grande daban
+# ramas que no se conectan con nada.
+def _pp(gid, etapa, slot, a, b, ga, gb, comp=596):
+    return {"id": gid, "liveId": gid, "comp": comp, "temporada": 11,
+            "stage": etapa, "slot": slot, "legNum": 1,
+            "stageNum": -10 + server.rango_etapa(etapa),
+            "start": "2026-07-10T16:00:00-03:00", "status": "FIN",
+            "gh": ga, "ga": gb, "round": None, "zone": None, "interzonal": False,
+            "home": {"name": a, "canon": a, "short": a[:3], "logo": None,
+                     "pasa": ga > gb},
+            "away": {"name": b, "canon": b, "short": b[:3], "logo": None,
+                     "pasa": gb > ga}}
+_juegos = [_pp(1, "Fase previa 2", 1, "Egnatia", "Lillestrom", 2, 0),
+           _pp(2, "Fase previa 2", 2, "Thun", "Omonia", 1, 0),
+           _pp(3, "Fase previa 3", 1, "Egnatia", "Thun", 3, 1),
+           _pp(10, "Octavos de final", 1, "Benfica", "Aarhus", 2, 1, comp=573)]
+_fx, _st, _gl = server.fixture_de_liga, server._sc_standings, server._sc_goleadores
+server.fixture_de_liga = lambda cfg, ttl=120: _juegos
+server._sc_standings = lambda comp, ttl=25: []
+server._sc_goleadores = lambda comp, escudos=None: []
+server.fetch = lambda p_, q, ttl=15: {"games": []}
+_rl = server.api_liga_games({"id": ["europa"]})
+_prev = [b["etapa"] for b in (_rl.get("llavesPrevia") or []) if b["llaves"]]
+_prin = [b["etapa"] for b in (_rl.get("llaves") or []) if b["llaves"]]
+chequear("las previas tienen su propio cuadro",
+         _prev == ["Fase previa 2", "Fase previa 3"], _prev)
+chequear("y no se cuelan en el del torneo",
+         "Fase previa 2" not in _prin and "Octavos de final" in _prin, _prin)
+chequear("un torneo sin previas no inventa la pestaña",
+         "llavesPrevia" not in server.api_liga_games({"id": ["ca"]}))
+server.fixture_de_liga, server._sc_standings, server._sc_goleadores = _fx, _st, _gl
+server.fetch = _guardado
+chequear("la pestaña Previa existe en la página",
+         "['previa','Previa']" in HTML and "cuadroLlaves(S.llavesPrevia)" in HTML)
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

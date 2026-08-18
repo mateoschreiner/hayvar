@@ -522,6 +522,12 @@ LIGAS = {
                      "afuera": (25, 36)},
         "etapas_extra": ["Octavos de final", "Cuartos de final",
                          "Semifinal", "Final"],
+        # La clasificación previa no está adentro del torneo: 365scores la
+        # publica como una competencia aparte, la 332. Sin esto la Champions
+        # arrancaba en la fase de liga y las eliminatorias de julio y agosto
+        # —52 equipos entre la Vía Campeones y la Vía Liga, todas a ida y
+        # vuelta— no aparecían por ningún lado.
+        "sc_extra": [332],
     },
     "europa": {
         # Mismo formato nuevo que la Champions y con el mismo reparto:
@@ -2234,6 +2240,7 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             return {"comp": comp, "dir": direccion, "error": str(e)}
         ruta = (data.get("paging") or {}).get(campo) or ""
 
+    temporada = temporada_actual(comp)
     clave = "fixture:%s" % comp
     guardado, _ = almacen.leer(clave)
     acumulado = {str(m["id"]): m for m in (guardado or [])}
@@ -2254,6 +2261,17 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         ultimo = ruta
         time.sleep(0.4)     # veinte páginas seguidas sin respirar es abuso
         juegos = data.get("games") or []
+        # El paginado sigue de largo hacia la temporada anterior. Sin este
+        # corte, el rescate volvía a meter en la base los partidos viejos
+        # que `_sc_fixture` acababa de podar, y la Europa League mostraba
+        # entera la edición pasada.
+        if temporada is not None:
+            juegos = [g for g in juegos
+                      if g.get("seasonNum") in (None, temporada)]
+            if not juegos:
+                listo = True
+                ruta = None
+                break
         if not juegos:
             # Se acabó el torneo. Hace falta cortar acá y no sólo cuando
             # falta la página siguiente: al final del calendario 365scores
@@ -2413,6 +2431,37 @@ def _sc_fixture(comp, ttl=120):
         almacen.guardar(clave, todos)
 
     return sorted(todos, key=lambda x: (x["round"] or 0, x["start"] or ""))
+
+
+def comps_de(cfg):
+    """Todas las competencias que forman un torneo: la principal y sus previas."""
+    return [cfg["sc"]] + list(cfg.get("sc_extra") or [])
+
+
+def fixture_de_liga(cfg, ttl=120):
+    """
+    El calendario de un torneo, juntando las competencias que lo componen.
+
+    La Champions es el caso: la fase de liga es una competencia y la
+    clasificación previa es otra. Para el hincha es el mismo torneo, así que
+    se juntan acá y el resto de la página ni se entera.
+    """
+    juegos = []
+    for comp in comps_de(cfg):
+        try:
+            juegos.extend(_sc_fixture(comp, ttl=ttl))
+        except Exception:
+            if comp == cfg["sc"]:
+                raise        # si falla la principal, falla el torneo
+    # el mismo partido no puede venir dos veces
+    vistos, unicos = set(), []
+    for m in juegos:
+        k = str(m.get("id"))
+        if k in vistos:
+            continue
+        vistos.add(k)
+        unicos.append(m)
+    return sorted(unicos, key=lambda x: (x.get("start") or ""))
 
 
 def temporada_actual(comp):
@@ -2905,18 +2954,18 @@ def api_liga_games(q):
             games, err = [], str(e)
         if games:
             try:
-                pegar_marcadores(games, _sc_fixture(cfg["sc"]))
+                pegar_marcadores(games, fixture_de_liga(cfg))
             except Exception:
                 pass
         else:
             try:
-                games, err = _sc_fixture(cfg["sc"]), None
+                games, err = fixture_de_liga(cfg), None
             except Exception:
                 pass
     elif not cfg.get("base"):
         # sin fixture propio ni de AFA: el calendario sale entero de 365scores
         try:
-            games = _sc_fixture(cfg["sc"])
+            games = fixture_de_liga(cfg)
         except Exception as e:
             games, err = [], str(e)
     else:
@@ -2967,7 +3016,7 @@ def api_liga_games(q):
     if cfg.get("base"):
         try:
             porNombre = {}
-            for x in _sc_fixture(cfg["sc"]):
+            for x in fixture_de_liga(cfg):
                 clave = (norm(x["home"]["name"])[:8], norm(x["away"]["name"])[:8])
                 porNombre.setdefault(clave, []).append(x)
             for m in games:
@@ -4183,8 +4232,28 @@ def plantel_de(club):
 
 
 def carrera(nombre):
+    """
+    Por dónde pasó el jugador, un club por línea.
+
+    Se guarda una entrada por club y por torneo —jugó la liga y la Copa
+    Argentina con el mismo club—, pero eso en pantalla se veía como si
+    hubiera estado dos veces en Platense. Acá se juntan por club.
+    """
     hist, _ = almacen.leer("carrera:" + norm(nombre))
-    return sorted(hist or [], key=lambda h: h.get("desde") or "", reverse=True)
+    juntos = {}
+    for h in (hist or []):
+        k = norm(h.get("club") or "")
+        if not k:
+            continue
+        a = juntos.get(k)
+        if not a:
+            juntos[k] = dict(h)
+            continue
+        a["desde"] = min(a.get("desde") or "9999", h.get("desde") or "9999")
+        a["hasta"] = max(a.get("hasta") or "", h.get("hasta") or "")
+        a["escudo"] = a.get("escudo") or h.get("escudo")
+    return sorted(juntos.values(), key=lambda h: h.get("hasta") or "",
+                  reverse=True)
 
 
 def partidos_jugados(nombre, liga="lpf"):
@@ -5572,7 +5641,11 @@ def juntar_stats(lid, limite=15):
         # Los guardados antes de que empezáramos a anotar los goles no
         # sirven para la efectividad ni la solidez: se vuelven a pedir.
         sin_goles = bool(guardado) and (guardado.get("h") or {}).get("gf") is None
-        if guardado is None or sin_goles:
+        # Y los de antes de que guardáramos lo de cada jugador tampoco: sin
+        # eso el gráfico de las fichas no se llenaba nunca, porque el
+        # partido ya tenía estadísticas de equipo y no se volvía a mirar.
+        sin_jugadores, _ = almacen.leer("jug:%s:%s" % (lid, g["liveId"]))
+        if guardado is None or sin_goles or sin_jugadores is None:
             faltan.append(g)
     hechos = 0
     for g in faltan[:limite]:
@@ -5609,9 +5682,11 @@ def rescatar_todo():
     for vuelta in range(1, 13):
         pendientes, goles_pendientes = 0, 0
         for lid, cfg in LIGAS.items():
+          # las previas de la Champions son otra competencia: se recorren igual
+          for comp in comps_de(cfg):
             for direccion, como in ((-1, "atrás"), (1, "adelante")):
                 try:
-                    r = caminar_fixture(cfg["sc"], direccion, paginas=20)
+                    r = caminar_fixture(comp, direccion, paginas=20)
                     if not r.get("listo"):
                         pendientes += 1
                     if r.get("nuevos"):

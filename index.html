@@ -286,6 +286,14 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cmp-rk.bien{background:rgba(45,164,110,.16);color:var(--live)}
 .cmp-rk.mal{background:rgba(224,90,90,.14);color:var(--red)}
 /* El escudo y el nombre llevan a la página del club. */
+/* El escudo de la Champions y el de la Premier son casi blancos: sobre el
+   menú claro desaparecían. Se les pone el fondo oscuro de su propia marca
+   detrás, y sólo de día — de noche se ven perfecto solos. */
+html[data-theme="light"] .lg-champions .lgimg{background:#0a1a3f}
+html[data-theme="light"] .lg-premier .lgimg{background:#38003c}
+html[data-theme="light"] .lg-champions .lgimg,
+html[data-theme="light"] .lg-premier .lgimg{border-radius:5px;padding:1.5px;
+  box-sizing:border-box}
 [data-club]{cursor:pointer}
 .crest[data-club]:hover{outline:2px solid var(--acc);outline-offset:1px;border-radius:4px}
 .tn[data-club]:hover{text-decoration:underline;text-underline-offset:2px}
@@ -866,9 +874,9 @@ const App=(()=>{
     ['Argentina',[['lpf','Liga Profesional',1],['nacional','Primera Nacional',1],
                   ['pbm','Primera B Metro',1],['fa','Federal A',1],
                   ['ca','Copa Argentina',1]]],
-    ['Internacional',[['lib','Libertadores',1],['sud','Sudamericana',1]]],
-    ['Europa',[['champions','Champions League',1],['europa','Europa League',1],
-               ['laliga','LaLiga',1],['premier','Premier League',1],
+    ['Internacional',[['lib','Libertadores',1],['sud','Sudamericana',1],
+                      ['champions','Champions League',1],['europa','Europa League',1]]],
+    ['Europa',[['laliga','LaLiga',1],['premier','Premier League',1],
                ['seriea','Serie A',1],['bundesliga','Bundesliga',1]]],
     ['Fútbol femenino',[['fem','Primera División Argentina',1]]]
   ];
@@ -1161,7 +1169,13 @@ const App=(()=>{
   const GRUPO_TXT={arquero:'los arqueros', defensor:'los defensores',
                    volante:'los volantes', delantero:'los delanteros'};
   function radarJugador(r){
-    if(!r||!r.ejes||!r.ejes.length) return '';
+    // Sin datos no se dibuja nada, pero sí se explica: si no, parece que
+    // la ficha está rota cuando en realidad todavía no se juntó nada.
+    if(!r||!r.ejes||!r.ejes.length) return `<div class="subt" style="margin-top:16px">Cómo juega</div>
+      <div class="note" style="padding:0 4px 8px">Todavía no hay suficiente
+      para compararlo. Las estadísticas de cada jugador se juntan partido a
+      partido y hacen falta al menos tres suyos, más un puñado de colegas de
+      su puesto para sacar el promedio.</div>`;
     const quienes=GRUPO_TXT[r.grupo]||'los de su puesto';
     return `<div class="subt" style="margin-top:16px">Cómo juega
       <span style="font-weight:400;color:var(--txt3)">

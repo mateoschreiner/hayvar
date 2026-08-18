@@ -508,6 +508,20 @@ LIGAS = {
                      "conference": (6, 6), "repechaje": (-3, -3),
                      "desciende": (-2, -1)},
     },
+    "champions": {
+        # Formato nuevo, desde 2024: se terminaron los ocho grupos de cuatro.
+        # Ahora son 36 equipos en UNA sola tabla, ocho partidos cada uno
+        # contra rivales distintos. Del 1° al 8° pasan derecho a octavos,
+        # del 9° al 24° juegan un playoff a ida y vuelta por los ocho
+        # lugares que faltan, y del 25° para abajo quedan afuera.
+        "nombre": "Champions League", "torneo": "Temporada 2026-27",
+        "base": None, "pages": {}, "propia": False, "sc": 572,
+        "pais": "Europa", "anual": False, "copa": True,
+        "zonas_de": {"avanza": (1, 8), "repechaje": (9, 24),
+                     "afuera": (25, 36)},
+        "etapas_extra": ["Octavos de final", "Cuartos de final",
+                         "Semifinal", "Final"],
+    },
     # ── Copas ────────────────────────────────────────────────────────────
     # Los números salen de /api/competencias, no de la memoria: 365scores
     # tiene 799 torneos cargados y varios se llaman parecido (está la
@@ -1869,6 +1883,7 @@ LEYENDA_DESTINOS = [
     {"clave": "europa", "color": "#f0b429", "texto": "Europa League"},
     {"clave": "conference", "color": "#12b76a", "texto": "Conference League"},
     {"clave": "desciende", "color": "#e5484d", "texto": "Descienden"},
+    {"clave": "afuera", "color": "#e5484d", "texto": "Queda eliminado"},
 ]
 
 
@@ -2547,6 +2562,7 @@ _RANGO_ETAPA = [
     (("fase 2", "segunda fase", "second stage"), 0.3),
     (("fase 1", "primera fase", "preliminar", "previa", "first stage"), 0),
     (("fase de grupos", "grupo", "group"), 1),
+    (("fase de liga", "league phase"), 1),
     (("repechaje", "play off", "playoff", "play-off", "pre octavos"), 2),
     (("64avos", "sesentaicuatroavos"), 3),
     (("32avos", "treintaidosavos", "treintaydosavos"), 4),
@@ -2578,6 +2594,8 @@ FASES_COPA = {
             "Cuartos de final", "Semifinal", "Final"],
     "ca":  ["32avos de final", "16avos de final", "Octavos de final",
             "Cuartos de final", "Semifinal", "Final"],
+    "champions": ["Fase de liga", "Play-offs", "Octavos de final",
+                  "Cuartos de final", "Semifinal", "Final"],
 }
 
 
@@ -4230,29 +4248,19 @@ CLUBES_INFO = {
         "direccion": "Arturo Orgaz 510, Alberdi, Córdoba",
         "capacidad": 30000,
         "sitio": "https://belgrano.com.ar",
-        # El diseño de cada camiseta, no sólo los colores. La 2025/26 de
-        # Umbro es celeste lisa con vivos negros la titular, y negra con
-        # vivos celestes la suplente: no van las rayas de otras épocas.
-        # Los nombres de los sponsors van como texto simple, no como sus
-        # logos: reproducir una marca registrada en la página es meterse en
-        # un problema que no hace falta. La camiseta igual se reconoce.
+        # La 2025/26 de Umbro: celeste lisa con vivos negros la titular, y
+        # negra con vivos celestes la suplente. No van las rayas de otras
+        # épocas.
         "camisetas": {
             "titular": {
                 "patron": "liso", "base": "#29a9e1", "raya": "#29a9e1",
                 "detalle": "#141414", "cuello": "#141414",
-                "hombro": "SANOS", "marca": "umbro",
-                "pecho": "Macro", "espalda": "PAUNY", "abajo": "playcet",
-                "nuca": "BELGRANO", "panel": "#141414",
             },
             "suplente": {
                 "patron": "liso", "base": "#141414", "raya": "#141414",
                 "detalle": "#29a9e1", "cuello": "#29a9e1",
-                "hombro": "SANOS", "marca": "umbro",
-                "pecho": "Macro", "espalda": "PAUNY", "abajo": "playcet",
-                "nuca": "LOS PIRATAS", "panel": "#1f1f1f",
             },
         },
-        "dorsal": {"n": 9, "nombre": "PASSERINI"},
     },
 }
 
@@ -4354,8 +4362,11 @@ _OTROS_CLUBES = {
         "estadioApodo": "El Fortín",
         "direccion": "Av. Juan B. Justo 9200, Liniers, CABA",
         "capacidad": 49540, "sitio": "https://velez.com.ar",
-        "titular": ("uve", "#fbfbfb", "#1a4fd8", "#1a4fd8"),
-        "suplente": ("uve", "#16255c", "#2b5fe0", "#2b5fe0"),
+        # la V va sólo adelante: la espalda es lisa
+        "titular": ("uve", "#fbfbfb", "#1a4fd8", "#1a4fd8",
+                    {"espalda": {"patron": "liso"}}),
+        "suplente": ("uve", "#16255c", "#2b5fe0", "#2b5fe0",
+                     {"espalda": {"patron": "liso"}}),
     },
     "Argentinos Juniors": {
         # las tenía al revés: Argentinos juega de rojo, no de blanco
@@ -4430,7 +4441,9 @@ _OTROS_CLUBES = {
         "estadioApodo": "El Gigante de Arroyito",
         "direccion": "Av. Génova 640, Rosario",
         "capacidad": 41654, "sitio": "https://rosariocentral.com",
-        "titular": ("bastones", "#2d5fd0", "#f5c518", "#ffffff"),
+        # los bastones son sólo del frente: la espalda es azul lisa
+        "titular": ("bastones", "#2d5fd0", "#f5c518", "#ffffff",
+                    {"espalda": {"patron": "liso"}}),
         "suplente": ("liso", "#fbfbfb", "#fbfbfb", "#2d5fd0"),
     },
     "Talleres (C)": {
@@ -4439,7 +4452,10 @@ _OTROS_CLUBES = {
         "estadioApodo": "El Kempes",
         "direccion": "Av. Cárcano s/n, Córdoba",
         "capacidad": 57000, "sitio": "https://www.clubtalleres.com.ar",
-        "titular": ("rayas", "#fbfbfb", "#1e2f6b", "#1e2f6b"),
+        # las rayas mueren en la costura: atrás es blanca con los
+        # costados azules
+        "titular": ("rayas", "#fbfbfb", "#1e2f6b", "#1e2f6b",
+                    {"espalda": {"patron": "liso"}}),
         "suplente": ("liso", "#26439c", "#26439c", "#fbfbfb"),
     },
     "Instituto": {
@@ -4475,8 +4491,10 @@ _OTROS_CLUBES = {
         "direccion": "Av. López y Planes 3200, Santa Fe",
         "capacidad": 28000, "sitio": "https://www.clubaunion.com.ar",
         "titular": ("rayas", "#fbfbfb", "#e02b2b", "#26397a"),
-        # roja adelante y azul atrás
-        "suplente": ("liso", "#d8322f", "#d8322f", "#26397a"),
+        # roja adelante y azul atrás, tal cual
+        "suplente": ("liso", "#d8322f", "#d8322f", "#26397a",
+                     {"espalda": {"base": "#26397a", "detalle": "#d8322f",
+                                  "cuello": "#d8322f"}}),
     },
     "Defensa y Justicia": {
         "nombre": "Club Social y Deportivo Defensa y Justicia",
@@ -4496,16 +4514,20 @@ _OTROS_CLUBES = {
         # azul con la franja roja cruzada en el pecho
         "titular": ("franja", "#1d5299", "#c62b32", "#c62b32"),
         # blanca con las dos franjas, la roja arriba y la azul abajo
-        "suplente": ("doblefranja", "#fbfbfb", "#d8382f", "#1f4fc4", "#1f4fc4"),
+        "suplente": ("doblefranja", "#fbfbfb", "#d8382f", "#1f4fc4",
+                     {"raya2": "#1f4fc4", "espalda": {"patron": "liso"}}),
     },
     "Platense": {
         "nombre": "Club Atlético Platense", "apodo": "El Calamar",
         "fundado": 1905, "estadio": "Estadio Ciudad de Vicente López",
         "direccion": "Manuel Ugarte 2380, Vicente López",
         "capacidad": 26000, "sitio": "https://cap.org.ar",
-        # la franja marrón cruzada, en blanco la titular y al revés la otra
-        "titular": ("franja", "#fbfbfb", "#5f4534", "#5f4534"),
-        "suplente": ("franja", "#5f4534", "#fbfbfb", "#fbfbfb"),
+        # la franja marrón cruzada, en blanco la titular y al revés la
+        # otra. Atrás no lleva franja: es lisa de los dos lados.
+        "titular": ("franja", "#fbfbfb", "#5f4534", "#5f4534",
+                    {"espalda": {"patron": "liso"}}),
+        "suplente": ("franja", "#5f4534", "#fbfbfb", "#fbfbfb",
+                     {"espalda": {"patron": "liso"}}),
     },
     "Barracas Central": {
         "nombre": "Club Atlético Barracas Central", "apodo": "El Guapo",

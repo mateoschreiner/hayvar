@@ -2465,6 +2465,37 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         crudos = data.get("games") or []
         juegos = crudos
 
+        # Por dónde seguir. El orden importa:
+        #
+        #   1. lo que diga la fuente;
+        #   2. el borde de ESTA página —el partido más viejo que vino, se
+        #      guarde o no—;
+        #   3. el borde de lo que tenemos guardado.
+        #
+        # El segundo es el que faltaba. Cuando una página venía entera de
+        # otra temporada no se guardaba nada, así que el borde propio no se
+        # movía, el cursor salía idéntico al anterior y el recorrido se
+        # cortaba justo ahí. Por eso a la Primera Nacional le faltaban dos
+        # ventanas de días enteras en el medio del torneo.
+        def borde_de(lista):
+            conFecha = [g for g in lista if g.get("startTime")]
+            if not conFecha:
+                return None
+            elegir = min if direccion < 0 else max
+            return elegir(conFecha, key=lambda g: g["startTime"]).get("id")
+
+        def proxima_ruta():
+            dela = (data.get("paging") or {}).get(campo)
+            if dela and dela != ruta and dela not in vistas:
+                return dela
+            for donde in (borde_de(crudos),
+                          _borde(acumulado.values(), comp, direccion)):
+                if donde:
+                    propia = cursor_manual(comp, direccion, donde)
+                    if propia != ruta and propia not in vistas:
+                        return propia
+            return None
+
         # El paginado sigue de largo hacia la temporada anterior. Sin este
         # corte, el rescate volvía a meter en la base los partidos viejos
         # que `_sc_fixture` acababa de podar, y la Europa League mostraba
@@ -2490,11 +2521,8 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             if crudos:
                 vacias += 1
                 if vacias < TOLERA_VACIAS:
-                    borde = _borde(acumulado.values(), comp, direccion)
-                    siguiente = ((data.get("paging") or {}).get(campo)
-                                 or (cursor_manual(comp, direccion, borde)
-                                     if borde else None))
-                    if siguiente and siguiente not in vistas:
+                    siguiente = proxima_ruta()
+                    if siguiente:
                         ruta = siguiente
                         continue
                 motivo = "%d páginas seguidas de otra temporada" % vacias
@@ -2522,22 +2550,10 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
                         acumulado[k][campo] = m[campo]
             else:
                 acumulado[k] = m
-        siguiente = (data.get("paging") or {}).get(campo)
-        # Si la fuente no lo manda —o manda el mismo— se arma a mano con el
-        # partido del borde de lo que ya tenemos. El recorrido no puede
-        # depender de un campo que a veces viene y a veces no.
-        if not siguiente or siguiente == ruta:
-            borde = _borde(acumulado.values(), comp, direccion)
-            propio = cursor_manual(comp, direccion, borde) if borde else None
-            if propio and propio not in vistas:
-                if not siguiente:
-                    motivo = "sigo con cursor propio (la fuente no lo dio)"
-                ruta = propio
-                continue
+        siguiente = proxima_ruta()
+        if not siguiente:
             listo = True
-            motivo = ("la fuente no ofrece más páginas y el cursor propio ya "
-                      "se usó" if not siguiente
-                      else "la página siguiente es la misma")
+            motivo = "no hay por dónde seguir: la fuente ni el cursor propio"
             ruta = None
             break
         ruta = siguiente
@@ -2753,7 +2769,12 @@ def migrar_fixture(comp):
 # al 4728058 devuelve el 4728053 pero también el 4728065: el mínimo no se
 # movía, el cursor se repetía y el recorrido se daba por terminado en la
 # primera vuelta. Ahora el ancla es la fecha.
-VERSION_RECORRIDO = 6
+# La v7: cuando una página venía entera de otra temporada, el cursor de
+# respaldo se anclaba en lo guardado —que no había cambiado— y salía igual
+# al anterior. El recorrido saltaba ese tramo: a la Primera Nacional le
+# faltaban dos ventanas de días enteras en el medio del torneo. Ahora se
+# ancla en el borde de la página que acaba de llegar, se guarde o no.
+VERSION_RECORRIDO = 7
 
 
 def reparar_recorridos():

@@ -280,20 +280,24 @@ def _armar(comp, paginas_buenas):
     _n = {"i": 0}
     def _ruta(r):
         _n["i"] += 1
-        hay = _n["i"] <= paginas_buenas
-        return {"games": [{"id": comp * 1000 + _n["i"], "competitionId": comp,
-                           "seasonNum": 40, "roundNum": 1,
-                           "startTime": "2026-04-01T16:00:00-03:00",
-                           "statusGroup": 4, "statusText": "Finalizado",
-                           "gameTime": 90,
-                           "homeCompetitor": {"id": 1, "name": "A", "score": 1},
-                           "awayCompetitor": {"id": 2, "name": "B", "score": 0}}],
-                "paging": {"previousPage": "/p%d" % (_n["i"] + 1)} if hay else {}}
+        # despues de `paginas_buenas` no hay ni partidos ni paginado
+        vacia = _n["i"] > paginas_buenas
+        return {"games": [] if vacia else [
+                    {"id": comp * 1000 + _n["i"], "competitionId": comp,
+                     "seasonNum": 40, "roundNum": 1,
+                     "startTime": "2026-04-%02dT16:00:00-03:00" % (28 - _n["i"]),
+                     "statusGroup": 4, "statusText": "Finalizado",
+                     "gameTime": 90,
+                     "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                     "awayCompetitor": {"id": 2, "name": "B", "score": 0}}],
+                "paging": {"previousPage": "/p%d" % (_n["i"] + 1)} if not vacia else {}}
     server.fetch_ruta = _ruta
 _armar(9001, 3)
 _r = server.caminar_fixture(9001, -1, paginas=20)
-chequear("termina bien y lo explica",
-         _r["listo"] and "no ofrece más páginas" in (_r.get("motivo") or ""),
+# Que la fuente deje de dar paginado ya no termina el recorrido: el cursor se
+# arma solo. Termina cuando de verdad no hay mas partidos.
+chequear("termina cuando no quedan partidos, y lo explica",
+         _r["listo"] and "sin partidos" in (_r.get("motivo") or ""),
          _r.get("motivo"))
 _armar(9002, 99)
 _r2 = server.caminar_fixture(9002, -1, paginas=3)
@@ -576,6 +580,49 @@ chequear("un partido de 365scores no se reparte entre dos",
          == {5: 9005, 6: None})
 server.df_fixture_generico, server.fixture_de_liga = _dfg, _fxg
 server._sc_standings, server._sc_goleadores = _stg, _glg
+server.fetch = _guardado
+
+
+print("\n── un tramo de otra temporada en el medio no corta ──")
+# El cursor de respaldo se anclaba en lo guardado. Si una pagina venia entera
+# de otra temporada no se guardaba nada, el ancla no se movia y el cursor
+# salia igual al anterior: el recorrido saltaba ese tramo. A la Primera
+# Nacional le faltaban dos ventanas de dias enteras en el medio del torneo.
+_C10 = 5419
+_rndu.seed(3)
+_idsH = list(range(4643000, 4643104)); _rndu.shuffle(_idsH)
+_cuandoH = {i: _dtu.datetime(2026, 2, 1) + _dtu.timedelta(days=k * 2)
+            for k, i in enumerate(_idsH)}
+_ordenH = sorted(_cuandoH, key=lambda i: _cuandoH[i])
+_viejaH = set(_ordenH[40:47]) | set(_ordenH[70:77])
+def _crudoH(i):
+    return {"id": i, "competitionId": _C10, "seasonNum": 45 if i in _viejaH else 46,
+            "roundNum": None, "stageName": "", "startTime": _cuandoH[i].isoformat(),
+            "statusGroup": 4, "statusText": "Finalizado", "gameTime": 90,
+            "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+            "awayCompetitor": {"id": 2, "name": "B", "score": 0}}
+for _k, _v in (("temporada:%d" % _C10, 46), ("migrado2:%d" % _C10, True),
+               ("reabierto:%d" % _C10, True), ("hist:%d" % _C10, {})):
+    server.almacen.guardar(_k, _v)
+server.almacen.guardar("fixture:%d" % _C10,
+    [{"id": i, "comp": _C10, "temporada": 46, "round": None,
+      "start": _cuandoH[i].isoformat(), "stage": ""} for i in _ordenH[-7:]])
+server.fetch = lambda p, q, ttl=15: (
+    {"competitions": [{"id": _C10, "currentSeasonNum": 46}]} if p == "competitions"
+    else {"games": [], "paging": {}})
+server.fetch_ruta = lambda r: {"games": [
+    _crudoH(i) for i in _ordenH[max(0, (_ordenH.index(
+        int(re.search(r"aftergame=(\d+)", r).group(1)))
+        if int(re.search(r"aftergame=(\d+)", r).group(1)) in _ordenH
+        else len(_ordenH)) - 7):(_ordenH.index(
+        int(re.search(r"aftergame=(\d+)", r).group(1)))
+        if int(re.search(r"aftergame=(\d+)", r).group(1)) in _ordenH
+        else len(_ordenH))]], "paging": {}}
+server.time.sleep = lambda s: None
+_rh2 = server.caminar_fixture(_C10, -1, paginas=40)
+_deberia = len([i for i in _ordenH if i not in _viejaH])
+chequear("atraviesa los tramos de otra temporada sin perder el medio",
+         _rh2["total"] == _deberia, "%d de %d" % (_rh2["total"], _deberia))
 server.fetch = _guardado
 
 

@@ -2372,14 +2372,19 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
 
     vueltas, listo, ultimo = 0, False, ruta
     vistas, vacias = set(), 0
+    # Por qué se detuvo. Sin esto, un recorrido que se corta antes de tiempo
+    # es indistinguible de uno que terminó bien: los dos dicen "listo" y hay
+    # que adivinar cuál fue. Va al log y a /api/recorrido.
+    motivo = "límite de páginas de esta vuelta"
     while ruta and vueltas < paginas:
         if ruta in vistas:        # el paginado se mordió la cola
-            listo = True
+            listo, motivo = True, "el paginado se repitió"
             break
         vistas.add(ruta)
         try:
             data = fetch_ruta(ruta)
-        except Exception:
+        except Exception as e:
+            motivo = "falló el pedido: %s" % type(e).__name__
             break
         vueltas += 1
         ultimo = ruta
@@ -2409,6 +2414,7 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
                     if siguiente and siguiente != ruta:
                         ruta = siguiente
                         continue
+                motivo = "%d páginas seguidas de otra temporada" % vacias
             else:
                 vacias = 0
         if not juegos:
@@ -2421,6 +2427,8 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
             # igual devuelve una dirección más, y sin este corte el rescate
             # se quedaría pidiendo páginas vacías para siempre.
             listo = True
+            if motivo.startswith("límite"):
+                motivo = "la fuente devolvió una página sin partidos"
             ruta = None
             break
         for g in juegos:
@@ -2444,6 +2452,8 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
         siguiente = (data.get("paging") or {}).get(campo)
         if not siguiente or siguiente == ruta:
             listo = True
+            motivo = ("la fuente no ofrece más páginas" if not siguiente
+                      else "la página siguiente es la misma")
             ruta = None
             break
         ruta = siguiente
@@ -2451,9 +2461,11 @@ def caminar_fixture(comp, direccion=-1, paginas=25):
     almacen.guardar(clave, list(acumulado.values()))
     almacen.guardar(_CLAVE_CAMINO[direccion] % comp,
                     {"siguiente": ruta, "ultimo": ultimo, "listo": listo,
-                     "total": len(acumulado)})
+                     "total": len(acumulado), "motivo": motivo,
+                     "cuando": dt.datetime.now().isoformat(timespec="seconds")})
     return {"comp": comp, "dir": direccion, "paginas": vueltas, "listo": listo,
-            "nuevos": len(acumulado) - antes, "total": len(acumulado)}
+            "nuevos": len(acumulado) - antes, "total": len(acumulado),
+            "motivo": motivo}
 
 
 def rescatar_historico(comp, paginas=25):
@@ -5768,6 +5780,7 @@ def api_recorrido(q):
                               "nuevos": r.get("nuevos", 0),
                               "total": r.get("total", 0),
                               "listo": r.get("listo"),
+                              "motivo": r.get("motivo") or r.get("estado"),
                               "error": r.get("error")})
         pedido = pedido or rehacer
 
@@ -6235,7 +6248,10 @@ def rescatar_todo():
           for comp in comps_de(cfg):
             for direccion, como in ((-1, "atrás"), (1, "adelante")):
                 try:
-                    r = caminar_fixture(comp, direccion, paginas=20)
+                    # El paginado hacia atrás avanza de a siete partidos
+                    # por página, no de a una fecha entera: con veinte
+                    # páginas por vuelta una copa entera no llegaba nunca.
+                    r = caminar_fixture(comp, direccion, paginas=40)
                     if not r.get("listo"):
                         pendientes += 1
                     # Se escribe la primera vuelta —para poder ver que
@@ -6244,10 +6260,11 @@ def rescatar_todo():
                     # minuto diciendo siempre lo mismo y no se lee nada.
                     firma = (r.get("total"), r.get("listo"))
                     if vuelta == 1 or firma != _ULTIMO_CAMINO.get((comp, direccion)):
-                        print("  · %-18s %-8s %2d pág · +%-3d · total %-4d %s"
+                        print("  · %-18s %-8s %2d pág · +%-3d · total %-4d %-6s %s"
                               % (cfg["nombre"], como, r.get("paginas", 0),
                                  r.get("nuevos", 0), r.get("total", 0),
-                                 "listo" if r.get("listo") else "sigue"),
+                                 "listo" if r.get("listo") else "sigue",
+                                 r.get("motivo") or r.get("estado") or ""),
                               flush=True)
                     _ULTIMO_CAMINO[(comp, direccion)] = firma
                 except Exception as e:

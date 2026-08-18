@@ -240,6 +240,55 @@ chequear("sin paginado se marca terminado, no 'sigue' eterno",
 server.fetch = _guardado
 
 
+print("\n── el recorrido dice por qué se detuvo ──")
+# Sin esto, un recorrido que se corta antes de tiempo es indistinguible de
+# uno que terminó bien: los dos decían "listo" y había que adivinar.
+server.time.sleep = lambda s: None
+def _armar(comp, paginas_buenas):
+    server.almacen.guardar("temporada:%d" % comp, 40)
+    server.almacen.guardar("fixture:%d" % comp, [])
+    server.almacen.guardar("hist:%d" % comp, {})
+    server.almacen.guardar("migrado2:%d" % comp, True)
+    server.almacen.guardar("reabierto:%d" % comp, True)
+    server.fetch = lambda p, q, ttl=15, c=comp: (
+        {"competitions": [{"id": c, "currentSeasonNum": 40}]} if p == "competitions"
+        else {"games": [], "paging": {"previousPage": "/p1"}})
+    _n = {"i": 0}
+    def _ruta(r):
+        _n["i"] += 1
+        hay = _n["i"] <= paginas_buenas
+        return {"games": [{"id": comp * 1000 + _n["i"], "competitionId": comp,
+                           "seasonNum": 40, "roundNum": 1,
+                           "startTime": "2026-04-01T16:00:00-03:00",
+                           "statusGroup": 4, "statusText": "Finalizado",
+                           "gameTime": 90,
+                           "homeCompetitor": {"id": 1, "name": "A", "score": 1},
+                           "awayCompetitor": {"id": 2, "name": "B", "score": 0}}],
+                "paging": {"previousPage": "/p%d" % (_n["i"] + 1)} if hay else {}}
+    server.fetch_ruta = _ruta
+_armar(9001, 3)
+_r = server.caminar_fixture(9001, -1, paginas=20)
+chequear("termina bien y lo explica",
+         _r["listo"] and "no ofrece más páginas" in (_r.get("motivo") or ""),
+         _r.get("motivo"))
+_armar(9002, 99)
+_r2 = server.caminar_fixture(9002, -1, paginas=3)
+chequear("si se corta por el presupuesto, lo dice y sigue después",
+         not _r2["listo"] and "límite" in (_r2.get("motivo") or ""),
+         _r2.get("motivo"))
+chequear("el motivo queda guardado para /api/recorrido",
+         server.almacen.leer("hist:9002")[0].get("motivo") == _r2["motivo"])
+def _explota(r): raise OSError("timeout")
+server.fetch_ruta = _explota
+_armar(9003, 1)
+server.fetch_ruta = _explota
+_r3 = server.caminar_fixture(9003, -1, paginas=5)
+chequear("un error de la fuente no se disfraza de 'listo'",
+         not _r3["listo"] and "falló" in (_r3.get("motivo") or ""),
+         _r3.get("motivo"))
+server.fetch = _guardado
+
+
 print("\n── partidazo del día ──")
 server.api_annual = lambda q: {"rows": [
     {"team": {"name": "River Plate"}, "canon": "River Plate", "pos": 1},

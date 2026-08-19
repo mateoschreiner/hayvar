@@ -3253,7 +3253,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · cuadro: se estira cuando las llaves no entran"
+VERSION_APP = "2026-08-19 · partido único directo y etapas por sortear"
 
 
 def reparar_recorridos():
@@ -4348,6 +4348,12 @@ def api_liga_games(q):
 
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})
+    # En una copa, la etapa existe aunque todavía no tenga partidos: los
+    # cuartos se sortean cuando terminan los octavos. Sin el botón no hay
+    # manera de mirar quiénes van clasificando, que es justo lo que uno
+    # quiere ver la semana que se están jugando los octavos.
+    if cfg.get("copa") and etapas:
+        rounds = sorted(set(rounds) | set(range(1, len(etapas) + 1)))
 
     por_fecha = {}
     for g in games:

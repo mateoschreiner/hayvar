@@ -1212,6 +1212,18 @@ chequear("las llaves que van al mismo cruce quedan juntas",
          and "pa[0]-pb[0]||pa[1]-pb[1]||a-b" in HTML)
 chequear("y la cuenta de 'uno a uno' sólo se usa donde el cuadro parte al medio",
          "if(escalera) for(let c=slots.length-2;c>=0;c--){" in HTML)
+# La Copa Argentina se juega a partido unico: abrir "la serie" de un partido
+# solo es un rodeo, muestra una pantalla intermedia para llegar al mismo lado.
+chequear("una llave de un solo partido abre el partido, no la serie",
+         "const solo=k.partidos.length===1?k.partidos[0]:null;" in HTML
+         and "App.openMatch('${js(String(solo.id))}')" in HTML)
+# Los cuartos se sortean cuando terminan los octavos: la etapa existe antes
+# de tener partidos, y ahi lo que uno quiere ver es quienes van clasificando.
+chequear("la etapa de una copa aparece aunque todavía no tenga partidos",
+         'if cfg.get("copa") and etapas:' in
+         inspect.getsource(server.api_liga_games))
+chequear("y muestra quiénes ya clasificaron",
+         "Ya clasificaron" in HTML and "k.equipos.find(e=>e.pasa)" in HTML)
 chequear("cuando no hay tabla se dice por qué en vez de 'Sin datos'",
          "const sinTabla=()=>" in HTML and "d.zonasNota" in HTML)
 chequear("y no se pone 'Por definir' donde no va a haber cruce",

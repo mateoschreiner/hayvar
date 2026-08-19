@@ -472,6 +472,13 @@ td.l{text-align:left;padding-left:8px}
 .zone{position:absolute;left:0;top:0;bottom:0;width:3px}
 .z-play{background:#2f6fed}.z-desc{background:#e5484d}.z-risk{background:#f0b429}
 .live-tag{width:6px;height:6px;border-radius:50%;background:var(--live);display:inline-block;margin-left:4px;animation:beat 1.4s infinite}
+/* los que ya pasaron a una etapa que todavía no se sorteó */
+.ya-estan{margin-top:16px;width:100%}
+.ya-estan .lb{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--txt3);margin-bottom:8px}
+.ya-estan .tira{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.ya-estan .uno{display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 6px;
+  border:1px solid var(--line);border-radius:999px;font-size:12.5px;font-weight:600}
 .leg{display:flex;flex-wrap:wrap;gap:10px;padding:8px 12px;font-size:10.5px;color:var(--txt2);border-top:1px solid var(--line)}
 .leg i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
 .form{display:flex;gap:2px;justify-content:center}
@@ -2480,8 +2487,27 @@ const App=(()=>{
     const dela=S.games.filter(m=>String(m.round)===String(S.round)
       && (!S.fasesLiga || S.fase==null || m.fase===S.fase));
     const etapa=S.etapas&&S.etapas[S.round-1];
-    if(!dela.length) return $('#matches').innerHTML=`<div class="empty">
-      <span class="big">◎</span>${etapa?esc(etapa)+': todavía sin definir.':'Sin partidos para esta fecha.'}</div>`;
+    /* Una etapa de copa existe antes de tener partidos: los cuartos se
+       sortean cuando terminan los octavos. En vez de dejarla vacía se
+       muestra quiénes ya clasificaron, que es lo que uno quiere ver
+       justamente esa semana. Salen de las llaves cerradas de la etapa
+       anterior: si la serie terminó, el que pasó ya está. */
+    if(!dela.length){
+      const i=S.llaves?S.llaves.findIndex(b=>b.etapa===etapa):-1;
+      const antes=i>0?S.llaves[i-1]:null;
+      const pasaron=antes?antes.llaves.filter(k=>k.cerrada)
+        .map(k=>(k.equipos.find(e=>e.pasa)||{}).team).filter(Boolean):[];
+      return $('#matches').innerHTML=`<div class="empty">
+        <span class="big">◎</span>${etapa
+          ? esc(etapa)+': todavía no se sortearon los cruces.'
+          : 'Sin partidos para esta fecha.'}
+        ${pasaron.length?`<div class="ya-estan">
+          <div class="lb">Ya clasificaron</div>
+          <div class="tira">${pasaron.map(t=>`<span class="uno"
+            style="${estiloClub(t.canon||t.name)}">${crest(t,18)}
+            <span class="tn">${esc(t.canon||t.name)}</span></span>`).join('')}</div>
+          </div>`:''}</div>`;
+    }
 
     // En las eliminatorias no hay zonas: se agrupa por ida y vuelta, que es
     // como se sigue una llave.
@@ -3020,10 +3046,16 @@ const App=(()=>{
               style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }else{
             const cuando=k.partidos.map(p=>(p.tramo||'')+(p.gh!=null?` ${p.gh}-${p.ga}`:'')).join(' · ');
-            // al clickear se abre la serie, no un partido suelto: primero se
-            // ven la ida y la vuelta y desde ahí se elige cuál mirar
+            /* Al tocar una llave se abre la serie: primero se ven la ida y la
+               vuelta y desde ahí se elige cuál mirar. Pero cuando la llave es
+               un solo partido —toda la Copa Argentina— esa pantalla es un
+               rodeo: muestra "la serie" de un partido único y hay que tocar
+               otra vez para llegar al que uno quería. Ahí se va derecho. */
+            const solo=k.partidos.length===1?k.partidos[0]:null;
             S.series[serieId(k)]=k;
-            cajas+=`<div class="brk" title="${esc(cuando)}" onclick="App.serie('${js(serieId(k))}')"
+            cajas+=`<div class="brk" title="${esc(cuando)}" onclick="${solo
+                ? `App.openMatch('${js(String(solo.id))}')`
+                : `App.serie('${js(serieId(k))}')`}"
               style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }
         }

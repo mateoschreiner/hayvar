@@ -135,8 +135,20 @@ header{background:var(--nav);color:#fff;position:sticky;top:0;z-index:100;box-sh
   box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
 
 /* ── barra lateral de ligas ── */
+/* La barra se mueve por su cuenta: con el cursor encima rueda su propia
+   lista y no arrastra la página, y al llegar al final tampoco la empuja.
+   Antes había que bajar toda la página para llegar a las últimas ligas. */
+/* Se pega justo abajo del encabezado, a la misma altura que arrancan las
+   otras dos columnas. El alto del encabezado cambia según si la barrita de
+   estado está a la vista, así que se mide y viaja en --enc: con un 84 fijo,
+   sin la barrita el menú arrancaba catorce píxeles más abajo que el resto. */
 aside{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);
-  overflow:hidden;position:sticky;top:84px}
+  position:sticky;top:calc(var(--enc,56px) + 14px);
+  max-height:calc(100vh - var(--enc,56px) - 28px);
+  overflow-y:auto;overscroll-behavior:contain}
+aside::-webkit-scrollbar{width:8px}
+aside::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+aside::-webkit-scrollbar-thumb:hover{background:var(--txt3)}
 aside h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);
   padding:13px 14px 6px;font-weight:700}
 aside a{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:14px;color:var(--txt);
@@ -506,10 +518,20 @@ td.l{text-align:left;padding-left:8px}
 .ov{position:fixed;inset:0;background:rgba(6,9,18,.80);z-index:200;display:none;
   overflow-y:auto;padding:26px 14px;backdrop-filter:blur(2px)}
 .ov.show{display:block}
-.modal{max-width:640px;margin:0 auto;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+/* Ojo con `overflow:hidden` acá: recortaba las esquinas redondeadas, sí,
+   pero también convertía al pop-up en su propio contenedor de scroll y eso
+   anula el `sticky` de adentro. El encabezado se declaraba fijo y no se
+   quedaba fijo. Las esquinas se redondean por pieza. */
+.modal{max-width:640px;margin:0 auto;background:var(--card);border-radius:12px;
+  box-shadow:0 20px 50px rgba(0,0,0,.35)}
 /* El encabezado queda pegado arriba: bajando por una ficha larga, la cruz
    se iba de la pantalla y había que volver hasta el principio para cerrar. */
-.mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0;z-index:3}
+.mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0;z-index:3;
+  border-radius:12px 12px 0 0}
+/* Y las pestañas se pegan justo abajo. La altura del encabezado cambia según
+   el pop-up —el de un partido trae escudos y marcador, el de un jugador no—
+   así que se mide después de dibujar y viaja en --cab. */
+.modal>.tabs{position:sticky;top:var(--cab,0px);z-index:2;background:var(--card)}
 .mhead .top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:rgba(255,255,255,.65);margin-bottom:12px;gap:8px}
 /* La cruz y el volver, como botones de verdad y no como dos signos sueltos:
    redondos, con fondo propio, y el área para tocarlos bien grande. */
@@ -659,8 +681,10 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
 @media(max-width:1180px){
   .shell{grid-template-columns:minmax(0,1fr) 348px}
   .burger{display:grid;place-items:center}
+  /* Acá el menú es un cajón que se desliza y ocupa la pantalla entera, así
+     que no lleva el tope de altura de la versión de escritorio. */
   aside{display:block;position:fixed;left:0;top:0;bottom:0;width:250px;z-index:130;
-    border-radius:0;border:0;overflow-y:auto;transform:translateX(-100%);
+    border-radius:0;border:0;overflow-y:auto;max-height:none;transform:translateX(-100%);
     transition:transform .22s ease;padding-top:8px}
   aside.open{transform:none}
   aside a{padding:11px 14px;font-size:14px}
@@ -3795,6 +3819,38 @@ const App=(()=>{
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';
       document.documentElement.dataset.theme=t; try{localStorage.setItem('hayvar.theme',t);}catch(e){} }
   };
+  /* La altura del encabezado del pop-up, para que las pestañas se peguen
+     justo abajo. Cambia según qué se esté mirando —el de un partido trae
+     escudos y marcador, el de un jugador no— así que se mide cada vez que
+     el pop-up se vuelve a dibujar, en lugar de clavar un número que iba a
+     quedar mal en la mitad de los casos. */
+  /* El alto del encabezado, para que la barra lateral arranque justo abajo.
+     Cambia solo: la barrita de estado aparece y desaparece según lo que esté
+     pasando, y con ella el encabezado pasa de 56 a 84. Un ResizeObserver lo
+     sigue sin que haya que acordarse de avisarle desde cada lugar. */
+  (function medirEncabezado(){
+    const enc=document.querySelector('header');
+    if(!enc) return;
+    const medir=()=>document.documentElement.style
+      .setProperty('--enc',enc.offsetHeight+'px');
+    medir();
+    if(window.ResizeObserver) new ResizeObserver(medir).observe(enc);
+    window.addEventListener('resize',medir);
+  })();
+
+  (function medirCabecera(){
+    const caja=$('#modalBox');
+    if(!caja||!window.MutationObserver) return;
+    const medir=()=>{
+      const cab=caja.querySelector('.mhead');
+      caja.style.setProperty('--cab',(cab?cab.offsetHeight:0)+'px');
+    };
+    // sólo se mira el contenido: si mirara los atributos, escribir --cab
+    // volvería a disparar la medición y no terminaría nunca
+    new MutationObserver(medir).observe(caja,{childList:true,subtree:true});
+    window.addEventListener('resize',medir);
+  })();
+
   document.addEventListener('keydown',e=>{if(e.key==='Escape')api.closeModal();});
   // volver a la pestaña actualiza sólo si el refresco automático está activado
   document.addEventListener('visibilitychange',()=>{

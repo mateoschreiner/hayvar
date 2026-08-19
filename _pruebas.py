@@ -1185,6 +1185,23 @@ chequear("ninguna cruz quedó suelta fuera del botón compartido",
 chequear("el encabezado del pop-up queda pegado arriba",
          ".mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0"
          in HTML)
+# `overflow:hidden` en el pop-up recortaba las esquinas, si, pero tambien lo
+# convertia en su propio contenedor de scroll y eso anula el sticky de
+# adentro: el encabezado se declaraba fijo y no se quedaba fijo.
+chequear("y el pop-up no es su propio contenedor de scroll",
+         re.search(r"\.modal\{[^}]*overflow:hidden", HTML) is None)
+chequear("las pestañas se pegan abajo del encabezado, medido y no clavado",
+         ".modal>.tabs{position:sticky;top:var(--cab,0px)" in HTML
+         and "setProperty('--cab'" in HTML)
+# La barra lateral arrancaba catorce pixeles mas abajo que las otras dos
+# columnas: el encabezado mide 56 sin la barrita de estado y 84 con ella, y
+# el tope estaba clavado en 84.
+chequear("la barra lateral arranca a la misma altura que las otras columnas",
+         "top:calc(var(--enc,56px) + 14px)" in HTML
+         and "setProperty('--enc'" in HTML)
+chequear("y se mueve por su cuenta sin arrastrar la página",
+         "overscroll-behavior:contain" in HTML
+         and "max-height:calc(100vh - var(--enc,56px) - 28px)" in HTML)
 chequear("la cruz es un botón redondo y no un signo suelto",
          ".mhead .x,.mhead .volver{width:32px;height:32px" in HTML)
 chequear("y el fondo de atrás es más oscuro",

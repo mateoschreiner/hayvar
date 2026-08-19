@@ -1204,6 +1204,14 @@ chequear("la última ronda deja lugar para las llaves que la alimentan",
 # blanco es preferible; el blanco dice la verdad y la prolijidad, no.
 chequear("y no se reparte pareja ignorando de dónde viene cada cruce",
          "const H=Math.max(...cupos)*paso;" not in HTML)
+# Las dos llaves que se juntan en un mismo cruce tienen que quedar pegadas.
+# En la Previa 1 de la Champions quedaban separadas por una tercera que va a
+# otro lado, y las tres lineas se cruzaban.
+chequear("las llaves que van al mismo cruce quedan juntas",
+         "const donde=new Map();" in HTML
+         and "pa[0]-pb[0]||pa[1]-pb[1]||a-b" in HTML)
+chequear("y la cuenta de 'uno a uno' sólo se usa donde el cuadro parte al medio",
+         "if(escalera) for(let c=slots.length-2;c>=0;c--){" in HTML)
 chequear("cuando no hay tabla se dice por qué en vez de 'Sin datos'",
          "const sinTabla=()=>" in HTML and "d.zonasNota" in HTML)
 chequear("y no se pone 'Por definir' donde no va a haber cruce",

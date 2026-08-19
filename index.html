@@ -2789,7 +2789,7 @@ const App=(()=>{
        así la caja de la derecha se lee en el mismo orden que las dos de la
        izquierda. */
     const nomEq=e=>e&&e.team?sinTildes(e.team.canon||e.team.name):'';
-    for(let c=slots.length-2;c>=0;c--){
+    if(escalera) for(let c=slots.length-2;c>=0;c--){
       const hijos=slots[c+1];
       if(!hijos.some(Boolean)) continue;
       const unoAuno=cupos[c]===cupos[c+1];
@@ -2813,6 +2813,38 @@ const App=(()=>{
       slots[c].forEach((k,i)=>{
         if(k&&!tomados.has(i)){ const h=fila.indexOf(null); if(h>=0) fila[h]=k; } });
       slots[c]=fila;
+    }
+    /* Cuando el cuadro NO parte al medio, el lugar de cada llave no se puede
+       calcular con una cuenta: se ordena por a dónde va.
+
+       Las dos llaves que se juntan en un mismo cruce tienen que quedar
+       pegadas, y en el orden en que ese cruce las muestra. En la Previa 1 de
+       la Champions no pasaba: Kauno Zalgiris y KÍ Klaksvík se juntan en la
+       Previa 2 y quedaban separadas por ARM, que va a otro lado, así que las
+       tres líneas se cruzaban. Y no es que estuvieran mal colocadas: la
+       ronda tiene catorce llaves y la siguiente también, así que la cuenta
+       de "uno a uno" daba un lugar por llave y a la segunda de cada par no
+       le quedaba ninguno. */
+    else for(let c=slots.length-2;c>=0;c--){
+      const hijos=slots[c+1];
+      if(!hijos.some(Boolean)) continue;
+      const donde=new Map();
+      slots[c].forEach((k,i)=>{
+        if(!k) return;
+        const suyos=k.equipos.map(nomEq).filter(Boolean);
+        for(let j=0;j<hijos.length;j++){
+          const h=hijos[j];
+          if(!h) continue;
+          const n=h.equipos.findIndex(e=>suyos.includes(nomEq(e)));
+          if(n>=0){ donde.set(i, [j, n]); return; }
+        }
+      });
+      // la que no va a ningún lado se queda en la proporción que le toca
+      const suelta=i=>[i*cupos[c+1]/Math.max(1,cupos[c]), 0];
+      slots[c]=slots[c].map((k,i)=>i).sort((a,b)=>{
+        const pa=donde.get(a)||suelta(a), pb=donde.get(b)||suelta(b);
+        return pa[0]-pb[0]||pa[1]-pb[1]||a-b;
+      }).map(i=>slots[c][i]);
     }
     if(escalera) for(let c=0;c<slots.length-1;c++){
       const unoAuno=cupos[c]===cupos[c+1];

@@ -1193,12 +1193,12 @@ chequear("el cuadro cuelga de la última ronda, no de la más ancha",
          "const base=cupos.length-1;" in HTML)
 chequear("y dos cruces que caen a la misma altura se separan",
          "fila[i]<piso+paso" in HTML)
-# Cada cruce del repechaje se alimenta de hasta dos llaves de la ronda
-# anterior. Con los cruces pegados, la de abajo de uno cae donde la de arriba
-# del siguiente: quedaban intercaladas y las lineas se cruzaban de a pares.
-chequear("la última ronda deja lugar para las llaves que la alimentan",
-         "const escala=Math.max(1,Math.ceil(Math.max(...cupos)/cupos[base]));"
-         in HTML)
+# Si los cruces de la derecha estan mas juntos que el lugar que necesitan sus
+# llaves, la de abajo de un grupo cae encima de la de arriba del siguiente y
+# el corrimiento se arrastra hacia abajo de a un renglon por grupo. Eso
+# descolocaba la Previa 1 y 2 de la Champions.
+chequear("si las llaves no entran, se estira el cuadro en vez de amontonarlo",
+         "const factor=cuantas*paso/juntos;" in HTML)
 # Repartir cada ronda pareja a lo alto queda prolijo y equivocado: los cruces
 # terminan lejos de las llaves que los alimentan. Que queden espacios en
 # blanco es preferible; el blanco dice la verdad y la prolijidad, no.

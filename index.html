@@ -2866,38 +2866,63 @@ const App=(()=>{
         }));
       }
     }else{
-      /* Un cuadro que no parte al medio se reparte parejo.
+      /* Un cuadro que no parte al medio se acomoda al revés: manda la ÚLTIMA
+         ronda y las demás se cuelgan de ella siguiendo a los equipos. La
+         Fase Previa 1 de la Libertadores queda a la altura del cruce de la
+         Fase Previa 2 donde juega el que ganó, y los trece que entran recién
+         en la 2 no dejan ningún hueco atrás: simplemente no tienen nada a la
+         izquierda.
 
-         Cada ronda ocupa todo el alto y sus cruces van a distancia igual
-         entre sí. El ORDEN de cada ronda lo manda la siguiente: una llave va
-         arriba de otra si el cruce donde sigue va arriba. Se empieza por la
-         última, que es a donde converge todo, y se va hacia atrás.
+         Anclar en la ronda más ancha deja el lado derecho a la deriva, y el
+         cuadro se lee hacia allá. Un cuadro converge a la derecha, así que
+         de la derecha tiene que colgar.
 
-         Antes las alturas se propagaban colgando cada llave de su cruce.
-         Eso se ve bien una ronda antes del final y se rompe hacia la
-         izquierda: cada paso reparte el lugar entre dos y deja hueco, así
-         que la Previa 1 de la Champions terminaba con agujeros de media
-         pantalla y las llaves apelotonadas en el medio. Repartir parejo da
-         lo mismo del lado derecho y no deja huecos del izquierdo. */
-      const H=Math.max(...cupos)*paso;
-      const orden=cupos.map(n=>Array.from({length:n},(_,i)=>i));
-      for(let c=cupos.length-2;c>=0;c--){
-        const lugar={};
-        orden[c+1].forEach((i,pos)=>{ lugar[i]=pos; });
-        // la llave que no lleva a ningún lado —el que quedó eliminado— se
-        // queda en la proporción que le toca según su número
-        const donde=i=>{
-          const j=hijoDe[c][i];
-          return (j!=null&&lugar[j]!=null) ? lugar[j]
-                 : i*cupos[c+1]/Math.max(1,cupos[c]);
-        };
-        orden[c]=orden[c].slice().sort((a,b)=>donde(a)-donde(b)||a-b);
+         Y repartir cada ronda pareja a lo alto, ignorando de dónde viene
+         cada cruce, es peor todavía: queda prolijo y equivocado, con los
+         cruces lejos de las llaves que los alimentan. Que queden espacios
+         en blanco es preferible a eso: el blanco dice la verdad —ahí no
+         viene nadie— y la prolijidad, no. */
+      ys=cupos.map(n=>new Array(n).fill(null));
+      const base=cupos.length-1;
+      /* La última ronda va más separada de lo que necesita ella sola, para
+         que atrás entren los suyos. Cada cruce del repechaje se alimenta de
+         hasta dos llaves de la Previa 3, y si los cruces van pegados, la de
+         abajo de uno cae justo donde la de arriba del siguiente: quedaban
+         intercaladas y las líneas se cruzaban de a pares. Se le da el lugar
+         que hace falta según cuánto más ancha es la ronda más ancha. */
+      const escala=Math.max(1,Math.ceil(Math.max(...cupos)/cupos[base]));
+      for(let i=0;i<cupos[base];i++) ys[base][i]=i*paso*escala;
+
+      /* Dos cosas que hay que arreglar en cada columna.
+
+         Una: los cruces que no vienen de ninguna llave anterior —los equipos
+         que entran recién en esa ronda— tienen que quedar entre sus vecinos
+         y no amontonados al final.
+
+         Y dos: dos cruces pueden caer a la misma altura. Pasa cuando uno se
+         alimenta de dos llaves y el de al lado de una sola. Ahí las cajas se
+         dibujan una encima de la otra y se leen tres nombres en un cruce de
+         dos. Se separan respetando el orden. */
+      const acomodarSueltos=fila=>{
+        let ultimo=null;
+        for(let i=0;i<fila.length;i++){
+          if(fila[i]==null) fila[i]=(ultimo==null?0:ultimo+paso);
+          ultimo=fila[i];
+        }
+        const orden=fila.map((y,i)=>i).sort((a,b)=>fila[a]-fila[b]||a-b);
+        let piso=-Infinity;
+        orden.forEach(i=>{ if(fila[i]<piso+paso) fila[i]=piso+paso; piso=fila[i]; });
+      };
+      // hacia atrás: cada llave va a la altura del cruce donde sigue
+      for(let c=base-1;c>=0;c--){
+        const van={};
+        hijoDe[c].forEach((j,i)=>{ if(j!=null) (van[j]=van[j]||[]).push(i); });
+        for(const j in van){
+          const cuales=van[j], medio=ys[c+1][j];
+          cuales.forEach((i,n)=>{ ys[c][i]=medio+(n-(cuales.length-1)/2)*paso; });
+        }
+        acomodarSueltos(ys[c]);
       }
-      ys=cupos.map((n,c)=>{
-        const sep=H/n, fila=new Array(n);
-        orden[c].forEach((i,pos)=>{ fila[i]=(pos+0.5)*sep-ALTO/2; });
-        return fila;
-      });
       // que nada quede arriba del borde
       const arriba=Math.min(...ys.map(f=>Math.min(...f)));
       if(arriba<0) ys=ys.map(f=>f.map(v=>v-arriba));

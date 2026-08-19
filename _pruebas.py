@@ -1189,14 +1189,21 @@ chequear("y encadena por equipo cuando no es una escalera",
          "const hijoDe=" in HTML and "hijoDe[c][i]" in HTML)
 chequear("la línea sale hacia el cruce que dice el encadenado",
          "const destino=hijoDe[c][i];" in HTML)
-# Colgar cada llave de su cruce se ve bien una ronda antes del final y se
-# rompe hacia la izquierda: cada paso reparte el lugar entre dos y deja
-# hueco. La Previa 1 de la Champions terminaba con agujeros de media pantalla
-# y las llaves apelotonadas en el medio.
-chequear("cada ronda del cuadro se reparte pareja a lo alto",
-         "const sep=H/n" in HTML and "const H=Math.max(...cupos)*paso;" in HTML)
-chequear("y el orden de cada ronda lo manda la siguiente",
-         "orden[c]=orden[c].slice().sort((a,b)=>donde(a)-donde(b)||a-b);" in HTML)
+chequear("el cuadro cuelga de la última ronda, no de la más ancha",
+         "const base=cupos.length-1;" in HTML)
+chequear("y dos cruces que caen a la misma altura se separan",
+         "fila[i]<piso+paso" in HTML)
+# Cada cruce del repechaje se alimenta de hasta dos llaves de la ronda
+# anterior. Con los cruces pegados, la de abajo de uno cae donde la de arriba
+# del siguiente: quedaban intercaladas y las lineas se cruzaban de a pares.
+chequear("la última ronda deja lugar para las llaves que la alimentan",
+         "const escala=Math.max(1,Math.ceil(Math.max(...cupos)/cupos[base]));"
+         in HTML)
+# Repartir cada ronda pareja a lo alto queda prolijo y equivocado: los cruces
+# terminan lejos de las llaves que los alimentan. Que queden espacios en
+# blanco es preferible; el blanco dice la verdad y la prolijidad, no.
+chequear("y no se reparte pareja ignorando de dónde viene cada cruce",
+         "const H=Math.max(...cupos)*paso;" not in HTML)
 chequear("cuando no hay tabla se dice por qué en vez de 'Sin datos'",
          "const sinTabla=()=>" in HTML and "d.zonasNota" in HTML)
 chequear("y no se pone 'Por definir' donde no va a haber cruce",

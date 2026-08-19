@@ -3253,7 +3253,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · cuadro repartido parejo"
+VERSION_APP = "2026-08-19 · cuadro colgado de la última ronda"
 
 
 def reparar_recorridos():

@@ -1072,6 +1072,34 @@ server.fixture_de_liga = _fxg3
 server.fetch = _guardado
 
 
+print("\n── las dos copas de Conmebol ──")
+import inspect
+# La clasificacion previa de la Sudamericana se juega a partido unico: son
+# dieciseis partidos sueltos, no un cuadro. Dibujarlos como llaves
+# encadenadas es inventar un camino que no existe.
+chequear("la Sudamericana no arma cuadro de previa",
+         server.LIGAS["sud"].get("sin_cuadro_previa") is True)
+chequear("pero la Libertadores sí, que la juega a ida y vuelta",
+         not server.LIGAS["lib"].get("sin_cuadro_previa"))
+chequear("el cuadro de previa se saltea cuando la liga lo pide",
+         "if previas and not cfg.get(\"sin_cuadro_previa\"):"
+         in inspect.getsource(server.api_liga_games))
+# El tercero de cada grupo de la Libertadores no queda afuera: se va a los
+# pre octavos de la Sudamericana.
+_grupo = [{"name": "Grupo A", "num": 1,
+           "rows": [{"team": {"name": "E%d" % i}, "pos": i} for i in range(1, 5)]}]
+server.marcar_destinos(_grupo, server.LIGAS["lib"]["zonas_de"])
+chequear("en los grupos de la Libertadores se marca al tercero",
+         [r["destino"] for r in _grupo[0]["rows"]]
+         == ["avanza", "avanza", "sudamericana", ""],
+         [r["destino"] for r in _grupo[0]["rows"]])
+chequear("y ese destino tiene color en la leyenda",
+         "sudamericana" in {x["clave"] for x in server.LEYENDA_DESTINOS})
+chequear("que la pantalla sabe pintar",
+         next(x["color"] for x in server.LEYENDA_DESTINOS
+              if x["clave"] == "sudamericana") in _COLORES)
+
+
 print("\n── pantalla ──")
 chequear("el escudo sólo lleva al club donde corresponde",
          "DONDE_SE_ENTRA='#modalBox, table, .carrera, .cl-plantel'" in HTML)

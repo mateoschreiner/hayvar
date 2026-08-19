@@ -600,8 +600,10 @@ LIGAS = {
         "nombre": "Copa Libertadores", "torneo": "Edición 2026",
         "base": None, "pages": {}, "propia": False, "sc": 102,
         "pais": "Sudamérica", "anual": False, "copa": True,
-        # fase de grupos: pasan los dos primeros de cada zona
-        "zonas_de": {"avanza": (1, 2)},
+        # Fase de grupos: pasan los dos primeros de cada zona a octavos, y
+        # el tercero no queda afuera del todo: se va a los pre octavos de la
+        # Sudamericana, contra los que salieron segundos allá.
+        "zonas_de": {"avanza": (1, 2), "sudamericana": (3, 3)},
         "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
     },
     "sud": {
@@ -616,6 +618,11 @@ LIGAS = {
         # en el fixture con el nombre que le pone CONMEBOL y se traduce a
         # "Pre octavos" al mostrarla.
         "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
+        # Su clasificación previa se juega a partido único, no a ida y
+        # vuelta, así que no forma un cuadro: son dieciséis partidos
+        # sueltos y dibujarlos como llaves encadenadas es inventar un
+        # camino que no existe. Van en el calendario, como cualquier fecha.
+        "sin_cuadro_previa": True,
     },
     "ca": {
         # Eliminación directa de punta a punta, sin tabla de posiciones.
@@ -2065,6 +2072,8 @@ LEYENDA_DESTINOS = [
      "texto": "Copa Argentina 2027 y segunda etapa de la Reválida"},
     {"clave": "revalida2", "color": "#f0b429",
      "texto": "Pasa a la segunda etapa de la Reválida"},
+    {"clave": "sudamericana", "color": "#f0b429",
+     "texto": "Pasa a los pre octavos de la Sudamericana"},
 ]
 
 
@@ -3215,7 +3224,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · cuadro de la previa y clubes homónimos"
+VERSION_APP = "2026-08-19 · Sudamericana sin cuadro de previa y terceros de Libertadores"
 
 
 def reparar_recorridos():
@@ -4291,7 +4300,7 @@ def api_liga_games(q):
         previas = [e for e in etapas if rango_etapa(e) < 1]
         del_torneo = [e for e in etapas if rango_etapa(e) >= 1]
         llaves = armar_llaves(games, del_torneo, lid)
-        if previas:
+        if previas and not cfg.get("sin_cuadro_previa"):
             suyos = [g for g in games if (g.get("etapa") or g.get("stage")) in previas]
             llaves_previa = armar_llaves(suyos, previas, lid)
 

@@ -2557,22 +2557,19 @@ const App=(()=>{
        pestaña por fase en vez de una sola con todo mezclado. */
     S.fasesZona=agruparZonas(d.zonas);
     const juntos=d.zonas.length>2;
-    // El cuadro va primero: en una copa es lo que uno quiere ver, y en la
-    // Champions arranca meses antes que la tabla, que hasta septiembre
-    // está vacía.
-    const tabs=[...(hayCuadro?[['cuadro','Cuadro']]:[]),
-                ...(hayPrevia?[['previa','Previa']]:[]),
+    // Las pestañas siguen el orden del torneo: primero la clasificación
+    // previa, después los grupos y al final el cuadro, que es donde termina.
+    const tabs=[...(hayPrevia?[['previa','Previa']]:[]),
                 ...(S.fasesZona.length>1
                     ? S.fasesZona.map((f,i)=>['f'+i,f.nombre])
                     : juntos?[['zonas','Grupos']]
                             :d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)])),
+                ...(hayCuadro?[['cuadro','Cuadro']]:[]),
                 ...(d.conAnual===false?[]:[['anual','Anual']]),
                 ['gol','Goles']];
-    // En una copa, si estás parado en una etapa eliminatoria lo que querés
-    // ver al costado es el cuadro, no la tabla de grupos.
-    const etapaActual=S.etapas&&S.etapas[S.round-1];
-    if(hayCuadro&&etapaActual&&!/grupo/i.test(etapaActual)) S.tab='cuadro';
-    if(!tabs.find(t=>t[0]===S.tab)) S.tab=faseQueSeJuega(tabs);
+    // Pero una copa se abre en el cuadro, que es lo que uno va a mirar.
+    if(!tabs.find(t=>t[0]===S.tab))
+      S.tab=hayCuadro?'cuadro':faseQueSeJuega(tabs);
     $('#tabs').innerHTML=tabs.map(([id,nm])=>
       `<button data-t="${id}" class="${S.tab===id?'on':''}" onclick="App.tab('${id}')">${esc(nm)}</button>`).join('');
     drawOtra();
@@ -2724,13 +2721,30 @@ const App=(()=>{
       [/16avos|dieciseis|diecis[eé]is/i,16],[/octavos|round of 16/i,8],
       [/cuartos|quarter/i,4],[/semi/i,2],[/final/i,1]];
     const porNombre=n=>{ for(const [re,t] of TAMANO) if(re.test(n||'')) return t; return 0; };
-    const cupos=bloques.map(b=>porNombre(b.etapa));
-    // lo que no se reconozca se completa mirando a los vecinos
+    /* Y si el nombre no lo dice, lo dicen las llaves que hay.
+
+       Antes se deducía dividiendo por dos la ronda siguiente. Eso vale para
+       un cuadro que parte al medio, pero la clasificación previa de la
+       Libertadores no parte nada: tres llaves en la Fase Previa 1, ocho en
+       la 2 —los tres que ganan se suman a trece equipos que entran recién
+       ahí— y cuatro en la 3. Dividiendo salían 4, 2 y 1, y el cuadro
+       quedaba inventado de punta a punta, con un cruce "Por definir" que no
+       existe y las líneas cruzando a cualquier lado. */
+    const porDatos=b=>b.llaves.length
+      ? Math.max(b.llaves.length, ...b.llaves.map(k=>k.slot||0)) : 0;
+    const cupos=bloques.map(b=>porNombre(b.etapa)||porDatos(b));
+    // y lo que siga sin saberse, mirando a los vecinos
     for(let c=bloques.length-2;c>=0;c--)
       if(!cupos[c]) cupos[c]=Math.max(1,(cupos[c+1]||1)*2);
     for(let c=1;c<bloques.length;c++)
       if(!cupos[c]) cupos[c]=Math.max(1,Math.ceil(cupos[c-1]/2));
-    if(!cupos[0]) cupos[0]=Math.max(1,bloques[0].llaves.length);
+    if(!cupos[0]) cupos[0]=1;
+    /* ¿Es un cuadro que parte al medio? Cada ronda tiene la mitad de la
+       anterior, o las mismas —el pre octavos de la Sudamericana—. Cuando
+       no, hay que encadenar siguiendo a los equipos, que es más lento pero
+       es lo único cierto. */
+    const escalera=cupos.every((n,c)=>
+      c===0||n===cupos[c-1]||n===Math.ceil(cupos[c-1]/2));
 
     /* Los lugares de cada ronda. Si una serie ya se definió y el fixture de
        la ronda siguiente todavía no salió, igual se anota al que pasó: es lo
@@ -2770,7 +2784,7 @@ const App=(()=>{
       sobran.forEach(k=>{ const h=fila.indexOf(null); if(h>=0) fila[h]=k; });
       slots[c]=fila;
     }
-    for(let c=0;c<slots.length-1;c++){
+    if(escalera) for(let c=0;c<slots.length-1;c++){
       const unoAuno=cupos[c]===cupos[c+1];
       for(let j=0;j<slots[c+1].length;j++){
         if(slots[c+1][j]) continue;
@@ -2781,23 +2795,87 @@ const App=(()=>{
           equipos:[{team:g1,goles:null,pasa:false},{team:g2,goles:null,pasa:false}]};
       }
     }
+
+    /* A qué cruce va cada llave. En un cuadro que parte al medio se sabe de
+       memoria —el 3 y el 4 van al 2— pero en la clasificación previa no: el
+       número de llave lo numera cada ronda por su cuenta y ahí el que gana
+       la Fase Previa 1 puede aparecer en cualquiera de los ocho cruces de
+       la 2. El único dato firme es el equipo, así que se lo busca. */
+    const hijoDe=slots.map(f=>new Array(f.length).fill(null));
+    for(let c=0;c<slots.length-1;c++){
+      const hijos=slots[c+1];
+      slots[c].forEach((k,i)=>{
+        // en la escalera el lugar alcanza, y vale también para los cruces
+        // que todavía no se sortearon: la línea igual tiene que salir
+        if(escalera){
+          hijoDe[c][i]=cupos[c]===cupos[c+1]?i:Math.floor(i/2);
+          return;
+        }
+        if(!k) return;
+        const g=ganador(k);
+        const busca=g?[sinTildes(g.canon||g.name)]
+                     :k.equipos.map(nomEq).filter(Boolean);
+        const j=hijos.findIndex(h=>h&&h.equipos.some(e=>busca.includes(nomEq(e))));
+        hijoDe[c][i]=j>=0?j:null;
+      });
+    }
     /* Las alturas se calculan columna por columna en vez de con una
        fórmula. La mayoría de las rondas tiene la mitad de llaves que la
        anterior, pero no todas: el pre octavos de la Sudamericana tiene las
        mismas ocho que los octavos, porque los ocho ganadores se suman a los
        ocho que ya estaban clasificados. Ahí la línea va derecho, uno a uno. */
-    const ys=[];
-    for(let c=0;c<bloques.length;c++){
-      if(c===0){ ys.push(Array.from({length:cupos[0]},(_,i)=>i*paso)); continue; }
-      const prev=ys[c-1];
-      if(cupos[c]===cupos[c-1]) ys.push(prev.slice());
-      else ys.push(Array.from({length:cupos[c]},(_,i)=>{
-        const a=prev[Math.min(2*i,prev.length-1)], b=prev[Math.min(2*i+1,prev.length-1)];
-        return (a+b)/2;
-      }));
+    let ys=[];
+    if(escalera){
+      for(let c=0;c<bloques.length;c++){
+        if(c===0){ ys.push(Array.from({length:cupos[0]},(_,i)=>i*paso)); continue; }
+        const prev=ys[c-1];
+        if(cupos[c]===cupos[c-1]) ys.push(prev.slice());
+        else ys.push(Array.from({length:cupos[c]},(_,i)=>{
+          const a=prev[Math.min(2*i,prev.length-1)], b=prev[Math.min(2*i+1,prev.length-1)];
+          return (a+b)/2;
+        }));
+      }
+    }else{
+      /* Un cuadro que no parte al medio se acomoda al revés: manda la ronda
+         más ancha —la que tiene más cruces— y las demás se cuelgan de ella
+         siguiendo a los equipos. La Fase Previa 1 de la Libertadores queda
+         a la altura del cruce de la Fase Previa 2 donde juega el que ganó,
+         y los trece que entran recién en la 2 no dejan ningún hueco atrás:
+         simplemente no tienen nada a la izquierda. */
+      ys=cupos.map(n=>new Array(n).fill(null));
+      const base=cupos.indexOf(Math.max(...cupos));
+      for(let i=0;i<cupos[base];i++) ys[base][i]=i*paso;
+
+      const acomodarSueltos=fila=>{
+        const puestos=fila.filter(v=>v!=null);
+        let libre=puestos.length?Math.max(...puestos):-paso;
+        for(let i=0;i<fila.length;i++) if(fila[i]==null) fila[i]=(libre+=paso);
+      };
+      // hacia adelante: cada cruce se centra entre los que lo alimentan
+      for(let c=base+1;c<cupos.length;c++){
+        const vienen={};
+        hijoDe[c-1].forEach((j,i)=>{ if(j!=null&&ys[c-1][i]!=null)
+          (vienen[j]=vienen[j]||[]).push(ys[c-1][i]); });
+        for(const j in vienen)
+          ys[c][j]=vienen[j].reduce((a,b)=>a+b,0)/vienen[j].length;
+        acomodarSueltos(ys[c]);
+      }
+      // hacia atrás: cada llave va a la altura del cruce donde sigue
+      for(let c=base-1;c>=0;c--){
+        const van={};
+        hijoDe[c].forEach((j,i)=>{ if(j!=null) (van[j]=van[j]||[]).push(i); });
+        for(const j in van){
+          const cuales=van[j], medio=ys[c+1][j];
+          cuales.forEach((i,n)=>{ ys[c][i]=medio+(n-(cuales.length-1)/2)*paso; });
+        }
+        acomodarSueltos(ys[c]);
+      }
+      // que nada quede arriba del borde
+      const arriba=Math.min(...ys.map(f=>Math.min(...f)));
+      if(arriba<0) ys=ys.map(f=>f.map(v=>v-arriba));
     }
     const ancho=bloques.length*(AN+SEP)-SEP;
-    const alto=Math.max(...ys.map(f=>f[f.length-1]))+ALTO;
+    const alto=Math.max(...ys.map(f=>Math.max(...f)))+ALTO;
     const x=c=>c*(AN+SEP);
     const y=(c,i)=>ys[c][i];
     const centro=(c,i)=>ys[c][i]+ALTO/2;
@@ -2813,7 +2891,13 @@ const App=(()=>{
           +`--fila:${(ALTO-2)/2}px;--fs:${nivel===2?9.5:nivel===1?10.5:11.5}px`;
         const porDefinir='<div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div>';
         if(!k){
-          cajas+=`<div class="brk vacia" style="${pos}">${porDefinir}${porDefinir}</div>`;
+          /* "Por definir" sólo donde de verdad va a haber un cruce. En un
+             cuadro que parte al medio, un lugar vacío es una llave que
+             todavía no se sorteó y decirlo está bien. En la clasificación
+             previa no: los equipos que entran más adelante no dejan atrás
+             ningún cruce pendiente, y ahí el lugar queda en blanco. */
+          if(escalera)
+            cajas+=`<div class="brk vacia" style="${pos}">${porDefinir}${porDefinir}</div>`;
         }else{
           const [a,v]=k.equipos;
           // apretado, el nombre completo no entra: va la sigla del club
@@ -2840,8 +2924,8 @@ const App=(()=>{
         }
         // la línea hacia el cruce siguiente: sale, dobla y entra
         if(c<bloques.length-1){
-          const destino=(cupos[c]===cupos[c+1])?i:Math.floor(i/2);
-          if(destino<cupos[c+1]){
+          const destino=hijoDe[c][i];
+          if(destino!=null&&destino<cupos[c+1]){
             const yi=centro(c,i)+TOPE, yh=centro(c+1,destino)+TOPE;
             const xm=x(c)+AN+SEP/2;
             lineas+=`<path d="M${x(c)+AN} ${yi}H${xm}V${yh}H${x(c+1)}" fill="none"

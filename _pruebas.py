@@ -1039,6 +1039,25 @@ import inspect
 chequear("el precalentado recorre todas las ligas",
          "HOME_LIGAS" in inspect.getsource(server.precalentar))
 
+# El cuadro de la clasificacion previa no parte al medio: tres llaves, despues
+# ocho, despues cuatro. Deducir el tamano dividiendo daba 4, 2 y 1.
+chequear("el cuadro toma el tamaño de las llaves cuando el nombre no lo dice",
+         "porNombre(b.etapa)||porDatos(b)" in HTML)
+chequear("y encadena por equipo cuando no es una escalera",
+         "const hijoDe=" in HTML and "hijoDe[c][i]" in HTML)
+chequear("la línea sale hacia el cruce que dice el encadenado",
+         "const destino=hijoDe[c][i];" in HTML)
+chequear("y no se pone 'Por definir' donde no va a haber cruce",
+         re.search(r"if\(escalera\)\s*\n\s*cajas\+=`<div class=\"brk vacia\"", HTML)
+         is not None)
+# En una copa lo que uno abre es el cuadro, pero el orden de las pestañas
+# sigue el del torneo: previa, grupos y recién ahí el cuadro.
+chequear("las pestañas van previa, grupos y cuadro",
+         HTML.index("hayPrevia?[['previa','Previa']]")
+         < HTML.index("hayCuadro?[['cuadro','Cuadro']]:[]),\n                ...(d.conAnual"))
+chequear("pero una copa se abre en el cuadro",
+         "S.tab=hayCuadro?'cuadro':faseQueSeJuega(tabs);" in HTML)
+
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

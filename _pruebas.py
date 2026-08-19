@@ -722,8 +722,14 @@ def _zona(nombre, n):
     return {"name": nombre, "num": 1,
             "rows": [{"team": {"name": "E%d" % i}, "pos": i}
                      for i in range(1, n + 1)]}
+#
+# Ojo con el nombre: 365scores llama "Segunda Fase" a la de Campeonato, así
+# que sus zonas quedan como "Segunda Fase - Zona A" y no dicen "Campeonato"
+# por ningún lado. Con la regla atada a esa palabra no se pintaba nada y
+# sólo aparecían los descensos, que son los únicos que sí dicen "Reválida".
 _zs = [_zona("Primera Fase - Zona 1", 10), _zona("Primera Fase - Zona 2", 9),
-       _zona("Segunda Fase - Campeonato A", 9),
+       _zona("Segunda Fase - Zona A", 9),
+       _zona("Segunda Fase - Campeonato B", 9),
        _zona("Segunda Fase - Reválida B", 10)]
 server.marcar_destinos(_zs, server.LIGAS["fa"]["zonas_de"])
 _dest = {z["name"]: [r["destino"] for r in z["rows"]] for z in _zs}
@@ -732,12 +738,17 @@ chequear("de una zona de diez pasan cinco",
 chequear("y de una de nueve, cuatro",
          _dest["Primera Fase - Zona 2"].count("campeonato") == 4)
 chequear("en el Campeonato el primero juega por el ascenso",
-         _dest["Segunda Fase - Campeonato A"][0] == "final")
+         _dest["Segunda Fase - Zona A"][0] == "final")
 chequear("y del segundo al quinto van a la Copa Argentina",
-         _dest["Segunda Fase - Campeonato A"].count("copaarg") == 4)
+         _dest["Segunda Fase - Zona A"].count("copaarg") == 4)
+chequear("da igual que la zona diga 'Campeonato' o no",
+         _dest["Segunda Fase - Campeonato B"] == _dest["Segunda Fase - Zona A"])
 chequear("en la Reválida no asciende nadie: descienden los dos ultimos",
          _dest["Segunda Fase - Reválida B"][-2:] == ["desciende", "desciende"]
          and "final" not in _dest["Segunda Fase - Reválida B"])
+chequear("ninguna tabla queda sin destinos",
+         all(any(r["destino"] for r in z["rows"]) for z in _zs),
+         [z["name"] for z in _zs if not any(r["destino"] for r in z["rows"])])
 
 # La Fase Campeonato y la Revalida se juegan a la vez: una sola pestana.
 def _bloque(fase, grupo, equipos):
@@ -771,6 +782,15 @@ _r = server.api_liga_games({"id": ["fa"]})
 _porFecha = {}
 for _g in _r["games"]:
     _porFecha[_g["round"]] = _porFecha.get(_g["round"], 0) + 1
+# La zona salia de en que tabla esta hoy cada equipo, y en la fase vieja los
+# equipos ya estan repartidos de otra manera: casi toda la Primera Fase
+# aparecia como "Interzonal", que es justo lo que no era.
+chequear("ningun partido de la fase vieja queda como interzonal",
+         not any(g["interzonal"] for g in _r["games"]),
+         sum(1 for g in _r["games"] if g["interzonal"]))
+chequear("y cada fase agrupa por sus propias zonas",
+         len({g["zone"] for g in _r["games"] if g["round"] <= 6}) == 2,
+         sorted({g["zone"] for g in _r["games"] if g["round"] <= 6}))
 chequear("ninguna fecha queda con el doble de partidos",
          set(_porFecha.values()) == {2}, _porFecha)
 chequear("las fechas de la Segunda Fase no pisan a las de la Primera",

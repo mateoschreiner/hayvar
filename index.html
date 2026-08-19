@@ -2572,7 +2572,7 @@ const App=(()=>{
     // ver al costado es el cuadro, no la tabla de grupos.
     const etapaActual=S.etapas&&S.etapas[S.round-1];
     if(hayCuadro&&etapaActual&&!/grupo/i.test(etapaActual)) S.tab='cuadro';
-    if(!tabs.find(t=>t[0]===S.tab)) S.tab=tabs[0][0];
+    if(!tabs.find(t=>t[0]===S.tab)) S.tab=faseQueSeJuega(tabs);
     $('#tabs').innerHTML=tabs.map(([id,nm])=>
       `<button data-t="${id}" class="${S.tab===id?'on':''}" onclick="App.tab('${id}')">${esc(nm)}</button>`).join('');
     drawOtra();
@@ -2892,6 +2892,19 @@ const App=(()=>{
   /* Las zonas llegan con el nombre de su fase adelante: "Segunda Fase -
      Zona A". Se parte en dos para poder agrupar por fase y mostrar sólo el
      nombre corto de la zona adentro de cada una. */
+  /* Con qué pestaña se abre un torneo por fases.
+
+     La primera de la lista es la Primera Fase, que en el Federal A terminó
+     en julio: entrar ahí es entrar a una tabla congelada. Se abre la fase
+     que se está jugando, que es la que tiene la fecha en curso. */
+  function faseQueSeJuega(tabs){
+    if(!S.fasesZona||S.fasesZona.length<2) return tabs[0][0];
+    const enJuego=(S.fasesLiga||[]).find(f=>f.rounds.includes(S.current));
+    let i=enJuego?S.fasesZona.findIndex(f=>f.nombre===enJuego.nombre):-1;
+    if(i<0) i=S.fasesZona.length-1;      // sin dato, la última: es la de ahora
+    return tabs.find(t=>t[0]==='f'+i)?'f'+i:tabs[0][0];
+  }
+
   function agruparZonas(zonas){
     const fases=[];
     (zonas||[]).forEach((z,i)=>{

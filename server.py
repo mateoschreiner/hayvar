@@ -475,10 +475,17 @@ LIGAS = {
         #     ascenso a la Primera Nacional 2027; del 1° al 5°, Copa
         #     Argentina 2027.
         #   · Reválida: los dos últimos de cada zona descienden (cuatro).
+        #
+        # El orden importa: gana la primera que coincida. La Reválida va
+        # antes que la Segunda Fase porque sus zonas se llaman "Segunda
+        # Fase - Reválida A" y si no caerían en la regla del Campeonato,
+        # que las daría por candidatas al ascenso.
         "zonas_de": [
+            {"cuando": "Reválida", "reglas": {"desciende": (-2, -1)}},
             {"cuando": "Primera Fase",
              "reglas": {"campeonato": lambda n: (1, 5 if n >= 10 else 4)}},
-            {"cuando": "Reválida", "reglas": {"desciende": (-2, -1)}},
+            {"cuando": "Segunda Fase",
+             "reglas": {"final": (1, 1), "copaarg": (2, 5)}},
             {"cuando": "Campeonato",
              "reglas": {"final": (1, 1), "copaarg": (2, 5)}},
         ],
@@ -2410,6 +2417,53 @@ def hay_desglose_de_goles(goleadores):
                for k in ("jugada", "cabeza", "tiroLibre", "pens"))
 
 
+def zonas_de_cada_fase(games):
+    """
+    La zona de cada partido, calculada adentro de su propia fase.
+
+    La zona salía de en qué tabla está hoy cada equipo, y eso funciona
+    mientras el torneo tenga una sola. En el Federal A no: los partidos de
+    la Primera Fase se leían contra las zonas de la Segunda, donde los
+    equipos ya están repartidos de otra manera, y casi todos terminaban
+    marcados como "Interzonal" —que es justo lo que no eran—.
+
+    Cada fase se agrupa con sus propios partidos: quiénes se enfrentaron
+    entre marzo y julio arma las zonas de la Primera Fase, y quiénes se
+    enfrentan ahora, las de la Segunda.
+
+    El nombre de la zona se conserva cuando se lo sabe. Si los partidos de
+    un grupo ya venían rotulados —"Reválida A", porque esa fase sí está en
+    las posiciones de hoy— se respeta ese nombre; los de la fase vieja, que
+    no lo tienen, quedan numerados.
+    """
+    porFase = {}
+    for g in games:
+        porFase.setdefault((g.get("stage") or "").strip(), []).append(g)
+    if len(porFase) < 2:
+        return
+
+    for suyos in porFase.values():
+        mapa = zonas_por_rivales(suyos)
+        if len(set(mapa.values())) < 2:
+            continue
+
+        # El rótulo de cada grupo: el que más se repita entre los partidos
+        # que ya lo traían. Si ninguno lo trae, el número.
+        rotulos = {}
+        for g in suyos:
+            z = mapa.get(g["home"].get("canon") or g["home"].get("name"))
+            if z is not None and g.get("zone"):
+                rotulos.setdefault(z, {}).setdefault(g["zone"], 0)
+                rotulos[z][g["zone"]] += 1
+        nombre = {z: max(c, key=c.get) for z, c in rotulos.items()}
+
+        for g in suyos:
+            za = mapa.get(g["home"].get("canon") or g["home"].get("name"))
+            zb = mapa.get(g["away"].get("canon") or g["away"].get("name"))
+            g["zone"] = nombre.get(za, str(za)) if za is not None else None
+            g["interzonal"] = bool(za and zb and za != zb)
+
+
 def tablas_por_resultados(juegos, etiqueta):
     """
     Arma las tablas de una fase con los partidos que tenemos guardados.
@@ -3016,7 +3070,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · Federal A: fases, zonas y tablas"
+VERSION_APP = "2026-08-19 · Federal A: zonas por fase y destinos"
 
 
 def reparar_recorridos():
@@ -3973,7 +4027,12 @@ def api_liga_games(q):
         # numeran las fechas desde el uno.
         if cfg.get("fases_por_calendario"):
             try:
-                marcar_fases_por_calendario(games, cfg["fases_por_calendario"])
+                if marcar_fases_por_calendario(games,
+                                               cfg["fases_por_calendario"]):
+                    # Y con las fases separadas, la zona de cada partido se
+                    # recalcula adentro de la suya: leída contra las zonas
+                    # de hoy, toda la Primera Fase salía "Interzonal".
+                    zonas_de_cada_fase(games)
             except Exception:
                 pass
 

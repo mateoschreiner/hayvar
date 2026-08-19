@@ -515,25 +515,22 @@ td.l{text-align:left;padding-left:8px}
 
 /* El fondo, más oscuro y apenas desenfocado: lo que importa es el pop-up y
    lo de atrás tiene que dejar de competir. */
+/* El pop-up no se pega con `sticky` sino que se arma en tres piezas: el
+   encabezado arriba, las pestañas abajo de él y el cuerpo en el medio, y el
+   único que se desplaza es el cuerpo.
+
+   Con `sticky` el encabezado se declaraba fijo y no lo era —el recorte del
+   pop-up lo convertía en su propio contenedor y la cancha de las formaciones
+   se le asomaba por arriba—. Así no hay nada que se pueda escapar: lo que
+   está afuera del cuerpo no se mueve porque no está en lo que se desplaza. */
 .ov{position:fixed;inset:0;background:rgba(6,9,18,.80);z-index:200;display:none;
-  overflow-y:auto;padding:26px 14px;backdrop-filter:blur(2px)}
-.ov.show{display:block}
-/* Ojo con el recorte acá. `overflow:hidden` convierte al pop-up en su propio
-   contenedor de scroll, y eso anula el `sticky` de adentro: el encabezado se
-   declaraba fijo y no se quedaba fijo.
-   `overflow:clip` recorta igual pero NO crea contenedor de scroll, así que
-   el encabezado se pega y nada se sale de la caja. Sin el recorte, la cancha
-   de las formaciones asomaba por arriba del pop-up al scrollear. */
-.modal{max-width:640px;margin:0 auto;background:var(--card);border-radius:12px;
-  overflow:clip;box-shadow:0 20px 50px rgba(0,0,0,.35)}
-/* El encabezado queda pegado arriba: bajando por una ficha larga, la cruz
-   se iba de la pantalla y había que volver hasta el principio para cerrar. */
-.mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0;z-index:3;
-  border-radius:12px 12px 0 0}
-/* Y las pestañas se pegan justo abajo. La altura del encabezado cambia según
-   el pop-up —el de un partido trae escudos y marcador, el de un jugador no—
-   así que se mide después de dibujar y viaja en --cab. */
-.modal>.tabs{position:sticky;top:var(--cab,0px);z-index:2;background:var(--card)}
+  padding:26px 14px;backdrop-filter:blur(2px)}
+.ov.show{display:flex;align-items:flex-start;justify-content:center}
+.modal{width:100%;max-width:640px;background:var(--card);border-radius:12px;
+  overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35);
+  display:flex;flex-direction:column;max-height:calc(100vh - 52px)}
+.mhead{background:var(--nav);color:#fff;padding:16px;flex:none}
+.modal>.tabs{flex:none;background:var(--card)}
 .mhead .top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:rgba(255,255,255,.65);margin-bottom:12px;gap:8px}
 /* La cruz y el volver, como botones de verdad y no como dos signos sueltos:
    redondos, con fondo propio, y el área para tocarlos bien grande. */
@@ -555,7 +552,10 @@ td.l{text-align:left;padding-left:8px}
 .mscore .sc .s.live{color:#5ee9a8;font-weight:700}
 .mscore .sc .pen-cab{font-size:12px;font-weight:800;color:#fff;text-align:center;
   margin-top:5px;letter-spacing:.2px}
-.mbody{padding:14px;min-height:150px}
+/* Lo único que se desplaza. `min-height:0` hace falta sí o sí: sin eso una
+   pieza flexible no se deja achicar más que su contenido y el desplazamiento
+   se lo lleva la página entera en vez del cuerpo del pop-up. */
+.mbody{padding:14px;min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain}
 .ev{display:grid;grid-template-columns:1fr 44px 1fr;gap:8px;padding:5px 0;font-size:12.5px;align-items:center}
 .ev .m{text-align:center;color:var(--txt2);font-size:11px;font-weight:700}
 .ev .r{text-align:right}
@@ -720,7 +720,10 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
   .tcell .tn{font-size:12px}
 
   .ov{padding:0}
-  .modal{max-width:100%;border-radius:0;min-height:100vh}
+  /* En el celular ocupa la pantalla entera. `dvh` y no `vh`: con `vh` la
+     barra del navegador que aparece y desaparece deja el pie del pop-up
+     debajo del borde. */
+  .modal{max-width:100%;border-radius:0;height:100dvh;max-height:100dvh}
   /* El encabezado fijo y los botones grandes van también acá: en el celular
      una ficha es más larga todavía y el pulgar necesita blanco donde caer. */
   .mhead{padding:14px 12px}
@@ -815,6 +818,8 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
     </div>
     <div class="hspacer"></div>
     <button class="hbtn" id="liveBtn" onclick="App.onlyLive()">● VIVO <span id="liveCnt">0</span></button>
+    <button class="hbtn" id="golBtn" onclick="App.sonido()"
+      title="Grito de gol: desactivado">🔕</button>
     <button class="hbtn" onclick="App.reload(true)" title="Actualizar">↻</button>
     <button class="hbtn" onclick="App.clubPicker()" title="Modo club">◑</button>
     <button class="hbtn" onclick="App.theme()" title="Modo noche">🌓</button>
@@ -889,6 +894,94 @@ async function get(path){
   if(j.error) throw new Error(j.error);
   return j;
 }
+
+/* ── el grito de gol ─────────────────────────────────────────────────────
+   Apagado de fábrica: una página que hace ruido sin avisar es una página
+   que se cierra. Se prende desde el botón de arriba y queda prendido.
+
+   El sonido se cambia sin tocar el código: si existe /sonidos/gol.mp3,
+   suena ése. Si no está, suena uno hecho acá mismo —la tribuna y una
+   sirena— para que la función ande igual desde el primer día. Para poner
+   otro alcanza con dejar el archivo ahí; el servidor lo sirve solo.
+
+   Ojo con el permiso del navegador: no deja sonar nada hasta que la persona
+   toca algo. Por eso el interruptor suena en el mismo clic que lo activa;
+   destrabarlo después, cuando llega el gol, ya no funciona. */
+const Gol=(()=>{
+  const CLAVE='hayvar.gol', ARCHIVO='/sonidos/gol.mp3';
+  let activo=false, ctx=null, pista=null, buscado=false;
+  try{ activo=localStorage.getItem(CLAVE)==='1'; }catch(e){}
+  const motor=()=>ctx||(ctx=new (window.AudioContext||window.webkitAudioContext)());
+
+  async function traer(){
+    if(buscado) return pista;
+    buscado=true;
+    try{
+      const r=await fetch(ARCHIVO,{cache:'force-cache'});
+      if(!r.ok) return null;                       // no hay archivo: el propio
+      pista=await motor().decodeAudioData(await r.arrayBuffer());
+    }catch(e){ pista=null; }
+    return pista;
+  }
+
+  // El de fábrica: el rugido de la tribuna y una sirena por arriba.
+  function propio(){
+    const a=motor(), t=a.currentTime, fin=t+1.5;
+    const n=a.createBuffer(1,Math.floor(a.sampleRate*1.5),a.sampleRate);
+    const d=n.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*.6;
+    const ruido=a.createBufferSource(); ruido.buffer=n;
+    const paso=a.createBiquadFilter(); paso.type='bandpass'; paso.Q.value=.8;
+    paso.frequency.setValueAtTime(400,t);
+    paso.frequency.exponentialRampToValueAtTime(1800,t+.5);
+    const vol=a.createGain();
+    vol.gain.setValueAtTime(.0001,t);
+    vol.gain.linearRampToValueAtTime(.5,t+.25);
+    vol.gain.exponentialRampToValueAtTime(.0001,fin);
+    ruido.connect(paso); paso.connect(vol); vol.connect(a.destination);
+    ruido.start(t); ruido.stop(fin);
+    [0,9].forEach(cent=>{
+      const o=a.createOscillator(); o.type='sawtooth'; o.detune.value=cent;
+      o.frequency.setValueAtTime(330,t);
+      o.frequency.exponentialRampToValueAtTime(660,t+.35);
+      o.frequency.exponentialRampToValueAtTime(494,t+1.1);
+      const g=a.createGain();
+      g.gain.setValueAtTime(.0001,t);
+      g.gain.linearRampToValueAtTime(.16,t+.08);
+      g.gain.exponentialRampToValueAtTime(.0001,t+1.3);
+      o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+1.35);
+    });
+  }
+
+  async function sonar(){
+    try{
+      const a=motor();
+      if(a.state==='suspended') await a.resume();
+      const p=await traer();
+      if(p){
+        const s=a.createBufferSource(); s.buffer=p;
+        const g=a.createGain(); g.gain.value=.85;
+        s.connect(g); g.connect(a.destination); s.start();
+      } else propio();
+    }catch(e){}
+  }
+
+  return {
+    get activo(){ return activo; },
+    async alternar(){
+      activo=!activo;
+      try{ localStorage.setItem(CLAVE,activo?'1':'0'); }catch(e){}
+      if(activo) await sonar();      // este clic es el que destraba el audio
+      return activo;
+    },
+    gritar(){ if(activo) sonar(); },
+    // Para escucharlo sin esperar un gol: Gol.probar() desde la consola.
+    // Suena aunque esté apagado, así se puede probar un archivo nuevo sin
+    // dejar el aviso prendido.
+    probar(){ return sonar(); }
+  };
+})();
+window.Gol=Gol;
 
 const App=(()=>{
   const S={round:null,rounds:[],games:[],tab:'A',onlyLive:false,liga:'home',emblemas:{},current:null,
@@ -1870,6 +1963,13 @@ const App=(()=>{
       const viejo=fila.querySelector('.m-extra');
       if(viejo) reemplazar(viejo,htmlExtras(m));
     });
+  }
+
+  function pintarSonido(){
+    const b=$('#golBtn'); if(!b) return;
+    b.textContent=Gol.activo?'🔔':'🔕';
+    b.classList.toggle('on',Gol.activo);
+    b.title='Grito de gol: '+(Gol.activo?'activado':'desactivado');
   }
 
   function drawMatches(){
@@ -3527,6 +3627,8 @@ const App=(()=>{
       S.scores[m.id]=`${m.gh}-${m.ga}`;
       if(actualizarFila(fila,m).gol) goles++;
     });
+    // el grito, una vez por vuelta aunque hayan convertido dos a la vez
+    if(goles) Gol.gritar();
 
     const cnt=$('#liveCnt');
     if(cnt) cnt.textContent=vivos;
@@ -3642,8 +3744,16 @@ const App=(()=>{
   })();
 
   const api={
+    async sonido(){
+      const on=await Gol.alternar();
+      pintarSonido();
+      status('ok', on
+        ? '<b>Grito de gol activado</b> · vas a escucharlo cuando haya un gol'
+        : 'Grito de gol desactivado');
+    },
     init(){
       document.documentElement.dataset.theme=localStorage.getItem('hayvar.theme')||'light';
+      pintarSonido();
       medir.arrancar();
       // si entraron por la dirección de un club (/belgrano), va directo ahí
       const ruta=location.pathname.replace(/^\/|\/$/g,'');
@@ -3837,19 +3947,6 @@ const App=(()=>{
       .setProperty('--enc',enc.offsetHeight+'px');
     medir();
     if(window.ResizeObserver) new ResizeObserver(medir).observe(enc);
-    window.addEventListener('resize',medir);
-  })();
-
-  (function medirCabecera(){
-    const caja=$('#modalBox');
-    if(!caja||!window.MutationObserver) return;
-    const medir=()=>{
-      const cab=caja.querySelector('.mhead');
-      caja.style.setProperty('--cab',(cab?cab.offsetHeight:0)+'px');
-    };
-    // sólo se mira el contenido: si mirara los atributos, escribir --cab
-    // volvería a disparar la medición y no terminaría nunca
-    new MutationObserver(medir).observe(caja,{childList:true,subtree:true});
     window.addEventListener('resize',medir);
   })();
 

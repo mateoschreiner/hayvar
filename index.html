@@ -909,6 +909,11 @@ async function get(path){
    destrabarlo después, cuando llega el gol, ya no funciona. */
 const Gol=(()=>{
   const CLAVE='hayvar.gol', ARCHIVO='/sonidos/gol.mp3';
+  /* Qué pedazo del archivo se escucha, en segundos. Un relato tiene la
+     entrada y la bajada, y lo que sirve para un aviso es el grito del medio.
+     Para cambiar el recorte se tocan estos dos números y nada más; si el
+     archivo es más corto que DESDE, se reproduce entero. */
+  const DESDE=4, HASTA=12, ESFUMA=.35;   // ESFUMA: el cierre, para no cortar seco
   let activo=false, ctx=null, pista=null, buscado=false;
   try{ activo=localStorage.getItem(CLAVE)==='1'; }catch(e){}
   const motor=()=>ctx||(ctx=new (window.AudioContext||window.webkitAudioContext)());
@@ -959,9 +964,17 @@ const Gol=(()=>{
       if(a.state==='suspended') await a.resume();
       const p=await traer();
       if(p){
+        // el recorte, atajando un archivo más corto de lo que se le pide
+        const desde=p.duration>DESDE?DESDE:0;
+        const dura=Math.max(.2,Math.min(HASTA,p.duration)-desde);
         const s=a.createBufferSource(); s.buffer=p;
-        const g=a.createGain(); g.gain.value=.85;
-        s.connect(g); g.connect(a.destination); s.start();
+        const g=a.createGain(), t=a.currentTime;
+        g.gain.setValueAtTime(.85,t);
+        // se baja el volumen sobre el final: cortar en seco se escucha feo
+        g.gain.setValueAtTime(.85,t+Math.max(0,dura-ESFUMA));
+        g.gain.linearRampToValueAtTime(.0001,t+dura);
+        s.connect(g); g.connect(a.destination);
+        s.start(0,desde,dura);
       } else propio();
     }catch(e){}
   }

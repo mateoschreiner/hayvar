@@ -1182,22 +1182,17 @@ chequear("el botón de volver aparece sólo si hay a dónde volver",
 chequear("ninguna cruz quedó suelta fuera del botón compartido",
          'class="x" onclick="App.closeModal()">×' not in HTML
          and HTML.count("${botonesModal()}") >= 5)
-chequear("el encabezado del pop-up queda pegado arriba",
-         ".mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0"
-         in HTML)
-# `overflow:hidden` en el pop-up recortaba las esquinas, si, pero tambien lo
-# convertia en su propio contenedor de scroll y eso anula el sticky de
-# adentro: el encabezado se declaraba fijo y no se quedaba fijo.
-chequear("y el pop-up no es su propio contenedor de scroll",
-         re.search(r"\.modal\{[^}]*overflow:hidden", HTML) is None)
-# Sin recorte, la cancha de las formaciones asomaba por arriba del pop-up al
-# scrollear. `clip` recorta sin crear contenedor de scroll, asi que el
-# encabezado se sigue pegando.
-chequear("pero igual recorta lo que se sale de la caja",
-         re.search(r"\.modal\{[^}]*overflow:clip", HTML) is not None)
-chequear("las pestañas se pegan abajo del encabezado, medido y no clavado",
-         ".modal>.tabs{position:sticky;top:var(--cab,0px)" in HTML
-         and "setProperty('--cab'" in HTML)
+# El encabezado no se pega con `sticky` sino que se arma en tres piezas y el
+# unico que se desplaza es el cuerpo. Con sticky se declaraba fijo y no lo
+# era: la cancha de las formaciones se le asomaba por arriba.
+chequear("el pop-up se arma en tres piezas y sólo se desplaza el cuerpo",
+         "display:flex;flex-direction:column;max-height:calc(100vh - 52px)" in HTML
+         and ".mhead{background:var(--nav);color:#fff;padding:16px;flex:none}" in HTML
+         and ".modal>.tabs{flex:none" in HTML)
+chequear("el cuerpo se deja achicar, si no el scroll se lo lleva la página",
+         ".mbody{padding:14px;min-height:0;flex:1;overflow-y:auto" in HTML)
+chequear("y ya no queda nada apoyado en sticky adentro del pop-up",
+         "position:sticky;top:var(--cab" not in HTML and "--cab" not in HTML)
 # La barra lateral arrancaba catorce pixeles mas abajo que las otras dos
 # columnas: el encabezado mide 56 sin la barrita de estado y 84 con ella, y
 # el tope estaba clavado en 84.
@@ -1211,6 +1206,37 @@ chequear("la cruz es un botón redondo y no un signo suelto",
          ".mhead .x,.mhead .volver{width:32px;height:32px" in HTML)
 chequear("y el fondo de atrás es más oscuro",
          "background:rgba(6,9,18,.80)" in HTML)
+
+
+print("\n── el grito de gol ──")
+# Apagado de fabrica, y el sonido se cambia dejando un archivo: nadie deberia
+# tener que tocar el codigo para cambiar un mp3.
+chequear("viene apagado de fábrica",
+         "localStorage.getItem(CLAVE)==='1'" in HTML
+         and "let activo=false" in HTML)
+chequear("y queda prendido entre visitas",
+         "localStorage.setItem(CLAVE,activo?'1':'0')" in HTML)
+# Un relato tiene entrada y bajada: lo que sirve para un aviso es el grito
+# del medio. Los dos numeros van juntos y arriba para poder cambiarlos.
+chequear("del archivo se reproduce sólo el pedazo que sirve",
+         "const DESDE=4, HASTA=12, ESFUMA=.35" in HTML
+         and "s.start(0,desde,dura)" in HTML)
+chequear("y un archivo más corto de lo pedido no rompe nada",
+         "const desde=p.duration>DESDE?DESDE:0;" in HTML
+         and "Math.max(.2,Math.min(HASTA,p.duration)-desde)" in HTML)
+chequear("el final se baja en vez de cortarse seco",
+         "linearRampToValueAtTime(.0001,t+dura)" in HTML)
+chequear("suena el archivo si está, y si no el propio",
+         "const CLAVE='hayvar.gol', ARCHIVO='/sonidos/gol.mp3'" in HTML
+         and "if(p){" in HTML and "} else propio();" in HTML)
+# Los navegadores no dejan sonar nada hasta que la persona toca algo, asi que
+# el interruptor tiene que sonar en el mismo clic que lo activa.
+chequear("el interruptor destraba el audio en el mismo clic",
+         "if(activo) await sonar();" in HTML)
+chequear("y el gol lo dispara el mismo contador que ya existía",
+         "if(goles) Gol.gritar();" in HTML)
+chequear("el botón está en la barra de arriba",
+         'id="golBtn" onclick="App.sonido()"' in HTML)
 
 
 print("\n── el celular ──")

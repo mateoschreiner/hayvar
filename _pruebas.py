@@ -1166,6 +1166,31 @@ chequear("que la pantalla sabe pintar",
               if x["clave"] == "sudamericana") in _COLORES)
 
 
+print("\n── el pop-up ──")
+# De un partido se entra a un jugador y de una serie a un partido: el unico
+# camino para retroceder un paso era cerrar todo y empezar de nuevo.
+chequear("hay una pila de por dónde se pasó",
+         "function navegar(t,...a){ S.pila.push({t,a});" in HTML
+         and "volverModal(){" in HTML)
+chequear("y sólo apilan los botones que toca el usuario",
+         "openMatch(id){ navegar('match',id); }" in HTML
+         and "serie(id){ navegar('serie',id); }" in HTML)
+chequear("cerrar el pop-up vacía la pila",
+         "closeModal(){ S.pila=[];" in HTML)
+chequear("el botón de volver aparece sólo si hay a dónde volver",
+         "S.pila.length>1" in HTML)
+chequear("ninguna cruz quedó suelta fuera del botón compartido",
+         'class="x" onclick="App.closeModal()">×' not in HTML
+         and HTML.count("${botonesModal()}") >= 5)
+chequear("el encabezado del pop-up queda pegado arriba",
+         ".mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0"
+         in HTML)
+chequear("la cruz es un botón redondo y no un signo suelto",
+         ".mhead .x,.mhead .volver{width:32px;height:32px" in HTML)
+chequear("y el fondo de atrás es más oscuro",
+         "background:rgba(6,9,18,.80)" in HTML)
+
+
 print("\n── el celular ──")
 # Todo esto va adentro del @media del celular: la pantalla grande no se toca.
 _MOVIL = HTML[HTML.index("@media(max-width:900px)"):

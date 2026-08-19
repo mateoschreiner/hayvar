@@ -125,7 +125,7 @@ header{background:var(--nav);color:#fff;position:sticky;top:0;z-index:100;box-sh
 #bar b{color:#fff}
 
 .shell{max-width:1380px;margin:14px auto;padding:0 16px;display:grid;
-  grid-template-columns:186px minmax(0,1fr) 372px;gap:14px;align-items:start}
+  grid-template-columns:212px minmax(0,1fr) 372px;gap:14px;align-items:start}
 .card{background:var(--card);border-radius:10px;box-shadow:var(--shadow);border:1px solid var(--line);overflow:hidden;margin-bottom:14px}
 /* En la portada, el panel derecho no es una caja sola sino varios globitos
    sueltos: la caja de afuera se vuelve transparente y cada bloque se dibuja
@@ -137,10 +137,11 @@ header{background:var(--nav);color:#fff;position:sticky;top:0;z-index:100;box-sh
 /* ── barra lateral de ligas ── */
 aside{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);
   overflow:hidden;position:sticky;top:84px}
-aside h4{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);
-  padding:11px 12px 5px;font-weight:700}
-aside a{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;color:var(--txt);
+aside h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);
+  padding:13px 14px 6px;font-weight:700}
+aside a{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:14px;color:var(--txt);
   border-left:3px solid transparent;cursor:pointer;white-space:nowrap}
+aside a .lgimg,aside a img{width:22px;height:22px}
 aside a .nm{overflow:hidden;text-overflow:ellipsis;min-width:0}
 aside a.off{padding-left:15px}
 aside a:hover{background:var(--bg)}
@@ -500,12 +501,27 @@ td.l{text-align:left;padding-left:8px}
 .form b.G{background:var(--live)}.form b.E{background:#98a1b8}.form b.P{background:var(--red)}
 .note{padding:8px 12px;font-size:10.5px;color:var(--txt2);border-top:1px solid var(--line);line-height:1.5}
 
-.ov{position:fixed;inset:0;background:rgba(8,12,24,.62);z-index:200;display:none;overflow-y:auto;padding:26px 14px}
+/* El fondo, más oscuro y apenas desenfocado: lo que importa es el pop-up y
+   lo de atrás tiene que dejar de competir. */
+.ov{position:fixed;inset:0;background:rgba(6,9,18,.80);z-index:200;display:none;
+  overflow-y:auto;padding:26px 14px;backdrop-filter:blur(2px)}
 .ov.show{display:block}
 .modal{max-width:640px;margin:0 auto;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35)}
-.mhead{background:var(--nav);color:#fff;padding:16px}
+/* El encabezado queda pegado arriba: bajando por una ficha larga, la cruz
+   se iba de la pantalla y había que volver hasta el principio para cerrar. */
+.mhead{background:var(--nav);color:#fff;padding:16px;position:sticky;top:0;z-index:3}
 .mhead .top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:rgba(255,255,255,.65);margin-bottom:12px;gap:8px}
-.mhead .x{font-size:20px;color:#fff;line-height:1}
+/* La cruz y el volver, como botones de verdad y no como dos signos sueltos:
+   redondos, con fondo propio, y el área para tocarlos bien grande. */
+.mhead .x,.mhead .volver{width:32px;height:32px;flex:none;display:grid;
+  place-items:center;border-radius:50%;border:0;cursor:pointer;color:#fff;
+  background:rgba(255,255,255,.14);line-height:1;font-family:inherit;
+  transition:background .15s ease,transform .15s ease}
+.mhead .x{font-size:19px}
+.mhead .volver{font-size:24px;margin-right:auto;padding-bottom:3px}
+.mhead .x:hover{background:#e5484d}
+.mhead .volver:hover{background:rgba(255,255,255,.28)}
+.mhead .x:active,.mhead .volver:active{transform:scale(.92)}
 .mscore{display:grid;grid-template-columns:1fr 110px 1fr;align-items:center;gap:8px}
 .mscore .t{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
 .mscore .t .crest{width:44px;height:44px;font-size:12px}
@@ -679,7 +695,10 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
 
   .ov{padding:0}
   .modal{max-width:100%;border-radius:0;min-height:100vh}
+  /* El encabezado fijo y los botones grandes van también acá: en el celular
+     una ficha es más larga todavía y el pulgar necesita blanco donde caer. */
   .mhead{padding:14px 12px}
+  .mhead .x,.mhead .volver{width:34px;height:34px}
   .mscore{grid-template-columns:1fr 88px 1fr}
   .mscore .sc .n{font-size:28px}
   .mscore .t .crest{width:38px!important;height:38px!important}
@@ -848,7 +867,7 @@ async function get(path){
 const App=(()=>{
   const S={round:null,rounds:[],games:[],tab:'A',onlyLive:false,liga:'home',emblemas:{},current:null,
            homeDate:new Date(),weekStart:null,home:null,club:null,
-           standings:null,annual:null,promedios:null,scorers:null,otra:null,
+           standings:null,annual:null,promedios:null,scorers:null,otra:null,pila:[],
            scores:{},detalles:{},detallesDe:null,detTimer:null,series:{},
            timer:null,vivoTimer:null,failures:0};
 
@@ -1585,7 +1604,7 @@ const App=(()=>{
     $('#ov').classList.add('show'); document.body.style.overflow='hidden';
     $('#modalBox').innerHTML=`<div class="mhead" style="padding:14px 16px">
       <div class="top" style="margin:0"><b style="font-size:15px;color:#fff">Modo club</b>
-      <button class="x" onclick="App.closeModal()">×</button></div></div>
+      ${botonesModal()}</div></div>
       <div class="mbody"><div class="skel"></div><div class="skel"></div></div>`;
     let d;
     try{ d=await get('/api/clubes'); }catch(e){ d={clubes:[]}; }
@@ -1593,7 +1612,7 @@ const App=(()=>{
       <div class="mhead" style="padding:14px 16px">
         <div class="top" style="margin:0">
           <b style="font-size:15px;color:#fff">Modo club</b>
-          <button class="x" onclick="App.closeModal()">×</button></div>
+          ${botonesModal()}</div>
         <div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:5px">
           Elegí un club y la página toma sus colores.</div>
       </div>
@@ -1980,7 +1999,7 @@ const App=(()=>{
     medir.evento('ver_jugador',{liga:S.liga, jugador:nombre, equipo:equipo||''});
     $('#ov').classList.add('show'); document.body.style.overflow='hidden';
     $('#modalBox').innerHTML=`<div class="mhead" style="padding:16px">
-      <div class="top"><span>Jugador</span><button class="x" onclick="App.closeModal()">×</button></div>
+      <div class="top"><span>Jugador</span>${botonesModal()}</div>
       <b style="font-size:17px">${esc(nombre)}</b></div>
       <div class="mbody"><div class="skel"></div><div class="skel"></div></div>`;
     let p;
@@ -1995,7 +2014,7 @@ const App=(()=>{
     $('#modalBox').innerHTML=`
       <div class="mhead" style="padding:16px">
         <div class="top"><span>Ficha de jugador</span>
-          <button class="x" onclick="App.closeModal()">×</button></div>
+          ${botonesModal()}</div>
         <div style="display:flex;align-items:center;gap:14px">
           ${p.foto?`<img src="${esc(p.foto)}" alt="" style="width:56px;height:56px;border-radius:50%;
              object-fit:cover;background:rgba(255,255,255,.12)" onerror="this.remove()">`:''}
@@ -2058,6 +2077,29 @@ const App=(()=>{
     else if(S.tab==='prom')  el.innerHTML=S.promedios?promTable():'';
     else if(S.tab==='gol')   el.innerHTML=S.scorers?scorersTable():'';
   }
+
+  /* ── el pop-up, y cómo se vuelve ──────────────────────────────────────
+     De un partido se entra a un jugador, de una serie a un partido, y de un
+     jugador a la lista de una estadística. Hasta acá el único camino para
+     retroceder un paso era cerrar todo y empezar de nuevo.
+
+     Se lleva una pila de por dónde se pasó. Sólo apilan los botones que el
+     usuario toca —los de `api`—; los redibujados internos, como cuando la
+     serie recibe los goles y se vuelve a pintar, usan la función directa y
+     no ensucian la pila. */
+  const PANTALLAS={match:(...a)=>openMatch(...a),
+                   player:(...a)=>openPlayer(...a),
+                   serie:(...a)=>drawSerie(...a)};
+  function pintarPila(){
+    const p=S.pila[S.pila.length-1];
+    return p ? PANTALLAS[p.t](...p.a) : undefined;
+  }
+  function navegar(t,...a){ S.pila.push({t,a}); return pintarPila(); }
+  // El botón de volver aparece sólo si hay a dónde volver.
+  const botonesModal=()=>`${S.pila.length>1
+      ? `<button class="volver" onclick="App.volverModal()"
+           title="Volver" aria-label="Volver">‹</button>` : ''}
+    <button class="x" onclick="App.closeModal()" title="Cerrar" aria-label="Cerrar">×</button>`;
 
   /* ── modal de partido ── */
   let mTab='res', mData=null, mBase=null;
@@ -2490,7 +2532,7 @@ const App=(()=>{
         <div class="top">
           <span>Clausura 2026 · Fecha ${m.round??''} · ${m.interzonal?'Interzonal':'Zona '+(m.zone??'')}</span>
           <span>${esc(fechaLarga)} · ${hhmm(m.start)} hs</span>
-          <button class="x" onclick="App.closeModal()">×</button>
+          ${botonesModal()}
         </div>
         <div class="mscore">
           <div class="t">${crest(m.home,46,true)}<span>${esc(m.home.canon||m.home.name)}</span></div>
@@ -2750,7 +2792,7 @@ const App=(()=>{
     $('#modalBox').innerHTML=`
       <div class="mhead">
         <div class="top"><span>La serie</span>
-          <button class="x" onclick="App.closeModal()">×</button></div>
+          ${botonesModal()}</div>
         <div class="mscore">
           <div class="t">${a.team?crest(a.team,46,true):''}<span>${nom(a)}</span></div>
           <div class="sc"><div class="n">${a.goles==null?'– –':a.goles+' - '+v.goles}</div>
@@ -3700,7 +3742,7 @@ const App=(()=>{
     grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
     // cambiar de fase en los torneos que la tienen (Federal A)
     fase(n){ S.fase=n; S.round=null; drawRounds(); pintarFecha(); },
-    serie(id){ drawSerie(id); },
+    serie(id){ navegar('serie',id); },
     girarKit(i){
       const p=document.getElementById('kit'+i); if(!p) return;
       const dado=p.dataset.girada==='1';
@@ -3731,8 +3773,12 @@ const App=(()=>{
       medir.evento('cambiar_fecha',{liga:S.liga, fecha:String(r)});
       if(S.liga!=='lpf'){ pintarFecha(); return; }
       loadRound().then(()=>{ const live=S.games.filter(m=>m.status==='LIVE').length; schedule(live>0); }); },
-    player: openPlayer,
-    jugador(nombre,atletaId){ openPlayer(nombre,'',atletaId); },
+    player(nombre,equipo,atletaId){ navegar('player',nombre,equipo,atletaId); },
+    jugador(nombre,atletaId){ navegar('player',nombre,'',atletaId); },
+    volverModal(){
+      if(S.pila.length>1){ S.pila.pop(); pintarPila(); }
+      else api.closeModal();
+    },
     tab(t){
       // el cuadro del torneo y el de la previa tienen distinta cantidad de
       // rondas: al cambiar de pestaña se arranca de nuevo en la que toca
@@ -3742,7 +3788,9 @@ const App=(()=>{
       S.liga==='lpf'?drawRight():drawOtra(); },
     onlyLive(){ S.onlyLive=!S.onlyLive; drawMatches(); },
     mtab(t){ mTab=t; drawModal(current(),false); },
-    openMatch, closeModal(){ $('#ov').classList.remove('show'); document.body.style.overflow=''; },
+    openMatch(id){ navegar('match',id); },
+    closeModal(){ S.pila=[]; $('#ov').classList.remove('show');
+      document.body.style.overflow=''; },
     reload(){ clearTimeout(S.timer); loadAll(false); },
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';
       document.documentElement.dataset.theme=t; try{localStorage.setItem('hayvar.theme',t);}catch(e){} }

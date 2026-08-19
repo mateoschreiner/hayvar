@@ -1193,6 +1193,12 @@ chequear("el cuadro cuelga de la última ronda, no de la más ancha",
          "const base=cupos.length-1;" in HTML)
 chequear("y dos cruces que caen a la misma altura se separan",
          "fila[i]<piso+paso" in HTML)
+# Cada cruce del repechaje se alimenta de hasta dos llaves de la ronda
+# anterior. Con los cruces pegados, la de abajo de uno cae donde la de arriba
+# del siguiente: quedaban intercaladas y las lineas se cruzaban de a pares.
+chequear("la última ronda deja lugar para las llaves que la alimentan",
+         "const escala=Math.max(1,Math.ceil(Math.max(...cupos)/cupos[base]));"
+         in HTML)
 chequear("cuando no hay tabla se dice por qué en vez de 'Sin datos'",
          "const sinTabla=()=>" in HTML and "d.zonasNota" in HTML)
 chequear("y no se pone 'Por definir' donde no va a haber cruce",

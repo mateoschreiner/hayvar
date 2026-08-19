@@ -2880,7 +2880,14 @@ const App=(()=>{
          a la derecha, así que de la derecha tiene que colgar. */
       ys=cupos.map(n=>new Array(n).fill(null));
       const base=cupos.length-1;
-      for(let i=0;i<cupos[base];i++) ys[base][i]=i*paso;
+      /* La última ronda va más separada de lo que necesita ella sola, para
+         que atrás entren los suyos. Cada cruce del repechaje se alimenta de
+         hasta dos llaves de la Previa 3, y si los cruces van pegados, la de
+         abajo de uno cae justo donde la de arriba del siguiente: quedaban
+         intercaladas y las líneas se cruzaban de a pares. Se le da el lugar
+         que hace falta según cuánto más ancha es la ronda más ancha. */
+      const escala=Math.max(1,Math.ceil(Math.max(...cupos)/cupos[base]));
+      for(let i=0;i<cupos[base];i++) ys[base][i]=i*paso*escala;
 
       /* Dos cosas que hay que arreglar en cada columna.
 

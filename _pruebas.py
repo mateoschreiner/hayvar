@@ -1166,6 +1166,31 @@ chequear("que la pantalla sabe pintar",
               if x["clave"] == "sudamericana") in _COLORES)
 
 
+print("\n── el celular ──")
+# Todo esto va adentro del @media del celular: la pantalla grande no se toca.
+_MOVIL = HTML[HTML.index("@media(max-width:900px)"):
+              HTML.index("@media(max-width:400px)")]
+# La altura de cada renglon del cuadro estaba clavada en 22px y la caja se
+# achica con el zoom: en 2x la caja mide 38 y los dos renglones 44, y en 3x
+# mide 30 contra los mismos 44. El nombre quedaba cortado por la mitad.
+chequear("el renglón del cuadro no tiene la altura clavada",
+         "height:22px" not in _MOVIL and "--fila" in HTML)
+chequear("y en el celular las cajas no se achican tanto con el zoom",
+         "{an:112,alto:44,hueco:8, sep:20,corto:true}" in HTML
+         and "{an:94, alto:40,hueco:6, sep:16,corto:true}" in HTML)
+chequear("la letra del cuadro nunca baja de 10.5 en el celular",
+         "(nivel===2?10.5:nivel===1?11:11.5)" in HTML)
+chequear("las dos formaciones van una al lado de la otra",
+         ".xi{grid-template-columns:1fr 1fr" in _MOVIL)
+chequear("y el porcentaje del gráfico se va contra el margen",
+         ".cmp-vals{display:grid;grid-template-columns:auto 1fr auto" in _MOVIL)
+_ESCRITORIO = HTML[:HTML.index("@media(max-width:1180px)")]
+chequear("la versión de escritorio queda como estaba",
+         ".xi{display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:12px}"
+         in _ESCRITORIO
+         and ".cmp-vals{display:flex;align-items:baseline;gap:9px" in _ESCRITORIO)
+
+
 print("\n── pantalla ──")
 chequear("el escudo sólo lleva al club donde corresponde",
          "DONDE_SE_ENTRA='#modalBox, table, .carrera, .cl-plantel'" in HTML)

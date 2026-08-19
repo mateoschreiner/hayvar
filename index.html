@@ -685,7 +685,14 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
   .mscore .t .crest{width:38px!important;height:38px!important}
   .mscore .t span{font-size:12px}
   .mbody{padding:12px}
-  .xi{grid-template-columns:1fr;gap:14px}
+  /* Las dos formaciones, una al lado de la otra. Una abajo de la otra
+     obliga a scrollear para comparar, que es justo lo que uno hace con una
+     formación. Entra con la letra un poco más chica. */
+  .xi{grid-template-columns:1fr 1fr;gap:9px;font-size:10.5px}
+  .xi h5{font-size:9.5px;margin-bottom:4px}
+  .xi li{padding:4px 0;gap:5px;align-items:flex-start}
+  .xi li b{width:15px;font-size:9.5px;padding-top:1px}
+  .xi li span{min-width:0;overflow-wrap:anywhere;line-height:1.25}
   .jug{width:38px}
   .jug .ape{font-size:8px;letter-spacing:-.2px}
   .jug .dorsal{width:20px;height:20px;line-height:20px;font-size:9.5px}
@@ -697,6 +704,13 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
   .radar-wrap{grid-template-columns:1fr;gap:2px}
   .radar-wrap.pes{grid-template-columns:1fr;gap:6px;padding:4px 12px 14px}
   .radar-wrap.pes .cmp{max-width:420px;margin:0 auto}
+  /* El número propio contra el margen izquierdo y el porcentaje contra el
+     derecho, con la media al medio. Amontonados a la izquierda había que
+     leerlos de a uno; separados se comparan de un vistazo. */
+  .cmp-vals{display:grid;grid-template-columns:auto 1fr auto;gap:10px;
+    align-items:baseline;margin-top:3px}
+  .cmp-vals span{text-align:center}
+  .cmp-vals em{margin-left:0;text-align:right}
   .radar{max-width:250px;margin:0 auto}
   .radar-nums{gap:7px}
   .rn{grid-template-columns:34px 1fr 34px;gap:6px}
@@ -715,8 +729,12 @@ footer{max-width:1240px;margin:0 auto;padding:18px 16px 34px;color:var(--txt2);f
   .cuadro-wrap{padding:10px 10px}
   .cuadro-barra{padding:8px 10px 0}
   .cuadro-barra .cbtn{width:34px;height:34px;font-size:17px}
-  .brk .eq{height:22px;font-size:11px;padding:0 6px;gap:5px}
-  .brk .eq b{font-size:11px}
+  /* Ojo con la altura de cada renglón: acá estaba clavada en 22px y la caja
+     se achica con el zoom. En 2× la caja mide 38 y los dos renglones 44, y
+     en 3× mide 30 contra los mismos 44: el nombre quedaba cortado por la
+     mitad. La altura la manda la caja (--fila), como en la versión de
+     escritorio; acá sólo se ajusta lo que no depende del zoom. */
+  .brk .eq{padding:0 6px;gap:5px}
   .brk .eq .crest{width:14px;height:14px}
   .brk-et{font-size:9.5px}
   .clubgrid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr))}
@@ -2795,9 +2813,17 @@ const App=(()=>{
       return Math.max(1,bloques[0].llaves.length);
     })();
     const nivel=Math.max(0,Math.min(2,Math.round(Math.log2(primeras/8))));
-    const M=[{an:chico?134:150,alto:48,hueco:chico?10:12,sep:chico?26:34,corto:false},
-             {an:chico?104:118,alto:38,hueco:8,sep:chico?20:26,corto:true},
-             {an:chico?78:88, alto:30,hueco:6,sep:chico?16:20,corto:true}][nivel];
+    /* En el celular las cajas no se achican tanto con el zoom. Achicarlas
+       igual que en la pantalla grande hacía que el nombre no entrara: el
+       cuadro se lee de costado y con el dedo, y el ancho sobra porque se
+       desplaza, así que lo que hay que cuidar es que la letra se lea. */
+    const M=(chico
+      ? [{an:134,alto:48,hueco:10,sep:26,corto:false},
+         {an:112,alto:44,hueco:8, sep:20,corto:true},
+         {an:94, alto:40,hueco:6, sep:16,corto:true}]
+      : [{an:150,alto:48,hueco:12,sep:34,corto:false},
+         {an:118,alto:38,hueco:8, sep:26,corto:true},
+         {an:88, alto:30,hueco:6, sep:20,corto:true}])[nivel];
     const AN=M.an, ALTO=M.alto, HUECO=M.hueco, SEP=M.sep, TOPE=22;
     const paso=ALTO+HUECO;
     /* Cuántos cruces tiene cada ronda. La primera la manda el cuadro real
@@ -3082,7 +3108,9 @@ const App=(()=>{
         // la altura de cada renglón sale de la caja: si no, al achicar el
         // cuadro los nombres quedaban cortados por la mitad
         const pos=`left:${x(c)}px;top:${top}px;width:${AN}px;height:${ALTO}px;`
-          +`--fila:${(ALTO-2)/2}px;--fs:${nivel===2?9.5:nivel===1?10.5:11.5}px`;
+          +`--fila:${(ALTO-2)/2}px;--fs:${chico
+              ? (nivel===2?10.5:nivel===1?11:11.5)
+              : (nivel===2?9.5:nivel===1?10.5:11.5)}px`;
         const porDefinir='<div class="eq"><span class="tn" style="color:var(--txt3)">Por definir</span></div>';
         if(!k){
           /* "Por definir" sólo donde de verdad va a haber un cruce. En un

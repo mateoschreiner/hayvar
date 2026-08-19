@@ -3277,7 +3277,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · fase de liga en Champions y Europa"
+VERSION_APP = "2026-08-19 · celular: cuadro, formaciones y gráfico"
 
 
 def reparar_recorridos():

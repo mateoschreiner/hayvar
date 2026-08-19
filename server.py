@@ -3123,6 +3123,33 @@ def _sc_fixture(comp, ttl=120):
         vistas = [m.get("temporada") for m in todos if m.get("temporada")]
         actual = max(vistas) if vistas else None
 
+    # Una edición que ya terminó no es la de ahora, diga lo que diga la fuente.
+    #
+    # Entre una y la otra, 365scores tarda en mover el número de temporada.
+    # En agosto seguía diciendo que la Europa League corría la 61, que es la
+    # que se jugó y terminó en mayo, y la página mostraba esa fase de liga
+    # con su tabla completa —y sus octavos, cuartos y la final— como si fuera
+    # la de ahora. La Champions no tenía el problema porque ahí el número sí
+    # había avanzado: el mismo caso, resuelto de dos maneras distintas por la
+    # fuente.
+    #
+    # Se la da por terminada sólo si están todos sus partidos jugados Y hay
+    # partidos más nuevos guardados —los de la clasificación, que ya se está
+    # jugando—. Sin esa segunda condición, la Copa Argentina desaparecería
+    # de la página cada enero, entre que termina una edición y arranca la
+    # siguiente, cuando ahí lo correcto es seguir mostrando la última.
+    termino = False
+    if actual is not None:
+        suyos = [m for m in acumulado.values()
+                 if m.get("comp") in (None, comp)
+                 and m.get("temporada") == actual]
+        if suyos and all(m.get("status") == "FIN" for m in suyos):
+            ultimo = max((m.get("start") or "") for m in suyos)[:10]
+            hace_rato = (dt.date.today() - dt.timedelta(days=45)).isoformat()
+            hay_mas_nuevo = any((m.get("start") or "")[:10] > ultimo
+                                for m in acumulado.values())
+            termino = bool(ultimo and ultimo < hace_rato and hay_mas_nuevo)
+
     if actual is not None:
         # Cada partido se compara contra la temporada de SU competencia. Los
         # de la clasificación vienen mezclados acá y llevan otro número: si
@@ -3134,7 +3161,7 @@ def _sc_fixture(comp, ttl=120):
                 if actual_suya is None:
                     return True     # sin dato de la otra, no se descarta
                 return m.get("temporada") == actual_suya
-            return m.get("temporada") == actual
+            return not termino and m.get("temporada") == actual
 
         # Ojo con la diferencia entre esconder y borrar.
         #
@@ -3224,7 +3251,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · Sudamericana sin cuadro de previa y terceros de Libertadores"
+VERSION_APP = "2026-08-19 · cuadro sin cajas encimadas y edición terminada"
 
 
 def reparar_recorridos():

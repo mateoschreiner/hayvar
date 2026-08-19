@@ -2873,10 +2873,26 @@ const App=(()=>{
       const base=cupos.indexOf(Math.max(...cupos));
       for(let i=0;i<cupos[base];i++) ys[base][i]=i*paso;
 
+      /* Dos cosas que hay que arreglar en cada columna.
+
+         Una: los cruces que no vienen de ninguna llave anterior —los equipos
+         que entran recién en esa ronda— tienen que quedar entre sus vecinos
+         y no amontonados al final.
+
+         Y dos: dos cruces pueden caer a la misma altura. Pasa cuando uno se
+         alimenta de dos llaves y el de al lado de una sola, que es todo el
+         tiempo en la clasificación de la Champions. Ahí las cajas se dibujan
+         una encima de la otra y se leen tres nombres en un cruce de dos. Se
+         separan respetando el orden, así el cuadro sigue bajando derecho. */
       const acomodarSueltos=fila=>{
-        const puestos=fila.filter(v=>v!=null);
-        let libre=puestos.length?Math.max(...puestos):-paso;
-        for(let i=0;i<fila.length;i++) if(fila[i]==null) fila[i]=(libre+=paso);
+        let ultimo=null;
+        for(let i=0;i<fila.length;i++){
+          if(fila[i]==null) fila[i]=(ultimo==null?0:ultimo+paso);
+          ultimo=fila[i];
+        }
+        const orden=fila.map((y,i)=>i).sort((a,b)=>fila[a]-fila[b]||a-b);
+        let piso=-Infinity;
+        orden.forEach(i=>{ if(fila[i]<piso+paso) fila[i]=piso+paso; piso=fila[i]; });
       };
       // hacia adelante: cada cruce se centra entre los que lo alimentan
       for(let c=base+1;c<cupos.length;c++){

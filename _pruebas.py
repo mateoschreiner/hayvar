@@ -1072,6 +1072,60 @@ server.fixture_de_liga = _fxg3
 server.fetch = _guardado
 
 
+print("\n── una edición que ya terminó no es la de ahora ──")
+# 365scores tarda en mover el numero de temporada entre una edicion y la
+# otra. En agosto seguia diciendo que la Europa League corria la 61, la que
+# termino en mayo, y la pagina mostraba esa fase de liga con su tabla como si
+# fuera la de ahora.
+_CE = 573
+_hoy = _dtu.date.today()
+def _vieja(gid, dias):
+    d = _hoy - _dtu.timedelta(days=dias)
+    return {"id": gid, "comp": _CE, "temporada": 61, "round": 5,
+            "start": d.isoformat() + "T16:00:00-03:00", "status": "FIN",
+            "gh": 1, "ga": 0, "stage": "Fase de liga", "slot": None,
+            "home": {"name": "A", "canon": "A"}, "away": {"name": "B", "canon": "B"}}
+def _clasi(gid, dias):
+    d = _hoy - _dtu.timedelta(days=dias)
+    return {"id": gid, "comp": 596, "temporada": 11, "round": 1,
+            "start": d.isoformat() + "T16:00:00-03:00", "status": "FIN",
+            "gh": 2, "ga": 1, "stage": "Primera Ronda", "slot": None,
+            "home": {"name": "C", "canon": "C"}, "away": {"name": "D", "canon": "D"}}
+
+def _servido(juegos, temporadas):
+    server.almacen.guardar("fixture:%d" % _CE, juegos)
+    for molde in ("hist:%d", "fut:%d"):
+        server.almacen.guardar(molde % _CE, {"listo": True, "v": server.VERSION_RECORRIDO})
+    for c, t in temporadas.items():
+        server.almacen.guardar("temporada:%d" % c, t)
+    server.almacen.guardar("migrado2:%d" % _CE, True)
+    server.almacen.guardar("reabierto:%d" % _CE, True)
+    server.fetch = lambda p, q, ttl=15: {"games": [], "competitions": []}
+    return server._sc_fixture(_CE, ttl=0)
+
+_r = _servido([_vieja(1, 100), _vieja(2, 95), _clasi(3, 10), _clasi(4, 8)],
+              {573: 61, 596: 11})
+chequear("la edición terminada no se muestra",
+         not any(m["id"] in (1, 2) for m in _r), [m["id"] for m in _r])
+chequear("pero la clasificación que se está jugando sí",
+         {m["id"] for m in _r} == {3, 4}, [m["id"] for m in _r])
+chequear("y nada de eso se borra de la base",
+         len(server.almacen.leer("fixture:%d" % _CE)[0]) == 4)
+
+# Sin nada mas nuevo guardado, la ultima edicion se sigue mostrando: si no,
+# la Copa Argentina desapareceria cada enero hasta que arranque la siguiente.
+_r2 = _servido([_vieja(1, 100), _vieja(2, 95)], {573: 61})
+chequear("si no hay nada más nuevo, la última edición se sigue mostrando",
+         len(_r2) == 2, [m["id"] for m in _r2])
+# Y una edicion en curso no se toca ni aunque le falten fechas por jugar.
+_enCurso = [_vieja(1, 100), _vieja(2, 95), _clasi(3, 10)]
+_enCurso[1]["status"] = "PROG"
+_r3 = _servido(_enCurso, {573: 61, 596: 11})
+chequear("una edición con partidos por jugar no se da por terminada",
+         {m["id"] for m in _r3} == {1, 2, 3}, [m["id"] for m in _r3])
+server.fetch = _guardado
+
+
 print("\n── las dos copas de Conmebol ──")
 import inspect
 # La clasificacion previa de la Sudamericana se juega a partido unico: son

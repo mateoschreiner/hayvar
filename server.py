@@ -575,6 +575,9 @@ LIGAS = {
         # —52 equipos entre la Vía Campeones y la Vía Liga, todas a ida y
         # vuelta— no aparecían por ningún lado.
         "sc_extra": [332],
+        "final": {"cuando": "2027-06-05", "sede": "Estadio Metropolitano",
+                  "ciudad": "Madrid, España",
+                  "nota": "A partido único, en cancha neutral."},
     },
     "europa": {
         # Mismo formato nuevo que la Champions y con el mismo reparto:
@@ -590,6 +593,9 @@ LIGAS = {
         "etapas_extra": ["Octavos de final", "Cuartos de final",
                          "Semifinal", "Final"],
         "sc_extra": [596],       # la clasificación, igual que la Champions
+        "final": {"cuando": "2027-05-26", "sede": "Stadion Frankfurt",
+                  "ciudad": "Fráncfort, Alemania",
+                  "nota": "A partido único, en cancha neutral."},
     },
     # ── Copas ────────────────────────────────────────────────────────────
     # Los números salen de /api/competencias, no de la memoria: 365scores
@@ -3267,7 +3273,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · cruces de la ronda que viene y sede de las finales"
+VERSION_APP = "2026-08-19 · finales de Europa y fase de liga con los clasificados"
 
 
 def reparar_recorridos():

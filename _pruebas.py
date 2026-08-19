@@ -1227,10 +1227,15 @@ chequear("la etapa de una copa aparece aunque todavía no tenga partidos",
 # y no por posicion en la lista: si falta alguna, se correria todo el cuadro.
 chequear("los cruces de la etapa que viene se arman solos",
          "for(let s=1;s+1<=tope;s+=2)" in HTML and "porSlot[k.slot]=k" in HTML)
+_CON_FINAL = ("lib", "sud", "ca", "champions", "europa")
 chequear("y la final trae fecha y sede aunque no tenga equipos",
-         all(server.LIGAS[x].get("final", {}).get("cuando")
-             for x in ("lib", "sud", "ca")),
-         {x: server.LIGAS[x].get("final") for x in ("lib", "sud", "ca")})
+         all(server.LIGAS[x].get("final", {}).get("cuando") for x in _CON_FINAL),
+         {x: server.LIGAS[x].get("final") for x in _CON_FINAL})
+# La fase de liga no cruza a nadie: son 36 equipos en una tabla. Lo que se
+# puede mostrar antes del sorteo son los que vienen ganando la clasificacion.
+chequear("en una fase de liga se muestran los que entraron, no cruces",
+         "const esTabla=etapa&&/grupo|liga/i.test(etapa);" in HTML
+         and "Entraron desde la clasificación" in HTML)
 chequear("la de la Copa Argentina dice que la cancha no está confirmada",
          server.LIGAS["ca"]["final"]["sede"] is None
          and "no se confirmó" in server.LIGAS["ca"]["final"]["nota"])

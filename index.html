@@ -2524,8 +2524,17 @@ const App=(()=>{
          Se arman con el número de llave y no con el orden de la lista: si
          falta alguna, emparejar por posición correría todo el cuadro. */
       const ganador=k=>k&&k.cerrada?(k.equipos.find(e=>e.pasa)||{}).team:null;
+      /* La fase de liga no cruza a nadie: es una tabla de 36 equipos. Ahí lo
+         que se puede mostrar son los que ya se metieron, que son los que
+         vienen ganando la clasificación —el resto entró directo por su liga
+         y de esos no tenemos nada hasta que la fuente publique el sorteo. */
+      const esTabla=etapa&&/grupo|liga/i.test(etapa);
+      const ultimaPrevia=(S.llavesPrevia||[]).filter(b=>b.llaves.length).pop();
+      const entraron=esTabla&&ultimaPrevia
+        ? ultimaPrevia.llaves.map(ganador).filter(Boolean) : [];
+
       const cruces=[];
-      if(antes&&antes.llaves.length){
+      if(!esTabla&&antes&&antes.llaves.length){
         const porSlot={};
         antes.llaves.forEach(k=>{ if(k.slot) porSlot[k.slot]=k; });
         const tope=Math.max(...antes.llaves.map(k=>k.slot||0));
@@ -2540,9 +2549,16 @@ const App=(()=>{
         ? S.finalCopa : null;
       return $('#matches').innerHTML=`<div class="empty">
         <span class="big">◎</span>${etapa
-          ? esc(etapa)+(cruces.length?': los cruces ya están, faltan los equipos.'
-                                     :': todavía sin definir.')
+          ? esc(etapa)+(cruces.length ? ': los cruces ya están, faltan los equipos.'
+              : entraron.length ? ': falta el sorteo.'
+              : ': todavía sin definir.')
           : 'Sin partidos para esta fecha.'}
+        ${entraron.length?`<div class="ya-estan">
+          <div class="lb">Entraron desde la clasificación</div>
+          <div class="tira">${entraron.map(t=>`<span class="uno"
+            style="${estiloClub(t.canon||t.name)}">${crest(t,18)}
+            <span class="tn">${esc(t.canon||t.name)}</span></span>`).join('')}</div>
+          </div>`:''}
         ${fin?`<div class="ya-estan"><div class="lb">Dónde y cuándo</div>
           <div class="ficha-final">
             <div class="cuando">${esc(diaLargo(fin.cuando))}</div>

@@ -479,6 +479,20 @@ td.l{text-align:left;padding-left:8px}
 .ya-estan .tira{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .ya-estan .uno{display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 6px;
   border:1px solid var(--line);border-radius:999px;font-size:12.5px;font-weight:600}
+/* un cruce que ya está armado pero todavía no tiene equipos */
+.ya-estan .cruce{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;
+  margin-bottom:6px;background:var(--card)}
+.ya-estan .cruce .side{display:flex;align-items:center;gap:7px;min-width:0}
+.ya-estan .cruce .side:last-child{flex-direction:row-reverse}
+.ya-estan .cruce .tn{font-size:13px;font-weight:600;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.ya-estan .cruce .vs{font-size:11px;color:var(--txt3);font-weight:700}
+.ficha-final{border:1px solid var(--line);border-radius:10px;padding:14px}
+.ficha-final .cuando{font-size:15px;font-weight:800}
+.ficha-final .sede{font-size:13px;font-weight:600;margin-top:4px}
+.ficha-final .ciudad{font-size:12px;color:var(--txt2)}
+.ficha-final .nota{font-size:11.5px;color:var(--txt3);margin-top:8px}
 .leg{display:flex;flex-wrap:wrap;gap:10px;padding:8px 12px;font-size:10.5px;color:var(--txt2);border-top:1px solid var(--line)}
 .leg i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
 .form{display:flex;gap:2px;justify-content:center}
@@ -795,6 +809,15 @@ const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
              'septiembre','octubre','noviembre','diciembre'];
 const initials=n=>String(n||'').split(/\s+/).filter(Boolean).slice(0,3).map(w=>w[0]).join('').toUpperCase().slice(0,3);
 const hhmm=iso=>{const d=new Date(iso);return pad(d.getHours())+':'+pad(d.getMinutes());};
+/* "sábado 28 de noviembre de 2026". Se parte el texto en vez de usar Date:
+   un "2026-11-28" pelado lo lee como medianoche UTC y en Argentina eso cae
+   el 27, así que la final aparecía un día antes. */
+const diaLargo=iso=>{
+  const p=String(iso||'').slice(0,10).split('-');
+  if(p.length!==3) return String(iso||'');
+  const d=new Date(+p[0],+p[1]-1,+p[2]);
+  return `${DIAS[d.getDay()]} ${+p[2]} de ${MESES[+p[1]-1]} de ${p[0]}`;
+};
 
 async function get(path){
   const r=await fetch(path,{cache:'no-store'});
@@ -2495,18 +2518,41 @@ const App=(()=>{
     if(!dela.length){
       const i=S.llaves?S.llaves.findIndex(b=>b.etapa===etapa):-1;
       const antes=i>0?S.llaves[i-1]:null;
-      const pasaron=antes?antes.llaves.filter(k=>k.cerrada)
-        .map(k=>(k.equipos.find(e=>e.pasa)||{}).team).filter(Boolean):[];
+      /* Estas copas no sortean: el cuadro está armado de entrada, así que
+         los cruces de la ronda que viene ya se saben aunque no se hayan
+         jugado los partidos que los definen. El 1 con el 2, el 3 con el 4.
+         Se arman con el número de llave y no con el orden de la lista: si
+         falta alguna, emparejar por posición correría todo el cuadro. */
+      const ganador=k=>k&&k.cerrada?(k.equipos.find(e=>e.pasa)||{}).team:null;
+      const cruces=[];
+      if(antes&&antes.llaves.length){
+        const porSlot={};
+        antes.llaves.forEach(k=>{ if(k.slot) porSlot[k.slot]=k; });
+        const tope=Math.max(...antes.llaves.map(k=>k.slot||0));
+        for(let s=1;s+1<=tope;s+=2)
+          cruces.push([ganador(porSlot[s]),ganador(porSlot[s+1])]);
+      }
+      const lado=t=>t
+        ? `<div class="side"${t===cruces[0]?'':''}>${crest(t,20)}<span class="tn"
+             style="${estiloClub(t.canon||t.name)}">${esc(t.canon||t.name)}</span></div>`
+        : `<div class="side"><span class="tn" style="color:var(--txt3)">Por definir</span></div>`;
+      const fin=S.finalCopa&&etapa&&/final/i.test(etapa)&&!/semi|cuartos|octavos|avos/i.test(etapa)
+        ? S.finalCopa : null;
       return $('#matches').innerHTML=`<div class="empty">
         <span class="big">◎</span>${etapa
-          ? esc(etapa)+': todavía no se sortearon los cruces.'
+          ? esc(etapa)+(cruces.length?': los cruces ya están, faltan los equipos.'
+                                     :': todavía sin definir.')
           : 'Sin partidos para esta fecha.'}
-        ${pasaron.length?`<div class="ya-estan">
-          <div class="lb">Ya clasificaron</div>
-          <div class="tira">${pasaron.map(t=>`<span class="uno"
-            style="${estiloClub(t.canon||t.name)}">${crest(t,18)}
-            <span class="tn">${esc(t.canon||t.name)}</span></span>`).join('')}</div>
-          </div>`:''}</div>`;
+        ${fin?`<div class="ya-estan"><div class="lb">Dónde y cuándo</div>
+          <div class="ficha-final">
+            <div class="cuando">${esc(diaLargo(fin.cuando))}</div>
+            ${fin.sede?`<div class="sede">${esc(fin.sede)}</div>`:''}
+            ${fin.ciudad?`<div class="ciudad">${esc(fin.ciudad)}</div>`:''}
+            ${fin.nota?`<div class="nota">${esc(fin.nota)}</div>`:''}
+          </div></div>`:''}
+        ${cruces.length?`<div class="ya-estan"><div class="lb">Los cruces</div>
+          ${cruces.map(([a,b])=>`<div class="cruce">${lado(a)}
+            <span class="vs">vs</span>${lado(b)}</div>`).join('')}</div>`:''}</div>`;
     }
 
     // En las eliminatorias no hay zonas: se agrupa por ida y vuelta, que es
@@ -2558,6 +2604,7 @@ const App=(()=>{
     S.totalFechas=g.bajando?g.totalFechas:null;
     S.etapas=(g.copa&&g.etapas&&g.etapas.length)?g.etapas:null;
     S.llaves=g.llaves||null; S.llavesPrevia=g.llavesPrevia||null;
+    S.finalCopa=g.final||null;
     S.grupoAbierto=null; S.cuadroDesde=null;
     S.fasesLiga=(g.fasesLiga&&g.fasesLiga.length)?g.fasesLiga:null;
     if(S.fasesLiga&&!S.fasesLiga.some(f=>f.num===S.fase)) S.fase=null;

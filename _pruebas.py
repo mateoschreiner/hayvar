@@ -1222,8 +1222,20 @@ chequear("una llave de un solo partido abre el partido, no la serie",
 chequear("la etapa de una copa aparece aunque todavía no tenga partidos",
          'if cfg.get("copa") and etapas:' in
          inspect.getsource(server.api_liga_games))
-chequear("y muestra quiénes ya clasificaron",
-         "Ya clasificaron" in HTML and "k.equipos.find(e=>e.pasa)" in HTML)
+# Estas copas no sortean: el cuadro esta armado de entrada, asi que los
+# cruces de la ronda que viene ya se saben. Se emparejan por numero de llave
+# y no por posicion en la lista: si falta alguna, se correria todo el cuadro.
+chequear("los cruces de la etapa que viene se arman solos",
+         "for(let s=1;s+1<=tope;s+=2)" in HTML and "porSlot[k.slot]=k" in HTML)
+chequear("y la final trae fecha y sede aunque no tenga equipos",
+         all(server.LIGAS[x].get("final", {}).get("cuando")
+             for x in ("lib", "sud", "ca")),
+         {x: server.LIGAS[x].get("final") for x in ("lib", "sud", "ca")})
+chequear("la de la Copa Argentina dice que la cancha no está confirmada",
+         server.LIGAS["ca"]["final"]["sede"] is None
+         and "no se confirmó" in server.LIGAS["ca"]["final"]["nota"])
+chequear("y la fecha no se corre un día por la zona horaria",
+         "const d=new Date(+p[0],+p[1]-1,+p[2]);" in HTML)
 chequear("cuando no hay tabla se dice por qué en vez de 'Sin datos'",
          "const sinTabla=()=>" in HTML and "d.zonasNota" in HTML)
 chequear("y no se pone 'Por definir' donde no va a haber cruce",

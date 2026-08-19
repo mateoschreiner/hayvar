@@ -605,6 +605,12 @@ LIGAS = {
         # Sudamericana, contra los que salieron segundos allá.
         "zonas_de": {"avanza": (1, 2), "sudamericana": (3, 3)},
         "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
+        # La final se juega en cancha neutral y la sede se sabe desde mucho
+        # antes que los finalistas. No viene en el fixture —para la fuente
+        # ese partido todavía no existe— así que va a mano.
+        "final": {"cuando": "2026-11-28", "sede": "Estadio Centenario",
+                  "ciudad": "Montevideo, Uruguay",
+                  "nota": "A partido único, en cancha neutral."},
     },
     "sud": {
         "nombre": "Copa Sudamericana", "torneo": "Edición 2026",
@@ -623,12 +629,20 @@ LIGAS = {
         # sueltos y dibujarlos como llaves encadenadas es inventar un
         # camino que no existe. Van en el calendario, como cualquier fecha.
         "sin_cuadro_previa": True,
+        "final": {"cuando": "2026-11-21",
+                  "sede": "Estadio Metropolitano Roberto Meléndez",
+                  "ciudad": "Barranquilla, Colombia",
+                  "nota": "A partido único, en cancha neutral."},
     },
     "ca": {
         # Eliminación directa de punta a punta, sin tabla de posiciones.
         "nombre": "Copa Argentina", "torneo": "Edición 2026",
         "base": None, "pages": {}, "propia": False, "sc": 640,
         "pais": "Argentina", "anual": False, "copa": True,
+        # La fecha está confirmada; la cancha, no. Se muestra lo que se sabe
+        # y lo que falta se dice que falta, en vez de inventar una sede.
+        "final": {"cuando": "2026-11-04", "sede": None, "ciudad": None,
+                  "nota": "A partido único. La cancha todavía no se confirmó."},
         # sin zonas_de: acá no hay tabla que marcar, se elimina y listo
         "etapas_extra": ["Cuartos de final", "Semifinal", "Final"],
     },
@@ -3253,7 +3267,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · partido único directo y etapas por sortear"
+VERSION_APP = "2026-08-19 · cruces de la ronda que viene y sede de las finales"
 
 
 def reparar_recorridos():
@@ -4392,6 +4406,11 @@ def api_liga_games(q):
         res["totalFechas"] = total_fechas
         if max(rounds) < total_fechas:
             res["bajando"] = True
+    # La final se juega en cancha neutral y la sede se sabe desde antes que
+    # los finalistas, así que no viene en el fixture: para la fuente ese
+    # partido todavía no existe.
+    if cfg.get("final"):
+        res["final"] = dict(cfg["final"], etapa="Final")
     if llaves is not None:
         res["llaves"] = llaves
     if llaves_previa and any(b.get("llaves") for b in llaves_previa):

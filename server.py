@@ -467,28 +467,40 @@ LIGAS = {
         "fases_juntas": {"titulo": "Segunda Fase",
                          "cuales": ["Segunda Fase", "Campeonato", "Reválida"]},
         # Reglamento 2026 (AFA):
-        #   · Primera Fase: pasan a la Fase Campeonato del 1° al 5° en las
-        #     zonas de diez y del 1° al 4° en las de nueve, más el mejor 5°
-        #     de esas. Ese "mejor quinto" se decide comparando zonas, así
-        #     que acá se marca lo que es seguro y él queda sin pintar.
-        #   · Fase Campeonato: el 1° de cada zona juega por el primer
-        #     ascenso a la Primera Nacional 2027; del 1° al 5°, Copa
-        #     Argentina 2027.
-        #   · Reválida: los dos últimos de cada zona descienden (cuatro).
+        #   · Primera Fase: a la Segunda pasan del 1° al 5° en las zonas de
+        #     diez y del 1° al 4° en las de nueve, más el mejor 5° de esas
+        #     tres. Los demás van a la Reválida.
+        #   · Segunda Fase: del 1° al 4° a la Tercera Fase; el 5° a la
+        #     segunda etapa de la Reválida y además a la Copa Argentina;
+        #     del 6° al 9°, a la segunda etapa de la Reválida.
+        #   · Reválida: los cinco primeros pasan a la segunda etapa.
+        #   · Descensos: no salen de estas tablas sino de una general que
+        #     suma la Primera Fase con la Reválida. Va aparte, más abajo.
         #
         # El orden importa: gana la primera que coincida. La Reválida va
         # antes que la Segunda Fase porque sus zonas se llaman "Segunda
-        # Fase - Reválida A" y si no caerían en la regla del Campeonato,
-        # que las daría por candidatas al ascenso.
+        # Fase - Reválida A" y si no caerían en la regla de la otra, que
+        # las daría por candidatas a la Tercera Fase.
         "zonas_de": [
-            {"cuando": "Reválida", "reglas": {"desciende": (-2, -1)}},
-            {"cuando": "Primera Fase",
-             "reglas": {"campeonato": lambda n: (1, 5 if n >= 10 else 4)}},
-            {"cuando": "Segunda Fase",
-             "reglas": {"final": (1, 1), "copaarg": (2, 5)}},
-            {"cuando": "Campeonato",
-             "reglas": {"final": (1, 1), "copaarg": (2, 5)}},
+            {"cuando": "Descenso", "reglas": {"desciende": (-2, -1)}},
+            {"cuando": "Reválida", "reglas": {"revalida2": (1, 5)}},
+            {"cuando": "Primera Fase", "reglas": {
+                "campeonato": lambda n: (1, 5 if n >= 10 else 4),
+                "revalida": lambda n: (6 if n >= 10 else 5, n)}},
+            {"cuando": "Segunda Fase", "reglas": {
+                "tercera": (1, 4), "copaarg": (5, 5), "revalida2": (6, -1)}},
+            {"cuando": "Campeonato", "reglas": {
+                "tercera": (1, 4), "copaarg": (5, 5), "revalida2": (6, -1)}},
         ],
+        # El quinto de las zonas de nueve que mejor terminó también pasa.
+        # Es lo único que no se puede decidir mirando una tabla sola.
+        "mejor_puesto": {"cuando": "Primera Fase", "de_zonas_de": 9,
+                         "puesto": 5, "destino": "campeonato"},
+        # Los descensos salen de una tabla general que no publica nadie:
+        # los puntos de la Primera Fase más los de la Reválida. La Zona A
+        # la promedia por partidos jugados y la Zona B los suma derecho.
+        "descenso": {"de": "Reválida", "sumar": "Primera Fase",
+                     "promedio": ["A"]},
     },
     "fem": {
         # Igual que arriba: el canal es "primeraafemenino", según la página
@@ -2040,9 +2052,14 @@ LEYENDA_DESTINOS = [
     {"clave": "desciende", "color": "#e5484d", "texto": "Descienden"},
     {"clave": "afuera", "color": "#e5484d", "texto": "Queda eliminado"},
     {"clave": "campeonato", "color": "#2f6fed",
-     "texto": "Clasifica a la Fase Campeonato"},
+     "texto": "Clasifica a la Segunda Fase"},
+    {"clave": "revalida", "color": "#f0b429", "texto": "Pasa a la Reválida"},
+    {"clave": "tercera", "color": "#2f6fed",
+     "texto": "Clasifica a la Tercera Fase"},
     {"clave": "copaarg", "color": "#12b76a",
-     "texto": "Clasifica a la Copa Argentina 2027"},
+     "texto": "Copa Argentina 2027 y segunda etapa de la Reválida"},
+    {"clave": "revalida2", "color": "#f0b429",
+     "texto": "Pasa a la segunda etapa de la Reválida"},
 ]
 
 
@@ -2089,6 +2106,104 @@ def marcar_destinos(zonas, reglas):
                     r["destinoTexto"] = next(
                         (x["texto"] for x in LEYENDA_DESTINOS if x["clave"] == clave), "")
                     break
+
+
+def texto_destino(clave):
+    return next((x["texto"] for x in LEYENDA_DESTINOS if x["clave"] == clave), "")
+
+
+def marcar_mejor_puesto(zonas, regla):
+    """
+    El mejor quinto de las zonas de nueve.
+
+    A la Segunda Fase del Federal A pasan cinco de las zonas de diez y
+    cuatro de las de nueve, más el que mejor haya terminado quinto entre
+    esas tres. Es lo único del reglamento que no se puede resolver mirando
+    una tabla sola: hay que comparar zonas entre sí, así que va aparte de
+    `marcar_destinos`, que trabaja tabla por tabla.
+
+    Si las zonas todavía no jugaron lo mismo la comparación no es justa,
+    pero tampoco lo es la del reglamento: se compara igual y se acomoda
+    solo cuando emparejan las fechas.
+    """
+    if not regla:
+        return
+    chicas = [z for z in zonas
+              if norm(regla["cuando"]) in norm(z.get("name") or "")
+              and len(z["rows"]) == regla["de_zonas_de"]]
+    if len(chicas) < 2:
+        return
+    quintos = [r for z in chicas for r in z["rows"]
+               if (r.get("pos") or 0) == regla["puesto"]]
+    if not quintos:
+        return
+    mejor = max(quintos, key=lambda r: (r.get("pts") or 0, r.get("dif") or 0,
+                                        r.get("gf") or 0))
+    mejor["destino"] = regla["destino"]
+    mejor["destinoTexto"] = texto_destino(regla["destino"])
+
+
+def tablas_de_descenso(zonas, juegos, regla):
+    """
+    Las tablas que definen los descensos del Federal A.
+
+    No es ninguna de las que se ven. El reglamento dice que al terminar la
+    primera etapa de la Reválida se arma una tabla general por zona, que
+    suma los puntos de la Primera Fase con los de la Reválida, y que
+    descienden los dos últimos de cada una. La Zona A la promedia por
+    partidos jugados y la Zona B los suma derecho.
+
+    Los puntos de la Reválida están en la tabla que publica la fuente; los
+    de la Primera Fase se calculan de los partidos guardados, que es de
+    donde ya salen las tablas de esa fase.
+    """
+    if not regla:
+        return []
+    de, sumar = regla["de"], regla["sumar"]
+    por_promedio = {norm(x) for x in regla.get("promedio", [])}
+
+    previos = {}
+    suyos = [m for m in juegos if norm(sumar) in norm(m.get("stage") or "")]
+    for t in tablas_por_resultados(suyos, sumar):
+        for r in t["rows"]:
+            previos[norm(r["team"]["name"])] = (r["pts"], r["pj"])
+    if not previos:
+        return []
+
+    salida = []
+    for z in zonas:
+        nombre = (z.get("name") or "").strip()
+        if norm(de) not in norm(nombre):
+            continue
+        letra = nombre[-1:]
+        promedia = norm(letra) in por_promedio
+
+        filas = []
+        for r in z["rows"]:
+            k = norm(r["team"]["name"])
+            if k not in previos:
+                k = emparejar(r["team"]["name"], {x: x for x in previos}) or k
+            antes, jugados = previos.get(k, (0, 0))
+            pts, pj = (r.get("pts") or 0) + antes, (r.get("pj") or 0) + jugados
+            fila = {"team": r["team"], "pts": pts, "pj": pj,
+                    "gf": r.get("gf") or 0, "gc": r.get("gc") or 0,
+                    "dif": r.get("dif") or 0, "form": []}
+            if promedia:
+                fila["prom"] = round(pts / pj, 3) if pj else 0.0
+            filas.append(fila)
+
+        filas.sort(key=(lambda f: (f["prom"], f["pts"])) if promedia
+                   else (lambda f: (f["pts"], f["dif"], f["gf"])), reverse=True)
+        for i, f in enumerate(filas, 1):
+            f["pos"] = i
+        salida.append({
+            "name": "Descenso - Zona %s" % letra, "num": z.get("num"),
+            "rows": filas, "calculada": True,
+            "nota": ("Puntos de la Primera Fase más los de la Reválida, "
+                     + ("promediados por partido jugado." if promedia
+                        else "sumados.")
+                     + " Descienden los dos últimos.")})
+    return salida
 
 
 def _sc_goleadores(comp, escudos=None):
@@ -2165,6 +2280,7 @@ def api_liga(q):
         out["zonas"] = _sc_standings(cfg["sc"], juntar=cfg.get("fases_juntas"))
         # Las fases que ya terminaron no las publica más la fuente. Si de
         # alguna tenemos los partidos y no tenemos la tabla, se calcula.
+        juegos = []
         if cfg.get("fases_calculadas"):
             try:
                 juegos = [dict(m) for m in fixture_de_liga(cfg, ttl=600)]
@@ -2183,7 +2299,23 @@ def api_liga(q):
                     out["zonas"] = tablas_por_resultados(suyos, fase) + out["zonas"]
             except Exception:
                 pass
+        # Los descensos no salen de ninguna tabla que se vea: se arma una
+        # general que suma la fase anterior con la de ahora. Va al final,
+        # después de las zonas de las que sale.
+        if cfg.get("descenso") and juegos:
+            try:
+                out["zonas"] = out["zonas"] + tablas_de_descenso(
+                    out["zonas"], juegos, cfg["descenso"])
+            except Exception:
+                pass
+
         marcar_destinos(out["zonas"], cfg.get("zonas_de"))
+        # Y el que se decide comparando zonas entre sí, que `marcar_destinos`
+        # no puede ver porque trabaja tabla por tabla.
+        try:
+            marcar_mejor_puesto(out["zonas"], cfg.get("mejor_puesto"))
+        except Exception:
+            pass
         # sólo las referencias que esta liga usa de verdad
         reglas = cfg.get("zonas_de") or {}
         usadas = (set().union(*(set(b["reglas"]) for b in reglas))
@@ -3078,7 +3210,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · Federal A: rotulos por fase y colores desde la leyenda"
+VERSION_APP = "2026-08-19 · Federal A: reglamento completo y tabla de descenso"
 
 
 def reparar_recorridos():

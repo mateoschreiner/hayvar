@@ -718,9 +718,11 @@ chequear("y la tabla se arma sin que la fuente mande el grupo",
 # Cada zona reparte cosas distintas: en la Fase Campeonato se pelea el
 # ascenso y en la Revalida, no descender. Pintarlas igual seria decir que
 # el puntero de la Revalida asciende.
-def _zona(nombre, n):
+def _zona(nombre, n, pts=None):
     return {"name": nombre, "num": 1,
-            "rows": [{"team": {"name": "E%d" % i}, "pos": i}
+            "rows": [{"team": {"name": "%s%d" % (nombre[-1:], i)}, "pos": i,
+                      "pts": (pts[i - 1] if pts else 30 - i),
+                      "pj": 16, "gf": 0, "gc": 0, "dif": 0}
                      for i in range(1, n + 1)]}
 #
 # Ojo con el nombre: 365scores llama "Segunda Fase" a la de Campeonato, así
@@ -734,18 +736,90 @@ _zs = [_zona("Primera Fase - Zona 1", 10), _zona("Primera Fase - Zona 2", 9),
 server.marcar_destinos(_zs, server.LIGAS["fa"]["zonas_de"])
 _dest = {z["name"]: [r["destino"] for r in z["rows"]] for z in _zs}
 chequear("de una zona de diez pasan cinco",
-         _dest["Primera Fase - Zona 1"].count("campeonato") == 5)
+         _dest["Primera Fase - Zona 1"][:5] == ["campeonato"] * 5
+         and _dest["Primera Fase - Zona 1"][5:] == ["revalida"] * 5)
 chequear("y de una de nueve, cuatro",
-         _dest["Primera Fase - Zona 2"].count("campeonato") == 4)
-chequear("en el Campeonato el primero juega por el ascenso",
-         _dest["Segunda Fase - Zona A"][0] == "final")
-chequear("y del segundo al quinto van a la Copa Argentina",
-         _dest["Segunda Fase - Zona A"].count("copaarg") == 4)
+         _dest["Primera Fase - Zona 2"][:4] == ["campeonato"] * 4)
+chequear("los que no pasan quedan marcados como Reválida",
+         _dest["Primera Fase - Zona 2"][4:] == ["revalida"] * 5)
+chequear("en la Segunda Fase los cuatro primeros van a la Tercera",
+         _dest["Segunda Fase - Zona A"][:4] == ["tercera"] * 4)
+chequear("el quinto suma la Copa Argentina",
+         _dest["Segunda Fase - Zona A"][4] == "copaarg")
+chequear("y del sexto al noveno, a la segunda etapa de la Reválida",
+         _dest["Segunda Fase - Zona A"][5:] == ["revalida2"] * 4)
 chequear("da igual que la zona diga 'Campeonato' o no",
          _dest["Segunda Fase - Campeonato B"] == _dest["Segunda Fase - Zona A"])
-chequear("en la Reválida no asciende nadie: descienden los dos ultimos",
-         _dest["Segunda Fase - Reválida B"][-2:] == ["desciende", "desciende"]
-         and "final" not in _dest["Segunda Fase - Reválida B"])
+chequear("en la Reválida pasan los cinco primeros",
+         _dest["Segunda Fase - Reválida B"][:5] == ["revalida2"] * 5)
+chequear("y ahi no se marca ningun descenso: esa cuenta va aparte",
+         "desciende" not in _dest["Segunda Fase - Reválida B"])
+
+# El mejor quinto de las zonas de nueve tambien pasa. Es lo unico que no se
+# puede decidir mirando una tabla sola: hay que comparar zonas entre si.
+_nueves = [_zona("Primera Fase - Zona A", 9, [30, 28, 26, 24, 20, 9, 8, 7, 6]),
+           _zona("Primera Fase - Zona B", 9, [30, 28, 26, 24, 23, 9, 8, 7, 6]),
+           _zona("Primera Fase - Zona C", 9, [30, 28, 26, 24, 21, 9, 8, 7, 6])]
+server.marcar_destinos(_nueves, server.LIGAS["fa"]["zonas_de"])
+server.marcar_mejor_puesto(_nueves, server.LIGAS["fa"]["mejor_puesto"])
+chequear("el mejor quinto de las zonas de nueve tambien pasa",
+         {z["name"][-1:]: z["rows"][4]["destino"] for z in _nueves}
+         == {"A": "revalida", "B": "campeonato", "C": "revalida"},
+         {z["name"][-1:]: z["rows"][4]["destino"] for z in _nueves})
+_diez = [_zona("Primera Fase - Zona 1", 10, [99] * 10)] + [
+    _zona("Primera Fase - Zona A", 9, [30, 28, 26, 24, 20, 9, 8, 7, 6]),
+    _zona("Primera Fase - Zona B", 9, [30, 28, 26, 24, 23, 9, 8, 7, 6])]
+server.marcar_destinos(_diez, server.LIGAS["fa"]["zonas_de"])
+server.marcar_mejor_puesto(_diez, server.LIGAS["fa"]["mejor_puesto"])
+chequear("y el quinto de la zona de diez no le compite ese lugar",
+         _diez[1]["rows"][4]["destino"] == "revalida"
+         and _diez[2]["rows"][4]["destino"] == "campeonato",
+         [z["rows"][4]["destino"] for z in _diez])
+# El descenso no sale de ninguna tabla que se vea: se suma la Primera Fase
+# con la Revalida. La Zona A se promedia por partido jugado y la B se suma
+# derecho, asi que un mismo equipo puede salvarse en una y descender en la
+# otra. Eso es lo que se prueba: que el criterio de cada zona sea el suyo.
+def _revalida(letra, equipos):
+    return {"name": "Segunda Fase - Reválida %s" % letra, "num": letra,
+            "rows": [{"team": {"name": n}, "pos": i, "pts": p, "pj": j,
+                      "gf": 0, "gc": 0, "dif": 0}
+                     for i, (n, p, j) in enumerate(equipos, 1)]}
+def _pf(gid, a, b, gh, ga):
+    return {"id": gid, "round": 1, "start": "2026-04-11T15:30:00-03:00",
+            "status": "FIN", "gh": gh, "ga": ga, "stage": "Primera Fase",
+            "slot": None,
+            "home": {"name": a, "canon": a}, "away": {"name": b, "canon": b}}
+# Viejo hizo mas puntos pero en mas partidos; Nuevo jugo pocos y los gano.
+# Por puntos va arriba Viejo (9 en 5 partidos), por promedio Nuevo (6 en 2).
+_pfj = [_pf(1, "Viejo", "R1", 1, 0), _pf(2, "Viejo", "R2", 1, 0),
+        _pf(3, "Viejo", "R3", 0, 0), _pf(4, "Viejo", "R4", 0, 0),
+        _pf(5, "Viejo", "R5", 0, 0),
+        _pf(6, "Nuevo", "R6", 1, 0), _pf(7, "Nuevo", "R7", 1, 0),
+        _pf(8, "R7", "R8", 0, 1)]
+_lista = [("Viejo", 0, 1), ("Nuevo", 0, 1), ("Otro1", 15, 1), ("Otro2", 15, 1)]
+_rev = [_revalida("A", _lista), _revalida("B", _lista)]
+_desc = server.tablas_de_descenso(_rev, _pfj, server.LIGAS["fa"]["descenso"])
+chequear("se arma una tabla de descenso por cada zona de la Reválida",
+         [z["name"] for z in _desc] == ["Descenso - Zona A", "Descenso - Zona B"],
+         [z["name"] for z in _desc])
+chequear("la Zona A se ordena por promedio",
+         all("prom" in r for r in _desc[0]["rows"])
+         and _desc[0]["rows"][2]["team"]["name"] == "Nuevo",
+         [(r["team"]["name"], r.get("prom")) for r in _desc[0]["rows"]])
+chequear("y la Zona B por puntos, sin promediar",
+         all("prom" not in r for r in _desc[1]["rows"])
+         and _desc[1]["rows"][2]["team"]["name"] == "Viejo",
+         [(r["team"]["name"], r["pts"]) for r in _desc[1]["rows"]])
+chequear("suma los puntos de la Primera Fase a los de la Reválida",
+         {r["team"]["name"]: (r["pts"], r["pj"])
+          for r in _desc[1]["rows"]}["Viejo"] == (9, 6),
+         {r["team"]["name"]: (r["pts"], r["pj"]) for r in _desc[1]["rows"]})
+server.marcar_destinos(_desc, server.LIGAS["fa"]["zonas_de"])
+chequear("y descienden los dos ultimos de cada una",
+         all([r["destino"] for r in z["rows"]][-2:] == ["desciende"] * 2
+             for z in _desc),
+         [[r["destino"] for r in z["rows"]] for z in _desc])
+
 chequear("ninguna tabla queda sin destinos",
          all(any(r["destino"] for r in z["rows"]) for z in _zs),
          [z["name"] for z in _zs if not any(r["destino"] for r in z["rows"])])

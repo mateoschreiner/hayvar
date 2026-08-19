@@ -2899,9 +2899,14 @@ const App=(()=>{
      que se está jugando, que es la que tiene la fecha en curso. */
   function faseQueSeJuega(tabs){
     if(!S.fasesZona||S.fasesZona.length<2) return tabs[0][0];
+    const jugadas=(S.fasesLiga||[]).map(f=>f.nombre);
     const enJuego=(S.fasesLiga||[]).find(f=>f.rounds.includes(S.current));
     let i=enJuego?S.fasesZona.findIndex(f=>f.nombre===enJuego.nombre):-1;
-    if(i<0) i=S.fasesZona.length-1;      // sin dato, la última: es la de ahora
+    // Sin dato, la última que de verdad se juega. Hay pestañas que no son
+    // una fase del calendario —la de Descenso del Federal A es una cuenta,
+    // no una fecha— y caer ahí sería abrir el torneo por el final.
+    if(i<0) i=S.fasesZona.map(f=>jugadas.includes(f.nombre)).lastIndexOf(true);
+    if(i<0) i=S.fasesZona.length-1;
     return tabs.find(t=>t[0]==='f'+i)?'f'+i:tabs[0][0];
   }
 
@@ -2962,10 +2967,16 @@ const App=(()=>{
     // cada grupo en su tarjeta, con aire en el medio
     const COLS=[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],
                 ['DIF',r=>(r.dif>0?'+':'')+r.dif]];
+    /* La tabla de descenso del Federal A se ordena por promedio, así que esa
+       columna va primero y manda. Las demás siguen con Pts. */
+    const COLS_PROM=[['Prom',r=>(r.prom??0).toFixed(3),1],['Pts',r=>r.pts],
+                     ['PJ',r=>r.pj],['DIF',r=>(r.dif>0?'+':'')+r.dif]];
     const tarjetas=zs=>zs.length
       ? `<div class="zonas-wrap">${zs.map((z,i)=>`<div class="zona-card">
           <h5>${esc(z.corto||z.name||('Grupo '+(i+1)))}</h5>
-          ${tabla(z.rows,COLS)}</div>`).join('')}</div>` + leyendaSiempre()
+          ${tabla(z.rows,z.rows.some(r=>r.prom!=null)?COLS_PROM:COLS)}
+          ${z.nota?`<div class="note">${esc(z.nota)}</div>`:''}</div>`).join('')}</div>`
+        + leyendaSiempre()
       : '<div class="empty">Sin datos.</div>';
 
     if(S.tab.startsWith('f')&&S.fasesZona&&S.fasesZona.length>1){

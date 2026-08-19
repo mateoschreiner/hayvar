@@ -3277,7 +3277,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · encabezado y pestañas fijas, menú alineado"
+VERSION_APP = "2026-08-19 · el pop-up recorta sin romper el encabezado fijo"
 
 
 def reparar_recorridos():

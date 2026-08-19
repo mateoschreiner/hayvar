@@ -1190,6 +1190,11 @@ chequear("el encabezado del pop-up queda pegado arriba",
 # adentro: el encabezado se declaraba fijo y no se quedaba fijo.
 chequear("y el pop-up no es su propio contenedor de scroll",
          re.search(r"\.modal\{[^}]*overflow:hidden", HTML) is None)
+# Sin recorte, la cancha de las formaciones asomaba por arriba del pop-up al
+# scrollear. `clip` recorta sin crear contenedor de scroll, asi que el
+# encabezado se sigue pegando.
+chequear("pero igual recorta lo que se sale de la caja",
+         re.search(r"\.modal\{[^}]*overflow:clip", HTML) is not None)
 chequear("las pestañas se pegan abajo del encabezado, medido y no clavado",
          ".modal>.tabs{position:sticky;top:var(--cab,0px)" in HTML
          and "setProperty('--cab'" in HTML)

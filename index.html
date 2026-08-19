@@ -2768,20 +2768,47 @@ const App=(()=>{
        el número no sirve para alinearlas. Se ordenan siguiendo al ganador:
        la llave del pre octavos va a la altura del cruce de octavos donde
        aparece el equipo que pasó. */
+    /* El número de llave no dice con quién te cruzás.
+
+       Cada ronda lo numera por su cuenta, y el cruce no siempre es entre
+       vecinos: en la clasificación previa de la Libertadores el 1 se cruza
+       con el 8, el 2 con el 7, el 3 con el 6 y el 4 con el 5. Ordenando por
+       número, las líneas iban a cualquier lado y los cuatro cruces de la
+       Fase Previa 3 caían todos a la misma altura, uno encima del otro.
+
+       Lo que sí es firme es el equipo: si Botafogo está en un cruce de la
+       Fase Previa 3, la llave de la 2 que tiene a Botafogo es una de las
+       dos que llevan ahí. Se recorre de la última ronda hacia atrás, que es
+       de donde viene esa información, y cada llave se acomoda en el lugar
+       que le toca según a dónde va.
+
+       El primer equipo del cruce siguiente manda arriba y el segundo abajo,
+       así la caja de la derecha se lee en el mismo orden que las dos de la
+       izquierda. */
     const nomEq=e=>e&&e.team?sinTildes(e.team.canon||e.team.name):'';
-    for(let c=0;c<slots.length-1;c++){
-      if(cupos[c]!==cupos[c+1]) continue;
+    for(let c=slots.length-2;c>=0;c--){
       const hijos=slots[c+1];
       if(!hijos.some(Boolean)) continue;
-      const fila=new Array(cupos[c]).fill(null), sobran=[];
-      slots[c].forEach(k=>{
-        if(!k) return;
-        const suyos=k.equipos.map(nomEq).filter(Boolean);
-        const j=hijos.findIndex((h,i)=>h&&!fila[i]
-          &&h.equipos.some(e=>suyos.includes(nomEq(e))));
-        if(j>=0) fila[j]=k; else sobran.push(k);
+      const unoAuno=cupos[c]===cupos[c+1];
+      if(!unoAuno&&cupos[c]!==cupos[c+1]*2) continue;   // no parte al medio
+      const fila=new Array(cupos[c]).fill(null), tomados=new Set();
+      hijos.forEach((h,j)=>{
+        if(!h) return;
+        h.equipos.forEach((e,n)=>{
+          const nom=nomEq(e);
+          if(!nom) return;
+          const i=slots[c].findIndex((k,idx)=>k&&!tomados.has(idx)
+            &&k.equipos.some(x=>nomEq(x)===nom));
+          if(i<0) return;
+          const donde=unoAuno?j:j*2+n;
+          if(donde<fila.length&&!fila[donde]){ fila[donde]=slots[c][i]; tomados.add(i); }
+        });
       });
-      sobran.forEach(k=>{ const h=fila.indexOf(null); if(h>=0) fila[h]=k; });
+      // las que no engancharon con nadie se quedan donde estaban si pueden
+      slots[c].forEach((k,i)=>{
+        if(k&&!tomados.has(i)&&!fila[i]){ fila[i]=k; tomados.add(i); } });
+      slots[c].forEach((k,i)=>{
+        if(k&&!tomados.has(i)){ const h=fila.indexOf(null); if(h>=0) fila[h]=k; } });
       slots[c]=fila;
     }
     if(escalera) for(let c=0;c<slots.length-1;c++){

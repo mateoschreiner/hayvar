@@ -1806,7 +1806,12 @@ ABREV = {
 }
 GENERICAS = {"club", "atletico", "deportivo", "de", "del", "la", "el", "los", "y",
              "esgrima", "social", "cultural", "asociacion", "ca", "cd", "csyd",
-             "sportivo", "san", "general", "carril", "aires", "buenos"}
+             "sportivo", "san", "general", "carril", "aires", "buenos",
+             # Apellidos de club que comparten muchos y no distinguen a
+             # ninguno. "Juniors" lo llevan Boca, Argentinos y Chacarita:
+             # tomándolo por seña particular, Argentinos Juniors salía en la
+             # Libertadores con el nombre y el escudo de Boca.
+             "juniors", "jrs", "jr", "fc", "sc", "cf", "afc", "united"}
 
 
 def _tokens(nombre):
@@ -3210,7 +3215,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · cuadro de la previa encadenado por equipo"
+VERSION_APP = "2026-08-19 · cuadro de la previa y clubes homónimos"
 
 
 def reparar_recorridos():
@@ -3911,15 +3916,37 @@ def api_liga_games(q):
         k = emparejar(nombre, meta)
         return meta[k] if k else (None, None)
 
+    # De dónde sale el nombre y el escudo de cada equipo.
+    #
+    # Cuando el calendario lo arma AFA, los equipos vienen sin escudo y con
+    # el nombre abreviado ("Chaco FE"), así que hay que ir a buscarlos a la
+    # tabla de posiciones emparejando por nombre.
+    #
+    # Cuando el calendario ya viene de 365scores, no: cada partido trae el
+    # escudo y el nombre de sus dos equipos, tomados del partido mismo. Ir
+    # igual a la tabla era cambiarlos por los de otro club cada vez que el
+    # emparejado se equivocaba, y en una copa internacional se equivoca
+    # seguido porque hay clubes que se llaman igual: Nacional es el de
+    # Uruguay y también el de Potosí, y hay una Universidad Católica en
+    # Chile y otra en Ecuador. Ningún emparejado por nombre puede
+    # distinguirlos, porque el nombre es el mismo. De la tabla se toma
+    # nada más lo que el partido no trae.
+    propio = not cfg.get("base")
     for m in games:
         za, ta = buscar(m["home"]["name"])
         zb, tb = buscar(m["away"]["name"])
         for lado, t in (("home", ta), ("away", tb)):
             if not t:
                 continue
-            m[lado].update({"logo": t["logo"], "short": t["short"], "site": t["site"],
-                            "name": nombre_mas_completo(m[lado]["name"], t["name"]),
-                            "canon": t["name"]})
+            if propio:
+                for campo in ("logo", "short", "site"):
+                    if not m[lado].get(campo):
+                        m[lado][campo] = t[campo]
+                m[lado]["canon"] = m[lado].get("canon") or m[lado]["name"]
+            else:
+                m[lado].update({"logo": t["logo"], "short": t["short"], "site": t["site"],
+                                "name": nombre_mas_completo(m[lado]["name"], t["name"]),
+                                "canon": t["name"]})
         # La zona sale de en qué tabla está cada equipo. Si de uno solo se
         # pudo averiguar, se usa esa: en estas categorías las zonas juegan
         # separadas, así que ambos están en la misma. Sólo se marca como

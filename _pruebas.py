@@ -1024,6 +1024,54 @@ chequear("una sola letra no busca nada",
          server.api_buscar({"q": ["v"]})["clubes"] == [])
 
 
+print("\n── el club que juega es el que juega ──")
+# En una copa internacional hay clubes que se llaman igual: Nacional es el de
+# Uruguay y tambien el de Potosi, y hay una Universidad Catolica en Chile y
+# otra en Ecuador. El calendario de 365scores trae el escudo y el nombre de
+# cada partido; ir igual a la tabla de posiciones a emparejar por nombre los
+# cambiaba por los del otro club.
+chequear("'juniors' no alcanza para confundir dos clubes",
+         server.emparejar("Argentinos Juniors", {"boca juniors": 1}) is None,
+         server.emparejar("Argentinos Juniors", {"boca juniors": 1}))
+chequear("pero el club sigue apareciendo cuando de verdad es el mismo",
+         server.emparejar("Argentinos Jrs", {"argentinos juniors": 1})
+         == "argentinos juniors")
+chequear("y Boca no deja de ser Boca",
+         server.emparejar("Boca Jrs", {"boca juniors": 1, "argentinos juniors": 1})
+         == "boca juniors")
+
+def _cop(gid, a, b, la, lb):
+    return {"id": gid, "liveId": gid, "comp": 102, "temporada": 69, "round": 2,
+            "start": "2026-03-04T21:30:00-03:00", "status": "FIN",
+            "gh": 1, "ga": 0, "stage": "Segunda Fase", "stageNum": 2,
+            "slot": 1, "zone": None, "interzonal": False,
+            "home": {"name": a, "canon": a, "short": a[:3], "logo": la},
+            "away": {"name": b, "canon": b, "short": b[:3], "logo": lb}}
+_stg3, _glg3, _fxg3 = server._sc_standings, server._sc_goleadores, server.fixture_de_liga
+# En la tabla estan los de Uruguay y Chile; en la previa juegan los otros dos.
+server._sc_standings = lambda comp, ttl=25, juntar=None: [
+    {"name": "Grupo A", "num": 1, "rows": [
+        {"team": {"name": "Nacional", "short": "NAC", "logo": "uruguay.png",
+                  "site": None}, "pos": 1, "pts": 9, "pj": 3},
+        {"team": {"name": "Universidad Católica", "short": "UCA",
+                  "logo": "chile.png", "site": None}, "pos": 2, "pts": 6, "pj": 3}]}]
+server._sc_goleadores = lambda comp, escudos=None: []
+server.fixture_de_liga = lambda cfg, ttl=120: [
+    _cop(1, "Nacional Potosí", "Universidad Católica", "potosi.png", "ecuador.png")]
+server.fetch = lambda p, q, ttl=15: {"games": []}
+_g = server.api_liga_games({"id": ["lib"]})["games"][0]
+chequear("el escudo del partido no lo pisa el de un club homónimo",
+         (_g["home"]["logo"], _g["away"]["logo"]) == ("potosi.png", "ecuador.png"),
+         (_g["home"]["logo"], _g["away"]["logo"]))
+chequear("ni el nombre",
+         (_g["home"]["name"], _g["away"]["name"])
+         == ("Nacional Potosí", "Universidad Católica"),
+         (_g["home"]["name"], _g["away"]["name"]))
+server._sc_standings, server._sc_goleadores = _stg3, _glg3
+server.fixture_de_liga = _fxg3
+server.fetch = _guardado
+
+
 print("\n── pantalla ──")
 chequear("el escudo sólo lleva al club donde corresponde",
          "DONDE_SE_ENTRA='#modalBox, table, .carrera, .cl-plantel'" in HTML)

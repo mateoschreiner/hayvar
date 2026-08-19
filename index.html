@@ -1641,12 +1641,19 @@ const App=(()=>{
       const suyas=S.rounds.filter(r=>actual.rounds.includes(r.round));
       if(!suyas.some(r=>r.round===S.round)&&suyas.length)
         S.round=suyas[suyas.length-1].round;
+      /* Adentro de la página las fechas van corridas —1 a 18 la Primera y
+         19 a 27 la Segunda— para que no se pisen entre fases. Pero cada
+         fase numera desde el uno de verdad, así que el botón muestra el
+         número que le corresponde y no el corrido. */
+      const nro=r=>r-(actual.desde||suyas[0]?.round||1)+1;
       return void(el.innerHTML=`<span class="lb">Fase</span>`
         + fl.map(f=>`<button class="${f.num===actual.num?'on':''}"
              style="padding:0 11px" onclick="App.fase(${f.num})">${esc(f.nombre)}</button>`).join('')
         + `<span class="lb" style="margin-left:10px">Fecha</span>`
         + suyas.map(r=>`<button class="${r.round===S.round?'on':''} ${r.live?'playing':''}
-             ${r.round===S.current?'actual':''}" onclick="App.pick(${r.round})">${r.round}</button>`).join(''));
+             ${r.round===S.current?'actual':''}"
+             title="${r.round===S.current?'Fecha en curso':''}"
+             onclick="App.pick(${r.round})">${nro(r.round)}</button>`).join(''));
     }
     const rotulo=r=>et&&et[r-1]?esc(etapaCorta(et[r-1])):r;
     const titulo=r=>et&&et[r-1]?esc(et[r-1])
@@ -1896,9 +1903,16 @@ const App=(()=>{
   function scorersTable(){
     const rows=S.scorers.rows;
     if(!rows.length) return `<div class="empty">Todavía no hay tabla de goleadores.</div>`;
+    /* El desglose por tipo de gol lo publica AFA, pero 365scores no. En las
+       categorías que no cubre AFA —el Federal A, las copas de afuera— las
+       cuatro columnas quedaban en cero, y cuatro ceros al lado de un
+       goleador no dicen que no convirtió de cabeza: dicen que no sabemos.
+       Sin dato, las columnas no van. */
+    const det=S.scorers.detallados!==false;
     return `<div class="tablewrap"><table><thead><tr>
       <th style="width:26px"></th><th class="l">Jugador</th><th>Goles</th>
-      <th title="De jugada">Jug</th><th title="De cabeza">Cab</th><th title="Tiro libre">TL</th><th title="De penal">Pen</th>
+      ${det?`<th title="De jugada">Jug</th><th title="De cabeza">Cab</th>
+             <th title="Tiro libre">TL</th><th title="De penal">Pen</th>`:''}
     </tr></thead><tbody>${rows.slice(0,30).map(r=>
       `<tr style="cursor:pointer;${estiloClub(r.team.name)}" onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
         <td class="pos">${r.rank}</td>
@@ -1907,8 +1921,8 @@ const App=(()=>{
           <span style="color:var(--txt2);font-size:11px;display:block;line-height:1.1">${esc(r.team.name)}</span>
         </span></div></td>
         <td class="pts">${r.goals}</td>
-        <td style="color:var(--txt2)">${r.jugada??0}</td><td style="color:var(--txt2)">${r.cabeza??0}</td>
-        <td style="color:var(--txt2)">${r.tiroLibre??0}</td><td style="color:var(--txt2)">${r.pens??0}</td>
+        ${det?`<td style="color:var(--txt2)">${r.jugada??0}</td><td style="color:var(--txt2)">${r.cabeza??0}</td>
+               <td style="color:var(--txt2)">${r.tiroLibre??0}</td><td style="color:var(--txt2)">${r.pens??0}</td>`:''}
         </tr>`).join('')}
     </tbody></table></div>${fuente(S.scorers)}`;
   }
@@ -2958,18 +2972,24 @@ const App=(()=>{
           + (d.anualNota?`<div class="note">${esc(d.anualNota)}</div>`:'')
         : '<div class="empty">Sin tabla general.</div>';
     } else {
+      /* El desglose por tipo de gol lo publica AFA; 365scores no. En el
+         Federal A y en las copas de afuera las cuatro columnas quedaban en
+         cero, y eso no es "no convirtió de cabeza": es que no lo sabemos.
+         Sin dato, las columnas no se muestran. */
+      const det=d.golesDetallados!==false;
       el.innerHTML=d.goleadores.length?`<div class="tablewrap"><table><thead><tr>
         <th style="width:26px"></th><th class="l">Jugador</th><th>Goles</th>
-        <th>Jug</th><th>Cab</th><th>TL</th><th>Pen</th></tr></thead><tbody>${
+        ${det?'<th>Jug</th><th>Cab</th><th>TL</th><th>Pen</th>':''}</tr></thead><tbody>${
         d.goleadores.slice(0,30).map(r=>`<tr style="cursor:pointer" onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
           <td class="pos">${r.rank}</td>
           <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn"><b style="font-weight:600">${esc(r.name)}</b>
             <span style="color:var(--txt2);font-size:11px;display:block;line-height:1.1">${esc(r.team.name)}</span>
           </span></div></td><td class="pts">${r.goals}</td>
-          <td style="color:var(--txt2)">${r.jugada??0}</td><td style="color:var(--txt2)">${r.cabeza??0}</td>
-          <td style="color:var(--txt2)">${r.tiroLibre??0}</td><td style="color:var(--txt2)">${r.pens??0}</td>
+          ${det?`<td style="color:var(--txt2)">${r.jugada??0}</td><td style="color:var(--txt2)">${r.cabeza??0}</td>
+                 <td style="color:var(--txt2)">${r.tiroLibre??0}</td><td style="color:var(--txt2)">${r.pens??0}</td>`:''}
         </tr>`).join('')}</tbody></table></div>
-        <div class="note">Fuente: <b>AFA / DataFactory</b>.</div>`
+        <div class="note">Fuente: <b>${esc(d.fuente||'AFA / DataFactory')}</b>.
+          ${d.notaGoleadores?' '+esc(d.notaGoleadores):''}</div>`
         :'<div class="empty">Sin goleadores.</div>';
     }
   }

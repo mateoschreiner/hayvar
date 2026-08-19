@@ -197,7 +197,12 @@ chequear("el cliente que se va no ensucia el log",
 print("\n── qué fecha se abre ──")
 import datetime as _dt
 def _g(dias, fin):
-    t = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=dias)
+    # Anclado al dia LOCAL y no a la hora UTC. `fecha_actual` compara contra
+    # `date.today()`, que es local: contando desde la hora UTC, un partido de
+    # "ayer" caia en el dia de hoy cada vez que la prueba se corria despues
+    # de la medianoche de Londres, y la prueba fallaba sola de madrugada.
+    d = _dt.date.today() + _dt.timedelta(days=dias)
+    t = _dt.datetime.combine(d, _dt.time(15, 0), _dt.timezone.utc)
     return {"start": t.isoformat(), "status": "FIN" if fin else "PROG"}
 for _titulo, _pf, _esp in [
     ("una fecha en curso gana sobre la siguiente",
@@ -643,6 +648,152 @@ chequear("y un partido que no se jugo no se inventa",
 server.df_fixture_generico, server.fixture_de_liga = _dfg, _fxg
 server._sc_standings, server._sc_goleadores = _stg, _glg
 server.fetch = _guardado
+
+
+print("\n── las dos fases del Federal A ──")
+# El Federal A juega una Primera Fase y una Segunda, y las dos empiezan en la
+# fecha 1. 365scores manda los partidos sin nombre de fase, asi que las dos
+# fechas 1 se sumaban en una sola: 34 partidos donde son 17.
+_ZONA1 = ["Douglas Haig", "Sp. Belgrano", "Def. de Belgrano", "9 de Julio"]
+_ZONA2 = ["Olimpo", "Villa Mitre", "Cipolletti", "Alvarado"]
+_CRUCES = [(0, 1), (2, 3), (0, 2), (1, 3), (0, 3), (1, 2)]
+
+def _fa(gid, a, b, dia, ronda, gh=1, ga=0):
+    return {"id": gid, "round": ronda, "start": dia + "T15:30:00-03:00",
+            "status": "FIN", "gh": gh, "ga": ga, "stage": "", "stageNum": 1,
+            "slot": None, "zone": None, "interzonal": False, "liveId": gid,
+            "venue": "", "minute": None, "statusText": "Finalizado",
+            "home": {"name": a, "canon": a, "short": a[:3], "logo": None},
+            "away": {"name": b, "canon": b, "short": b[:3], "logo": None}}
+
+def _torneo_fa():
+    """Primera Fase de marzo a mayo y Segunda en agosto, las dos desde la 1."""
+    juegos, gid = [], 7000
+    for ronda, (i, j) in enumerate(_CRUCES, 1):
+        dia = "2026-03-%02d" % (7 + ronda * 3)          # marzo/abril
+        for z in (_ZONA1, _ZONA2):
+            juegos.append(_fa(gid, z[i], z[j], dia, ronda)); gid += 1
+    for ronda, (i, j) in enumerate(_CRUCES[:3], 1):
+        dia = "2026-08-%02d" % (1 + ronda * 7)          # agosto
+        for z in (_ZONA1, _ZONA2):
+            juegos.append(_fa(gid, z[i], z[j], dia, ronda)); gid += 1
+    return juegos
+
+_j = _torneo_fa()
+_hubo = server.marcar_fases_por_calendario(_j, ["Primera Fase", "Segunda Fase"])
+_deFase = {}
+for _g in _j:
+    _deFase.setdefault(_g["stage"], set()).add(_g["round"])
+chequear("las dos fases se separan por el calendario", _hubo)
+chequear("la Primera Fase se queda con sus seis fechas",
+         _deFase.get("Primera Fase") == {1, 2, 3, 4, 5, 6}, _deFase)
+chequear("y la Segunda con las tres suyas",
+         _deFase.get("Segunda Fase") == {1, 2, 3}, _deFase)
+
+# Un partido postergado se juega mucho despues pero sigue siendo de su fecha.
+# Si alcanzara para abrir una fase, cada suspension inventaria una.
+_post = _torneo_fa()
+next(_g for _g in _post
+     if _g["round"] == 2 and _g["start"].startswith("2026-03"))\
+    ["start"] = "2026-05-10T15:30:00-03:00"
+server.marcar_fases_por_calendario(_post, ["Primera Fase", "Segunda Fase"])
+chequear("un postergado suelto no inventa una fase",
+         next(g["stage"] for g in _post if g["start"].startswith("2026-05-10"))
+         == "Primera Fase")
+chequear("y las fases siguen siendo dos",
+         {g["stage"] for g in _post} == {"Primera Fase", "Segunda Fase"})
+
+# Las zonas salen de quien jugo contra quien: nadie cruza de grupo.
+_zonas = server.zonas_por_rivales([g for g in _j if g["stage"] == "Primera Fase"])
+chequear("cada zona sale de quienes se enfrentaron",
+         len(set(_zonas.values())) == 2
+         and len({_zonas[e] for e in _ZONA1}) == 1
+         and len({_zonas[e] for e in _ZONA2}) == 1, _zonas)
+_tab = server.tablas_por_resultados(
+    [g for g in _j if g["stage"] == "Primera Fase"], "Primera Fase")
+chequear("y la tabla se arma sin que la fuente mande el grupo",
+         len(_tab) == 2 and all(len(t["rows"]) == 4 for t in _tab),
+         [(t["name"], len(t["rows"])) for t in _tab])
+
+# Cada zona reparte cosas distintas: en la Fase Campeonato se pelea el
+# ascenso y en la Revalida, no descender. Pintarlas igual seria decir que
+# el puntero de la Revalida asciende.
+def _zona(nombre, n):
+    return {"name": nombre, "num": 1,
+            "rows": [{"team": {"name": "E%d" % i}, "pos": i}
+                     for i in range(1, n + 1)]}
+_zs = [_zona("Primera Fase - Zona 1", 10), _zona("Primera Fase - Zona 2", 9),
+       _zona("Segunda Fase - Campeonato A", 9),
+       _zona("Segunda Fase - Reválida B", 10)]
+server.marcar_destinos(_zs, server.LIGAS["fa"]["zonas_de"])
+_dest = {z["name"]: [r["destino"] for r in z["rows"]] for z in _zs}
+chequear("de una zona de diez pasan cinco",
+         _dest["Primera Fase - Zona 1"].count("campeonato") == 5)
+chequear("y de una de nueve, cuatro",
+         _dest["Primera Fase - Zona 2"].count("campeonato") == 4)
+chequear("en el Campeonato el primero juega por el ascenso",
+         _dest["Segunda Fase - Campeonato A"][0] == "final")
+chequear("y del segundo al quinto van a la Copa Argentina",
+         _dest["Segunda Fase - Campeonato A"].count("copaarg") == 4)
+chequear("en la Reválida no asciende nadie: descienden los dos ultimos",
+         _dest["Segunda Fase - Reválida B"][-2:] == ["desciende", "desciende"]
+         and "final" not in _dest["Segunda Fase - Reválida B"])
+
+# La Fase Campeonato y la Revalida se juegan a la vez: una sola pestana.
+def _bloque(fase, grupo, equipos):
+    return {"name": fase,
+            "groups": [{"num": grupo, "name": "Zona %s" % grupo}],
+            "rows": [{"competitor": {"id": i, "name": e}, "points": 0,
+                      "gamePlayed": 0, "for": 0, "against": 0,
+                      "groupNum": grupo}
+                     for i, e in enumerate(equipos, 1)]}
+server.fetch = lambda p, q, ttl=25: {"standings": [
+    _bloque("Segunda Fase", "A", ["Olimpo", "Alvarado"]),
+    _bloque("Reválida", "A", ["Germinal", "Sol de Mayo"])]}
+_juntas = server._sc_standings(5078, juntar=server.LIGAS["fa"]["fases_juntas"])
+chequear("Campeonato y Reválida quedan bajo el mismo titulo",
+         all(z["name"].startswith("Segunda Fase - ") for z in _juntas),
+         [z["name"] for z in _juntas])
+chequear("pero no se funden en una sola tabla",
+         len(_juntas) == 2 and all(len(z["rows"]) == 2 for z in _juntas))
+chequear("y se sigue sabiendo cual es la Reválida",
+         any("Reválida" in z["name"] for z in _juntas),
+         [z["name"] for z in _juntas])
+server.fetch = _guardado
+
+# Y todo junto: la fecha 1 tiene que dejar de tener el doble de partidos.
+_stg2, _glg2, _fxg2 = server._sc_standings, server._sc_goleadores, server.fixture_de_liga
+server._sc_standings = lambda comp, ttl=25, juntar=None: []
+server._sc_goleadores = lambda comp, escudos=None: []
+server.fixture_de_liga = lambda cfg, ttl=120: [dict(g) for g in _torneo_fa()]
+server.fetch = lambda p, q, ttl=15: {"games": []}
+_r = server.api_liga_games({"id": ["fa"]})
+_porFecha = {}
+for _g in _r["games"]:
+    _porFecha[_g["round"]] = _porFecha.get(_g["round"], 0) + 1
+chequear("ninguna fecha queda con el doble de partidos",
+         set(_porFecha.values()) == {2}, _porFecha)
+chequear("las fechas de la Segunda Fase no pisan a las de la Primera",
+         sorted(_porFecha) == list(range(1, 10)), sorted(_porFecha))
+_fl = _r["fasesLiga"]
+chequear("quedan las dos fases para elegir",
+         [f["nombre"] for f in _fl] == ["Primera Fase", "Segunda Fase"],
+         [f["nombre"] for f in _fl])
+chequear("y cada una sabe desde que numero corre, para rotular su fecha 1",
+         [f["desde"] for f in _fl] == [1, 7], [f.get("desde") for f in _fl])
+chequear("la fecha que se abre es una de la fase que se esta jugando",
+         _r["current"] in _fl[1]["rounds"], (_r["current"], _fl[1]["rounds"]))
+server._sc_standings, server._sc_goleadores = _stg2, _glg2
+server.fixture_de_liga = _fxg2
+server.fetch = _guardado
+
+chequear("sin desglose de goles no se muestran las columnas",
+         not server.hay_desglose_de_goles(
+             [{"name": "X", "goals": 7, "jugada": 0, "cabeza": 0,
+               "tiroLibre": 0, "pens": 0}]))
+chequear("con desglose si",
+         server.hay_desglose_de_goles(
+             [{"name": "X", "goals": 7, "jugada": 5, "cabeza": 2}]))
 
 
 print("\n── un tramo de otra temporada en el medio no corta ──")

@@ -458,6 +458,30 @@ LIGAS = {
         # pedírselas devuelve las de la Segunda. Como los partidos sí los
         # tenemos guardados, esa tabla la calculamos nosotros.
         "fases_calculadas": ["Primera Fase"],
+        # Los partidos vienen sin nombre de fase y las dos numeran las
+        # fechas desde el uno, así que se separan por el calendario.
+        "fases_por_calendario": ["Primera Fase", "Segunda Fase"],
+        # La Fase Campeonato y la Reválida se juegan a la vez, así que van
+        # en una sola pestaña con las cuatro zonas adentro. 365scores las
+        # manda como dos fases distintas y quedaban separadas.
+        "fases_juntas": {"titulo": "Segunda Fase",
+                         "cuales": ["Segunda Fase", "Campeonato", "Reválida"]},
+        # Reglamento 2026 (AFA):
+        #   · Primera Fase: pasan a la Fase Campeonato del 1° al 5° en las
+        #     zonas de diez y del 1° al 4° en las de nueve, más el mejor 5°
+        #     de esas. Ese "mejor quinto" se decide comparando zonas, así
+        #     que acá se marca lo que es seguro y él queda sin pintar.
+        #   · Fase Campeonato: el 1° de cada zona juega por el primer
+        #     ascenso a la Primera Nacional 2027; del 1° al 5°, Copa
+        #     Argentina 2027.
+        #   · Reválida: los dos últimos de cada zona descienden (cuatro).
+        "zonas_de": [
+            {"cuando": "Primera Fase",
+             "reglas": {"campeonato": lambda n: (1, 5 if n >= 10 else 4)}},
+            {"cuando": "Reválida", "reglas": {"desciende": (-2, -1)}},
+            {"cuando": "Campeonato",
+             "reglas": {"final": (1, 1), "copaarg": (2, 5)}},
+        ],
     },
     "fem": {
         # Igual que arriba: el canal es "primeraafemenino", según la página
@@ -1913,11 +1937,18 @@ def _fila_generica(row):
     return nombre, row[idx + 1:]
 
 
-def _sc_standings(comp, ttl=25):
+def _sc_standings(comp, ttl=25, juntar=None):
     """
     Posiciones de una competencia de 365scores, separadas por zona.
     A diferencia de la Liga Profesional, acá sí vienen las dos juntas: cada
     fila trae su groupNum y el bloque, los nombres de los grupos.
+
+    `juntar` mete varias fases bajo un mismo título. La Fase Campeonato y
+    la Reválida del Federal A se juegan al mismo tiempo —son la Segunda
+    Fase, repartida según cómo te fue— y tenerlas en dos pestañas obligaba
+    a saltar de una a otra para mirar la misma jornada. El nombre de cada
+    una no se pierde: pasa a ser el de la zona, "Reválida A" en vez de
+    "Zona A", que además es como las nombra AFA.
     """
     data = fetch("standings", {"competitions": comp, "live": "true"}, ttl=ttl)
     todos = data.get("standings") or [{}]
@@ -1929,7 +1960,7 @@ def _sc_standings(comp, ttl=25):
     zonas = {}
     for bloque in todos:
         fase = (bloque.get("name") or bloque.get("stageName") or "").strip()
-        _sc_zonas_de(bloque, fase, zonas)
+        _sc_zonas_de(bloque, fase, zonas, juntar)
     out = []
     for clave in sorted(zonas, key=lambda k: (zonas[k]["orden"], k)):
         z = zonas[clave]
@@ -1938,9 +1969,19 @@ def _sc_standings(comp, ttl=25):
     return out
 
 
-def _sc_zonas_de(bloque, fase, zonas):
+def _sc_zonas_de(bloque, fase, zonas, juntar=None):
     """Vuelca las filas de una tabla en el diccionario de zonas."""
     nombres = {g.get("num"): g.get("name") for g in (bloque.get("groups") or [])}
+
+    # Varias fases bajo un mismo título. La clave del diccionario sigue
+    # siendo la fase de verdad: si dos zonas distintas comparten el número
+    # de grupo —y la Zona A de la Reválida lo comparte con la Zona A del
+    # Campeonato— unirlas por la clave las fusionaría en una sola tabla.
+    titulo, propio = fase, ""
+    if juntar and any(norm(x) in norm(fase) for x in juntar.get("cuales", [])):
+        titulo = juntar.get("titulo") or fase
+        if norm(fase) != norm(titulo):
+            propio = fase
     for r in bloque.get("rows", []):
         c = r.get("competitor") or {}
         gf, gc = int(r.get("for") or 0), int(r.get("against") or 0)
@@ -1958,8 +1999,13 @@ def _sc_zonas_de(bloque, fase, zonas):
         corto = nombres.get(g)
         if not corto and g not in (None, "", 0):
             corto = "Zona %s" % g
+        # "Zona A" de la Reválida pasa a llamarse "Reválida A": adentro de
+        # la pestaña común hay dos zonas A y así se sabe cuál es cuál.
+        if propio and corto:
+            corto = "%s %s" % (propio, re.sub(r"^(Zona|Grupo)\s+", "", corto))
         # el nombre lleva la fase adelante para poder agruparlas después
-        nombre = ("%s - %s" % (fase, corto)) if (fase and corto) else (corto or fase or None)
+        nombre = (("%s - %s" % (titulo, corto)) if (titulo and corto)
+                  else (corto or titulo or None))
         clave = (fase, g)
         z = zonas.setdefault(clave, {"nombre": nombre, "num": g,
                                      "orden": len(zonas), "filas": []})
@@ -1986,6 +2032,10 @@ LEYENDA_DESTINOS = [
     {"clave": "conference", "color": "#12b76a", "texto": "Conference League"},
     {"clave": "desciende", "color": "#e5484d", "texto": "Descienden"},
     {"clave": "afuera", "color": "#e5484d", "texto": "Queda eliminado"},
+    {"clave": "campeonato", "color": "#2f6fed",
+     "texto": "Clasifica a la Fase Campeonato"},
+    {"clave": "copaarg", "color": "#12b76a",
+     "texto": "Clasifica a la Copa Argentina 2027"},
 ]
 
 
@@ -1996,15 +2046,35 @@ def marcar_destinos(zonas, reglas):
     `reglas` es {clave: (desde, hasta)} con posiciones que arrancan en 1. Los
     números negativos cuentan desde abajo, así (-2, -1) son los dos últimos
     sin importar cuántos equipos tenga la zona.
+
+    En un torneo donde no todas las zonas reparten lo mismo, `reglas` puede
+    ser una lista de {"cuando": <texto>, "reglas": {...}} y a cada zona se
+    le aplica la primera cuyo "cuando" aparezca en su nombre. Hace falta
+    para el Federal A: en la Fase Campeonato se pelea el ascenso y en la
+    Reválida, no descender. Pintar las dos igual sería decir que el puntero
+    de la Reválida asciende.
+
+    Y el rango puede ser una función de la cantidad de equipos, porque hay
+    reglamentos que dependen de eso: en la Primera Fase del Federal A pasan
+    cinco de las zonas de diez y cuatro de las de nueve.
     """
     if not reglas:
         return
+    porNombre = isinstance(reglas, (list, tuple))
     for z in zonas:
         n = len(z["rows"])
+        suyas = reglas
+        if porNombre:
+            nom = norm(z.get("name") or "")
+            suyas = next((b["reglas"] for b in reglas
+                          if norm(b.get("cuando") or "") in nom), None)
         for r in z["rows"]:
             r["destino"], r["destinoTexto"] = "", ""
+            if not suyas:
+                continue
             pos = r.get("pos") or 0
-            for clave, (desde, hasta) in reglas.items():
+            for clave, rango in suyas.items():
+                desde, hasta = rango(n) if callable(rango) else rango
                 a = desde if desde > 0 else n + desde + 1
                 b = hasta if hasta > 0 else n + hasta + 1
                 if a <= pos <= b:
@@ -2085,12 +2155,18 @@ def api_liga(q):
 
     # posiciones por zona, con escudos
     try:
-        out["zonas"] = _sc_standings(cfg["sc"])
+        out["zonas"] = _sc_standings(cfg["sc"], juntar=cfg.get("fases_juntas"))
         # Las fases que ya terminaron no las publica más la fuente. Si de
         # alguna tenemos los partidos y no tenemos la tabla, se calcula.
         if cfg.get("fases_calculadas"):
             try:
-                juegos = fixture_de_liga(cfg, ttl=600)
+                juegos = [dict(m) for m in fixture_de_liga(cfg, ttl=600)]
+                # Sin nombre de fase no hay con qué elegir sus partidos.
+                # Se copia la lista antes de tocarla: la de `fixture_de_liga`
+                # es la que va a la base y no es de acá para escribirla.
+                if cfg.get("fases_por_calendario"):
+                    marcar_fases_por_calendario(juegos,
+                                                cfg["fases_por_calendario"])
                 nombres = " ".join(norm(z["name"]) for z in out["zonas"])
                 for fase in cfg["fases_calculadas"]:
                     if norm(fase) in nombres:
@@ -2102,7 +2178,10 @@ def api_liga(q):
                 pass
         marcar_destinos(out["zonas"], cfg.get("zonas_de"))
         # sólo las referencias que esta liga usa de verdad
-        usadas = set(cfg.get("zonas_de") or {})
+        reglas = cfg.get("zonas_de") or {}
+        usadas = (set().union(*(set(b["reglas"]) for b in reglas))
+                  if isinstance(reglas, (list, tuple)) and reglas
+                  else set(reglas))
         out["leyenda"] = [x for x in LEYENDA_DESTINOS if x["clave"] in usadas]
     except Exception as e:
         out["errorZonas"] = str(e)
@@ -2171,6 +2250,7 @@ def api_liga(q):
                 out["goleadoresPropios"] = True
                 out["notaGoleadores"] = ("Contados por HAYVAR a partir de los "
                                          "goles de cada partido.")
+        out["golesDetallados"] = hay_desglose_de_goles(out["goleadores"])
         return out
 
     try:
@@ -2200,7 +2280,134 @@ def api_liga(q):
         except Exception:
             pass
 
+    out["golesDetallados"] = hay_desglose_de_goles(out["goleadores"])
     return out
+
+
+def marcar_fases_por_calendario(games, nombres, corte=45):
+    """
+    Le pone nombre de fase a los partidos cuando la fuente no lo manda.
+
+    El Federal A juega una Primera Fase y una Segunda, y las dos empiezan
+    en la fecha 1. 365scores manda los partidos sin nombre de fase, así que
+    las dos fechas 1 se sumaban en una sola y en pantalla aparecían 34
+    partidos donde son 17.
+
+    La señal está en el calendario. Una fase termina antes de que empiece
+    la siguiente, así que los partidos de la fecha 1 de cada una están
+    separados por meses, mientras que los de una misma fecha se juegan en
+    el mismo fin de semana. Se parte cada fecha en tandas por esa distancia.
+
+    Un puñado de partidos sueltos no es una fase: es un postergado que se
+    jugó tarde. Esos vuelven a la tanda anterior, que es de donde salieron.
+    Lo que decide no es cuántos son sino qué parte de la fecha ocupan: una
+    fecha de treinta y cuatro partidos partida en diecisiete y diecisiete
+    son dos fases, y partida en treinta y tres y uno es una postergación.
+    """
+    def dia(g):
+        try:
+            return dt.date.fromisoformat((g.get("start") or "")[:10])
+        except ValueError:
+            return None
+
+    porRonda = {}
+    for g in games:
+        if g.get("round") and dia(g):
+            porRonda.setdefault(g["round"], []).append(g)
+
+    fase_de = {}
+    for ronda, ms in porRonda.items():
+        tandas, actual, anterior = [], [], None
+        for g in sorted(ms, key=lambda x: x["start"]):
+            d = dia(g)
+            if anterior and (d - anterior).days > corte:
+                tandas.append(actual)
+                actual = []
+            actual.append(g)
+            anterior = d
+        tandas.append(actual)
+
+        juntas = []
+        for t in tandas:
+            suelta = len(t) < 2 or len(t) * 3 < len(ms)
+            if juntas and suelta:
+                juntas[-1].extend(t)
+            else:
+                juntas.append(t)
+
+        for i, t in enumerate(juntas):
+            for g in t:
+                fase_de[str(g["id"])] = i
+
+    if not fase_de or max(fase_de.values()) < 1:
+        return False        # una sola fase: no hay nada que separar
+    for g in games:
+        i = fase_de.get(str(g.get("id")))
+        if i is None or (g.get("stage") or "").strip():
+            continue
+        g["stage"] = nombres[i] if i < len(nombres) else "Fase %d" % (i + 1)
+    return True
+
+
+def zonas_por_rivales(juegos):
+    """
+    Deduce las zonas de una fase mirando quién jugó contra quién.
+
+    En un torneo por zonas nadie cruza de grupo: los de la Zona A juegan
+    entre ellos y con nadie más. Así que los equipos forman islas dentro
+    del mapa de enfrentamientos, y cada isla es una zona. Sale de los
+    partidos y no hace falta que la fuente mande el número de grupo.
+
+    Es la única forma de armar la Primera Fase del Federal A: 365scores
+    no le pone zona a esos partidos y la fase ya terminó, así que
+    tampoco se la puede pedir a la tabla de posiciones.
+
+    Las zonas salen numeradas por orden de aparición en el calendario.
+    Ese número es nuestro y no tiene por qué coincidir con la letra que
+    les puso AFA; lo que importa es que cada equipo caiga con los suyos.
+    """
+    vecinos, primera = {}, {}
+    for m in juegos:
+        a = (m["home"].get("canon") or m["home"].get("name") or "").strip()
+        b = (m["away"].get("canon") or m["away"].get("name") or "").strip()
+        if not a or not b:
+            continue
+        vecinos.setdefault(a, set()).add(b)
+        vecinos.setdefault(b, set()).add(a)
+        for x in (a, b):
+            cuando = m.get("start") or ""
+            if cuando and (x not in primera or cuando < primera[x]):
+                primera[x] = cuando
+
+    islas, visto = [], set()
+    for equipo in sorted(vecinos, key=lambda x: (primera.get(x, ""), x)):
+        if equipo in visto:
+            continue
+        grupo, pila = set(), [equipo]
+        while pila:
+            actual = pila.pop()
+            if actual in grupo:
+                continue
+            grupo.add(actual)
+            pila.extend(vecinos.get(actual, ()) - grupo)
+        visto |= grupo
+        islas.append(grupo)
+
+    return {equipo: i + 1 for i, grupo in enumerate(islas) for equipo in grupo}
+
+
+def hay_desglose_de_goles(goleadores):
+    """
+    ¿La tabla de goleadores trae el detalle de cómo se hizo cada gol?
+
+    AFA lo publica —de jugada, de cabeza, de tiro libre, de penal— pero
+    365scores no, y las categorías que no cubre AFA quedaban con las cuatro
+    columnas en cero. Cuatro ceros al lado de un goleador no dicen que no
+    convirtió de cabeza: dicen que no sabemos, y son cosas distintas. Sin
+    dato, la pantalla esconde las columnas.
+    """
+    return any(g.get(k) for g in (goleadores or [])
+               for k in ("jugada", "cabeza", "tiroLibre", "pens"))
 
 
 def tablas_por_resultados(juegos, etiqueta):
@@ -2212,16 +2419,24 @@ def tablas_por_resultados(juegos, etiqueta):
     la Segunda. Pero los partidos sí los tenemos —los fuimos guardando fecha
     a fecha— y una tabla no es más que sumar tres, uno o cero.
 
-    Se agrupa por el número de zona que trae cada partido. Si no viene, no
-    se inventa una tabla única con todos mezclados: se devuelve vacío y la
-    pestaña no aparece, que es preferible a mostrar algo falso.
+    Se agrupa por el número de zona que trae cada partido. Si no viene
+    —que es el caso del Federal A— se deduce de quién jugó contra quién.
     """
+    jugados = [m for m in juegos if m.get("status") == "FIN"]
     porZona = {}
-    for m in juegos:
-        z = m.get("slot")
-        if z is None or m.get("status") != "FIN":
-            continue
-        porZona.setdefault(z, []).append(m)
+    for m in jugados:
+        if m.get("slot") is not None:
+            porZona.setdefault(m["slot"], []).append(m)
+    if len(porZona) < 2:
+        # Sin número de zona en los partidos, las zonas se deducen. Un
+        # partido cuenta para la zona de sus equipos, que es la misma:
+        # justamente por eso son zonas.
+        deQuien = zonas_por_rivales(jugados)
+        porZona = {}
+        for m in jugados:
+            z = deQuien.get(m["home"].get("canon") or m["home"].get("name"))
+            if z is not None:
+                porZona.setdefault(z, []).append(m)
     if len(porZona) < 2:
         return []
 
@@ -2795,6 +3010,13 @@ def migrar_fixture(comp):
 # faltaban dos ventanas de días enteras en el medio del torneo. Ahora se
 # ancla en el borde de la página que acaba de llegar, se guarde o no.
 VERSION_RECORRIDO = 7
+
+# Qué versión del programa está corriendo. No cumple ninguna función salvo
+# una: cuando algo sigue mal después de un arreglo, esto dice de una si el
+# servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
+# Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
+# adivinanza que hizo perder tres vueltas con los recorridos.
+VERSION_APP = "2026-08-19 · Federal A: fases, zonas y tablas"
 
 
 def reparar_recorridos():
@@ -3746,6 +3968,15 @@ def api_liga_games(q):
     # primero una y después la otra.
     fases_liga = []
     if not cfg.get("copa"):
+        # Si la fuente no manda la fase, se deduce del calendario. Sin esto
+        # el Federal A mezcla su Primera Fase con la Segunda, porque las dos
+        # numeran las fechas desde el uno.
+        if cfg.get("fases_por_calendario"):
+            try:
+                marcar_fases_por_calendario(games, cfg["fases_por_calendario"])
+            except Exception:
+                pass
+
         # La fase de un partido se identifica por su número y, si no lo trae
         # o si todos comparten el mismo, por el nombre. El Federal A llegó a
         # tener las dos fases con el mismo número y volvían a mezclarse.
@@ -3789,6 +4020,29 @@ def api_liga_games(q):
             else:
                 for g in games:
                     g["fase"] = numero.get(clave_fase(g))
+
+                # Dos fases que numeran las fechas desde el uno se pisan:
+                # la fecha 1 termina con los partidos de las dos y muestra
+                # el doble. Acá se corren las de la segunda para que sigan
+                # a las de la primera —1 a 18 y después 19 a 27— y cada
+                # fecha vuelva a ser una sola.
+                #
+                # El número corrido es de uso interno. Cada fase viaja con
+                # su `desde`, así el botón sigue diciendo "Fecha 1" de la
+                # Segunda Fase y no "Fecha 19", que no existe.
+                corrido = 0
+                for f in fases_liga:
+                    suyas = f["rounds"]
+                    if not suyas:
+                        continue
+                    salto = corrido + 1 - suyas[0] if corrido >= suyas[0] else 0
+                    if salto:
+                        for g in games:
+                            if g.get("fase") == f["num"] and g.get("round"):
+                                g["round"] += salto
+                        f["rounds"] = [r + salto for r in suyas]
+                    f["desde"] = f["rounds"][0]
+                    corrido = f["rounds"][-1]
 
     rnd = (q.get("round") or [None])[0]
     rounds = sorted({g["round"] for g in games if g["round"]})
@@ -6105,6 +6359,44 @@ def api_recorrido(q):
                 k = (m.get("stage") or "—")
                 fases[k] = fases.get(k, 0) + 1
             rondas = sorted(r for r in {m.get("round") for m in juegos} if r)
+
+            # Dos fases con la misma numeración se pisan.
+            #
+            # El Federal A juega una Primera Fase y una Segunda, y las dos
+            # empiezan en la fecha 1. Si la fase no viene con nombre, las
+            # dos fechas 1 se suman en una sola y en pantalla aparece el
+            # doble de partidos: 34 donde deberían ser 17.
+            #
+            # Acá se listan las fechas donde eso pasa y con qué se podrían
+            # separar: si los `etapaNum` son distintos alcanza con eso; si
+            # son iguales, lo único que queda es la fecha del calendario,
+            # porque una fase termina antes de que empiece la otra.
+            porRondaG = {}
+            for m in juegos:
+                if m.get("round"):
+                    porRondaG.setdefault(m["round"], []).append(m)
+
+            def _entre(a, b):
+                try:
+                    return (dt.date.fromisoformat(b) - dt.date.fromisoformat(a)).days
+                except Exception:
+                    return 0
+
+            mezcladas = []
+            for r, ms in sorted(porRondaG.items()):
+                dias = sorted((m.get("start") or "")[:10]
+                              for m in ms if m.get("start"))
+                etapas = sorted({str(m.get("stageNum")) for m in ms})
+                if len(etapas) > 1 or (dias and _entre(dias[0], dias[-1]) > 60):
+                    mezcladas.append({
+                        "fecha": r, "partidos": len(ms),
+                        "etapaNum": etapas,
+                        "etapaFuente": sorted({str(m.get("etapaFuente"))
+                                               for m in ms}),
+                        "grupo": sorted({str(m.get("slot")) for m in ms}),
+                        "desde": dias[0] if dias else None,
+                        "hasta": dias[-1] if dias else None})
+
             hist, _ = almacen.leer("hist:%s" % comp)
             fut, _ = almacen.leer("fut:%s" % comp)
             comps.append({
@@ -6117,6 +6409,7 @@ def api_recorrido(q):
                 "fechasDelTorneo": fechas_del_torneo(comp),
                 "rango": [rondas[0], rondas[-1]] if rondas else None,
                 "fases": fases,
+                "fechasMezcladas": mezcladas[:24],
                 "atras": hist or {},
                 "adelante": fut or {},
                 "edadSegundos": round(edad) if edad else None,
@@ -6151,17 +6444,45 @@ def api_recorrido(q):
             # esto sólo se sabe cuántos son, y para saber si el problema es
             # que faltan en la fuente o que no se aparean hay que poder
             # buscarlos a mano.
-            sueltos = [{"fecha": m.get("round"),
+            def ficha(m):
+                return {"fecha": m.get("round"),
                         "partido": "%s - %s" % (m["home"].get("canon")
                                                 or m["home"]["name"],
                                                 m["away"].get("canon")
                                                 or m["away"]["name"]),
                         "dia": (m.get("start") or "")[:10]}
-                       for m in juegos if not m.get("liveId")]
+            sueltos = [ficha(m) for m in juegos if not m.get("liveId")]
+
+            # Los que ya se jugaron y siguen sin marcador, con lo que dice
+            # 365scores del mismo partido al lado. Así se ve de una si el
+            # que no cargó el resultado fue AFA —y entonces hay que
+            # completarlo— o si tampoco lo tiene la otra fuente, que es
+            # otro problema. La fecha 21 de la Primera Nacional quedó con
+            # nueve de dieciocho y sin esto no había cómo saber cuál.
+            hoy = dt.date.today().isoformat()
+            try:
+                deSC = {str(x["id"]): x for x in fixture_de_liga(cfg)}
+            except Exception:
+                deSC = {}
+            secos = []
+            for m in juegos:
+                dia = (m.get("start") or "")[:10]
+                if m.get("gh") is not None or not dia or dia >= hoy:
+                    continue
+                lv = deSC.get(str(m.get("liveId") or ""))
+                f = ficha(m)
+                f["liveId"] = m.get("liveId")
+                f["dice365"] = (None if not lv else
+                                "%s %s-%s" % (lv.get("status"), lv.get("gh"),
+                                              lv.get("ga")))
+                secos.append(f)
+
             servido = {"fuente": fuente, "partidos": len(juegos),
                        "fechas": len(porRonda),
                        "sinLiveId": len(sueltos),
                        "cualesSinLiveId": sueltos[:24],
+                       "sinResultado": len(secos),
+                       "cualesSinResultado": secos[:24],
                        "porFecha": {str(k): v for k, v in
                                     sorted(porRonda.items(), key=lambda x: str(x[0]))}}
         except Exception as e:
@@ -6170,7 +6491,8 @@ def api_recorrido(q):
         salida.append({"id": lid, "nombre": cfg["nombre"], "comps": comps,
                        "loQueSeMuestra": servido})
 
-    return {"version": VERSION_RECORRIDO, "ligas": salida, "rehecho": hecho,
+    return {"version": VERSION_RECORRIDO, "programa": VERSION_APP,
+            "ligas": salida, "rehecho": hecho,
             "como": ("Agregá ?id=lib para una sola, o ?rehacer=lib para "
                      "borrar sus marcadores y volver a bajarla ahora.")}
 
@@ -6700,6 +7022,7 @@ def main():
     srv = ThreadingHTTPServer((host, port), Handler)
     print("\n  HAYVAR — Fútbol Argentino")
     print("  " + "-" * 40)
+    print("  Versión: %s" % VERSION_APP)
     print("  Escuchando en %s:%d" % (host, port))
     if host == "127.0.0.1":
         print("  Abrí:  http://localhost:%d" % port)

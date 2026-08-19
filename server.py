@@ -3277,7 +3277,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · el grito recortado del 4 al 12"
+VERSION_APP = "2026-08-19 · River y Talleres fieles a la foto"
 
 
 def reparar_recorridos():
@@ -6122,9 +6122,17 @@ _OTROS_CLUBES = {
         "estadioApodo": "El Monumental",
         "direccion": "Av. Figueroa Alcorta 7597, Núñez, CABA",
         "capacidad": 83214, "sitio": "https://www.riverplate.com",
-        "titular": ("banda", "#fbfbfb", "#e0202f", "#131313"),
-        # la tricolor: bastones rojos sobre blanco con los hilos negros
-        "suplente": ("bastones", "#fbfbfb", "#d32232", "#131313"),
+        # La banda cae del hombro izquierdo a la cadera derecha, así que
+        # mirándola de frente va de arriba a la derecha hacia abajo a la
+        # izquierda. La teníamos al revés.
+        "titular": ("banda", "#fbfbfb", "#e0202f", "#131313",
+                    {"invertida": True}),
+        # La tricolor: bastones rojos sobre blanco, con un hilo negro fino
+        # a cada lado de cada bastón. Sin el hilo son dos colores, no tres,
+        # y "tricolor" deja de querer decir algo.
+        "suplente": ("bastones", "#fbfbfb", "#d32232", "#131313",
+                     {"hilo": "#131313", "mangaBanda": "#d32232",
+                      "mangaHilo": "#131313"}),
     },
     # ── Confirmadas con foto ─────────────────────────────────────────────
     "Boca Juniors": {
@@ -6274,11 +6282,25 @@ _OTROS_CLUBES = {
         "estadioApodo": "El Kempes",
         "direccion": "Av. Cárcano s/n, Córdoba",
         "capacidad": 57000, "sitio": "https://www.clubtalleres.com.ar",
-        # las rayas mueren en la costura: atrás es blanca con los
-        # costados azules
-        "titular": ("rayas", "#fbfbfb", "#1e2f6b", "#1e2f6b",
-                    {"espalda": {"patron": "liso"}}),
-        "suplente": ("liso", "#26439c", "#26439c", "#fbfbfb"),
+        # Bastones anchos, no rayas finas: la titular 2026 lleva cuatro
+        # franjas azules gruesas sobre blanco, con las mangas azules
+        # enteras. Y mueren en la costura, así que atrás es blanca con los
+        # costados azules.
+        # No son bastones parejos: hay uno central bien grueso, partido al
+        # medio por un hilo blanco, y dos finos a los costados. Las mangas
+        # van azules enteras. Atrás es blanca: el diseño muere en la costura.
+        # Las mangas son blancas como el cuerpo; lo único azul es el puño,
+        # la cinta de la costura por donde sale el brazo.
+        "titular": ("bastoncentral", "#fbfbfb", "#1e2f6b", "#1e2f6b",
+                    {"manga": "#fbfbfb", "puno": "#1e2f6b",
+                     "espalda": {"patron": "liso"}}),
+        # La suplente azul: cuello y puños en crudo —no en blanco— y un
+        # paño en diagonal del hombro a la axila en un azul más claro, que
+        # es un corte de la tela y no una franja de otro color.
+        "suplente": ("liso", "#26439c", "#26439c", "#efe6d4",
+                     {"puno": "#efe6d4", "diagonal": "#3a5cc4",
+                      "diagonalInvertida": True,
+                      "diagonalSoloAdelante": True}),
     },
     "Instituto": {
         "nombre": "Instituto Atlético Central Córdoba", "apodo": "La Gloria",

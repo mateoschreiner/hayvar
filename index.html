@@ -1226,14 +1226,47 @@ const App=(()=>{
      falta.
 
      Sin sponsors, sin escudo, sin marca y sin número: son marcas ajenas. */
+  /* La camiseta.
+
+     Se dibuja en piezas —las dos mangas, el cuerpo, los puños, el ruedo y el
+     cuello— y no como una silueta sola, porque así están hechas de verdad: el
+     puño de Boca es blanco aunque la manga sea azul, y las rayas de Talleres
+     terminan en la costura del hombro y no siguen por el brazo. Por eso el
+     diseño va recortado contra el cuerpo y no contra el contorno entero.
+
+     Lo que la hace parecer tela y no una calcomanía son tres cosas, y ninguna
+     depende del diseño de cada club:
+
+       · el volumen. Una camiseta puesta es un cilindro: se ilumina en el
+         medio del pecho y se apaga contra los costados. Eso es un degradé
+         lateral, más una sombra abajo del cuello y otra en la caída del
+         ruedo, más las dos sombras donde el brazo se junta con el cuerpo.
+       · el tejido. Una trama finita de hilos verticales y horizontales, que
+         a este tamaño no se lee como líneas sino como textura.
+       · los remates. El puño y el ruedo son cintas con su costura, no una
+         línea pintada encima.
+
+     `atras` dibuja la espalda. Cuando el club la tiene distinta —Platense
+     lleva la franja marrón sólo adelante, la suplente de Unión es roja
+     adelante y azul atrás— eso viene en `k.espalda` y pisa lo que haga falta.
+
+     Sin sponsors, sin escudo, sin marca y sin número: son marcas ajenas. */
   function camisetaSVG(k0, atras){
     const k = (atras && k0.espalda) ? Object.assign({}, k0, k0.espalda) : k0;
     const u = Math.random().toString(36).slice(2, 8);
 
-    const CUERPO = 'M78 30 L98 20 Q115 34 132 20 L152 30 L163 62 L165 220 '
-                 + 'Q115 231 65 220 L67 62 L78 30 Z';
-    const MANGA_I = 'M78 30 L45 43 Q31 62 29 95 L63 105 Q65 62 78 30 Z';
-    const MANGA_D = 'M152 30 L185 43 Q199 62 201 95 L167 105 Q165 62 152 30 Z';
+    /* El contorno. Los hombros caen, el cuerpo se afina en la cintura y se
+       vuelve a abrir en la cadera, y el ruedo cierra en curva: una camiseta
+       colgada no es un rectángulo. Se mantiene adentro de la misma caja que
+       antes —de 63 a 167 de ancho— porque los diseños de los clubes se
+       recortan contra esto y correrlo movería todas las rayas. */
+    const CUERPO = 'M78 28 L98 19 Q115 33 132 19 L152 28 L164 60 '
+                 + 'Q167 104 161 150 L164 221 Q115 231 66 221 '
+                 + 'L69 150 Q63 104 66 60 Z';
+    const MANGA_I = 'M78 28 Q58 33 48 46 Q38 62 37 88 Q50 96 64 98 '
+                  + 'Q67 60 78 28 Z';
+    const MANGA_D = 'M152 28 Q172 33 182 46 Q192 62 193 88 Q180 96 166 98 '
+                  + 'Q163 60 152 28 Z';
 
     const det = k.detalle || '#ffffff';
     const manga = k.manga || k.base;
@@ -1246,14 +1279,28 @@ const App=(()=>{
     let p = '';
     if(k.patron === 'rayas')                  // finas: Racing, Talleres, Unión
       for(let i = 0; i < 7; i++) p += vertical(62 + i * 15, 7.5, k.raya);
-    if(k.patron === 'bastones')               // anchos: Central, Estudiantes
-      for(let i = 0; i < 4; i++) p += vertical(62 + i * 27, 15, k.raya);
+    /* Bastones anchos: Central, Estudiantes, River. `hilo` es la línea
+       finita que algunos llevan entre el bastón y el fondo —la tricolor de
+       River tiene un hilo negro a cada lado de cada bastón rojo— y sin eso
+       los tres colores se leían como dos. */
+    if(k.patron === 'bastones')
+      for(let i = 0; i < 4; i++){
+        const x = 62 + i * 27;
+        if(k.hilo){ p += vertical(x - 2.5, 2.5, k.hilo);
+                    p += vertical(x + 15, 2.5, k.hilo); }
+        p += vertical(x, 15, k.raya);
+      }
     /* La diagonal. No todas caen para el mismo lado: la de River baja de
        izquierda a derecha y la de Banfield al revés. */
-    if(k.patron === 'banda')
-      p = k.invertida
-        ? `<path d="M176 40 L48 190 L48 218 L176 68 Z" fill="${k.raya}"/>`
-        : `<path d="M54 40 L182 190 L182 218 L54 68 Z" fill="${k.raya}"/>`;
+    /* Mirada de atrás, la diagonal cae para el otro lado: es la misma
+       banda, vista desde el otro lado del cuerpo. Antes la espalda de River
+       repetía la del frente, que es imposible. */
+    if(k.patron === 'banda'){
+      const inv = atras ? !k.invertida : k.invertida;
+      p = inv
+        ? `<path d="M168 14 L40 178 L40 216 L168 50 Z" fill="${k.raya}"/>`
+        : `<path d="M62 14 L190 178 L190 216 L62 50 Z" fill="${k.raya}"/>`;
+    }
     if(k.patron === 'franja')                 // la cruzada de Boca y Tigre
       p = franja(104, 34, k.raya);
     /* Franjas horizontales, con dos medidas: `alto` es el grosor y `hueco`
@@ -1277,14 +1324,70 @@ const App=(()=>{
         + vertical(138, 4, k.raya);
     if(k.patron === 'vivo')                   // los dos de Argentinos
       p = vertical(140, 5, k.raya) + vertical(150, 5, k.raya);
+    /* Un bastón central ancho partido al medio, más dos laterales finos:
+       la titular de Talleres 2026. El corte del medio lo abre en dos, así
+       que de lejos se lee como una franja gruesa con un hilo adentro y no
+       como dos bastones sueltos. */
+    /* Un paño en diagonal del hombro a la axila, en un tono del mismo
+       color: no es una franja de otro color sino un corte de la tela que
+       se ve por cómo pega la luz. La suplente de Talleres tiene una a cada
+       lado. Va con el diseño, no encima: por eso entra acá. */
+    /* Una diagonal gruesa de un hombro a la axila de enfrente. Es un solo
+       paño cruzado, no dos cuñas simétricas: la suplente de Talleres tiene
+       una sola y cruzarla dos veces la convertía en otra camiseta. */
+    /* Un paño cruzado de un hombro a la axila de enfrente, difuminado en
+       los dos bordes: no es una franja pegada sino la tela que cambia de
+       tono. Y no siempre está atrás —la suplente de Talleres la tiene sólo
+       adelante— así que `soloAdelante` la saca de la espalda. */
+    if(k.diagonal && !(atras && k.diagonalSoloAdelante))
+      p += k.diagonalInvertida
+        ? `<path d="M170 4 L40 124 L40 168 L170 52 Z" fill="url(#dg${u})"/>`
+        : `<path d="M60 4 L190 124 L190 168 L60 52 Z" fill="url(#dg${u})"/>`;
+    /* La titular de Talleres, de adentro hacia afuera: una franja central
+       gruesa que en el medio pierde el azul y se funde con el blanco del
+       resto, dos bastones más finos a los costados, blanco, y los laterales
+       azules que bajan de la manga hasta el ruedo.
 
-    const cuello = atras
-      ? `<path d="M96 20 Q115 31 134 20 L136 14 Q115 25 94 14 Z"
-           fill="${k.cuello || det}"/>`
-      : (k.cuelloTipo === 'v'
-        ? `<path d="M99 20 L115 52 L131 20 L124 18 L115 40 L106 18 Z"
+       El desvanecido del medio es un degradé y no una línea blanca: son dos
+       cosas distintas y de lejos se notan. */
+    /* La titular de Talleres. Un blanco horizontal se come casi todo el
+       pecho: arriba de él sólo sigue la franja gruesa del medio, y los
+       bastones finos y los laterales recién arrancan más abajo, saliendo
+       del desvanecido.
+
+       Por eso la franja central se dibuja entera y el resto desde el pecho
+       para abajo: el blanco no está pintado encima de un diseño completo,
+       es que arriba no hay diseño. */
+    if(k.patron === 'bastoncentral'){
+      const desde = 132;
+      const bajo = (x, an) =>
+        `<rect x="${x}" y="${desde}" width="${an}" height="${236 - desde}"
+          fill="${k.raya}"/>`;
+      p  = vertical(102, 26, k.raya);
+      p += bajo(86, 9) + bajo(135, 9);
+      p += bajo(50, 22) + bajo(158, 22);
+      p += `<rect x="40" y="60" width="150" height="88" fill="url(#fd${u})"/>`;
+    }
+
+    /* El cuello. Atrás no hay ni pico ni polo: se ve la cinta que remata la
+       nuca, que es lo único que se ve de un cuello desde atrás. */
+    const cuelloBanda = `<path d="M97 20 Q115 31 133 20 L135 16 Q115 28 95 16 Z"
+        fill="${k.cuello || det}"/>`;
+    const cuello = atras ? cuelloBanda : (
+      k.cuelloTipo === 'v'
+        ? `<path d="M101 20 L115 48 L129 20 L124 18.5 L115 39 L106 18.5 Z"
              fill="${k.cuello || det}"/>`
-        : `<path d="M98 20 Q115 34 132 20 L137 25 Q115 41 93 25 Z"
+      : k.cuelloTipo === 'polo'
+        // tapeta con dos botones y las dos puntas del cuello abiertas
+        ? `<path d="M108 24 L122 24 L121 62 L109 62 Z" fill="${k.cuello || det}"/>
+           <path d="M115 24 L115 62" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
+           <circle cx="115" cy="36" r="1.9" fill="rgba(0,0,0,.35)"/>
+           <circle cx="115" cy="50" r="1.9" fill="rgba(0,0,0,.35)"/>
+           <path d="M98 20 Q106 21 110 26 L104 40 Q95 30 93 23 Z"
+             fill="${k.cuello || det}"/>
+           <path d="M132 20 Q124 21 120 26 L126 40 Q135 30 137 23 Z"
+             fill="${k.cuello || det}"/>`
+        : `<path d="M99 20 Q115 33 131 20 L134 23.5 Q115 38 96 23.5 Z"
              fill="${k.cuello || det}"/>`);
 
     return `<svg viewBox="0 0 230 260" width="150" height="170" aria-hidden="true">
@@ -1294,11 +1397,76 @@ const App=(()=>{
         <clipPath id="d${u}"><path d="${MANGA_D}"/></clipPath>
         <clipPath id="t${u}"><path d="${CUERPO}"/><path d="${MANGA_I}"/>
           <path d="${MANGA_D}"/></clipPath>
-        <linearGradient id="l${u}" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0" stop-color="#ffffff" stop-opacity=".17"/>
-          <stop offset=".34" stop-color="#ffffff" stop-opacity="0"/>
-          <stop offset=".7" stop-color="#000000" stop-opacity="0"/>
-          <stop offset="1" stop-color="#000000" stop-opacity=".2"/>
+
+        <!-- la trama del tejido: hilos finitos que a este tamaño se leen
+             como textura y no como líneas -->
+        <pattern id="w${u}" width="4" height="4" patternUnits="userSpaceOnUse">
+          <path d="M0 0 V4" stroke="#ffffff" stroke-opacity=".055" stroke-width="1"/>
+          <path d="M0 0 H4" stroke="#000000" stroke-opacity=".045" stroke-width="1"/>
+        </pattern>
+
+        ${k.diagonal ? `
+        <linearGradient id="dg${u}" gradientUnits="userSpaceOnUse"
+          x1="${k.diagonalInvertida ? 170 : 60}" y1="4"
+          x2="${k.diagonalInvertida ? 40 : 190}" y2="168">
+          <stop offset="0" stop-color="${k.diagonal}" stop-opacity="0"/>
+          <stop offset=".3" stop-color="${k.diagonal}" stop-opacity=".95"/>
+          <stop offset=".7" stop-color="${k.diagonal}" stop-opacity=".95"/>
+          <stop offset="1" stop-color="${k.diagonal}" stop-opacity="0"/>
+        </linearGradient>` : ''}
+        ${k.patron === 'bastoncentral' ? `
+        <linearGradient id="fd${u}" gradientUnits="userSpaceOnUse"
+          x1="0" y1="60" x2="0" y2="148">
+          <stop offset="0" stop-color="${k.base}" stop-opacity="0"/>
+          <stop offset=".22" stop-color="${k.base}" stop-opacity="1"/>
+          <stop offset=".62" stop-color="${k.base}" stop-opacity="1"/>
+          <stop offset="1" stop-color="${k.base}" stop-opacity="0"/>
+        </linearGradient>` : ''}
+
+        <!-- el volumen del cuerpo: un cilindro iluminado en el medio.
+             Va en coordenadas del dibujo y no proporcionales, así el claro
+             cae en el pecho y no donde termine la caja del SVG. -->
+        <linearGradient id="lat${u}" gradientUnits="userSpaceOnUse"
+          x1="65" y1="0" x2="165" y2="0">
+          <stop offset="0" stop-color="#000000" stop-opacity=".26"/>
+          <stop offset=".10" stop-color="#000000" stop-opacity=".09"/>
+          <stop offset=".28" stop-color="#ffffff" stop-opacity=".10"/>
+          <stop offset=".44" stop-color="#ffffff" stop-opacity=".15"/>
+          <stop offset=".64" stop-color="#ffffff" stop-opacity=".06"/>
+          <stop offset=".86" stop-color="#000000" stop-opacity=".12"/>
+          <stop offset="1" stop-color="#000000" stop-opacity=".28"/>
+        </linearGradient>
+        <!-- la sombra abajo del cuello y la caída del ruedo -->
+        <linearGradient id="ver${u}" gradientUnits="userSpaceOnUse"
+          x1="0" y1="19" x2="0" y2="234">
+          <stop offset="0" stop-color="#000000" stop-opacity=".20"/>
+          <stop offset=".14" stop-color="#000000" stop-opacity="0"/>
+          <stop offset=".78" stop-color="#000000" stop-opacity="0"/>
+          <stop offset="1" stop-color="#000000" stop-opacity=".17"/>
+        </linearGradient>
+        <!-- donde el brazo se junta con el cuerpo -->
+        <radialGradient id="axi${u}" gradientUnits="userSpaceOnUse"
+          cx="70" cy="60" r="30">
+          <stop offset="0" stop-color="#000000" stop-opacity=".26"/>
+          <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="axd${u}" gradientUnits="userSpaceOnUse"
+          cx="160" cy="60" r="30">
+          <stop offset="0" stop-color="#000000" stop-opacity=".26"/>
+          <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+        </radialGradient>
+        <!-- las mangas: se apagan contra el borde de afuera -->
+        <linearGradient id="mi${u}" gradientUnits="userSpaceOnUse"
+          x1="37" y1="0" x2="80" y2="0">
+          <stop offset="0" stop-color="#000000" stop-opacity=".28"/>
+          <stop offset=".55" stop-color="#000000" stop-opacity=".05"/>
+          <stop offset="1" stop-color="#ffffff" stop-opacity=".07"/>
+        </linearGradient>
+        <linearGradient id="md${u}" gradientUnits="userSpaceOnUse"
+          x1="193" y1="0" x2="150" y2="0">
+          <stop offset="0" stop-color="#000000" stop-opacity=".28"/>
+          <stop offset=".55" stop-color="#000000" stop-opacity=".05"/>
+          <stop offset="1" stop-color="#ffffff" stop-opacity=".07"/>
         </linearGradient>
       </defs>
 
@@ -1306,32 +1474,71 @@ const App=(()=>{
       <path d="${MANGA_D}" fill="${manga}"/>
       <path d="${CUERPO}" fill="${k.base}"/>
       <g clip-path="url(#c${u})">${p}</g>
+      ${k.hombro ? `<g clip-path="url(#t${u})"><path
+        d="M62 28 Q115 46 168 28 L168 12 L62 12 Z" fill="${k.hombro}"/></g>` : ''}
 
-      <g clip-path="url(#i${u})"><path d="M24 90 L67 103" stroke="${puno}"
-        stroke-width="13" fill="none"/></g>
-      <g clip-path="url(#d${u})"><path d="M206 90 L163 103" stroke="${puno}"
-        stroke-width="13" fill="none"/></g>
-      <path d="M68 209 Q115 220 163 209" stroke="${det}" stroke-width="4"
-        fill="none" opacity=".8"/>
+      <!-- los remates: cintas con su costura, no una línea encima -->
+      ${k.mangaBanda ? `
+      <g clip-path="url(#i${u})">
+        ${k.mangaHilo ? `<path d="M78 28 Q58 33 48 46 Q38 62 37 88"
+          stroke="${k.mangaHilo}" stroke-width="22" fill="none"/>` : ''}
+        <path d="M78 28 Q58 33 48 46 Q38 62 37 88" stroke="${k.mangaBanda}"
+          stroke-width="15" fill="none"/>
+      </g>
+      <g clip-path="url(#d${u})">
+        ${k.mangaHilo ? `<path d="M152 28 Q172 33 182 46 Q192 62 193 88"
+          stroke="${k.mangaHilo}" stroke-width="22" fill="none"/>` : ''}
+        <path d="M152 28 Q172 33 182 46 Q192 62 193 88" stroke="${k.mangaBanda}"
+          stroke-width="15" fill="none"/>
+      </g>` : ''}
+      <g clip-path="url(#i${u})">
+        <path d="M30 88 L70 97" stroke="${puno}" stroke-width="7" fill="none"/>
+        <path d="M30 84 L70 93" stroke="rgba(0,0,0,.18)" stroke-width="1" fill="none"/>
+      </g>
+      <g clip-path="url(#d${u})">
+        <path d="M200 88 L160 97" stroke="${puno}" stroke-width="7" fill="none"/>
+        <path d="M200 84 L160 93" stroke="rgba(0,0,0,.18)" stroke-width="1" fill="none"/>
+      </g>
+      <g clip-path="url(#c${u})">
+        ${k.ruedo ? `<path d="M60 216 Q115 226 170 216" stroke="${k.ruedo}"
+          stroke-width="7" fill="none"/>` : ''}
+        <path d="M60 213 Q115 223 170 213" stroke="rgba(0,0,0,.13)"
+          stroke-width="1" fill="none"/>
+      </g>
 
       <g clip-path="url(#t${u})">
-        <path d="M70 56 Q79 98 72 142" stroke="#000" stroke-opacity=".1"
-          stroke-width="11" fill="none"/>
-        <path d="M160 56 Q151 98 158 142" stroke="#000" stroke-opacity=".1"
-          stroke-width="11" fill="none"/>
-        <path d="M94 46 Q90 134 95 216" stroke="#000" stroke-opacity=".05"
+        <rect x="0" y="0" width="230" height="260" fill="url(#w${u})"/>
+        <!-- los pliegues: dos caídas anchas a los costados del pecho y dos
+             marcas finas donde la tela se junta -->
+        <path d="M73 58 Q82 100 76 146" stroke="#000" stroke-opacity=".09"
+          stroke-width="12" fill="none"/>
+        <path d="M157 58 Q148 100 154 146" stroke="#000" stroke-opacity=".09"
+          stroke-width="12" fill="none"/>
+        <path d="M95 48 Q91 136 96 214" stroke="#000" stroke-opacity=".05"
           stroke-width="3" fill="none"/>
-        <path d="M137 46 Q141 134 136 216" stroke="#000" stroke-opacity=".05"
+        <path d="M136 48 Q140 136 135 214" stroke="#000" stroke-opacity=".05"
           stroke-width="3" fill="none"/>
-        <rect x="0" y="0" width="230" height="260" fill="url(#l${u})"/>
+        <rect x="0" y="0" width="230" height="260" fill="url(#lat${u})"/>
+        <rect x="0" y="0" width="230" height="260" fill="url(#ver${u})"/>
+        <rect x="0" y="0" width="230" height="260" fill="url(#axi${u})"/>
+        <rect x="0" y="0" width="230" height="260" fill="url(#axd${u})"/>
+      </g>
+      <g clip-path="url(#i${u})">
+        <rect x="0" y="0" width="230" height="260" fill="url(#mi${u})"/>
+      </g>
+      <g clip-path="url(#d${u})">
+        <rect x="0" y="0" width="230" height="260" fill="url(#md${u})"/>
       </g>
 
       ${cuello}
-      <path d="${MANGA_I}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1.6"/>
-      <path d="${MANGA_D}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1.6"/>
-      <path d="${CUERPO}" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="1.8"/>
+      ${atras ? `<path d="M92 30 Q115 38 138 30" stroke="rgba(0,0,0,.14)"
+        stroke-width="1.4" fill="none"/>` : ''}
+      <path d="${MANGA_I}" fill="none" stroke="rgba(0,0,0,.30)" stroke-width="1.6"/>
+      <path d="${MANGA_D}" fill="none" stroke="rgba(0,0,0,.30)" stroke-width="1.6"/>
+      <path d="${CUERPO}" fill="none" stroke="rgba(0,0,0,.32)" stroke-width="1.8"/>
     </svg>`;
   }
+
 
   /* El radar del club: su promedio contra el de toda la liga. Un dato
      suelto no dice nada —doce remates por partido puede ser mucho o poco—;

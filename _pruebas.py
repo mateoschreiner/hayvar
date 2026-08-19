@@ -749,6 +749,18 @@ chequear("en la Reválida no asciende nadie: descienden los dos ultimos",
 chequear("ninguna tabla queda sin destinos",
          all(any(r["destino"] for r in z["rows"]) for z in _zs),
          [z["name"] for z in _zs if not any(r["destino"] for r in z["rows"])])
+# Los colores estaban escritos a mano en la pantalla y un destino nuevo nacia
+# sin color: se marcaba en la tabla y no se veia nada.
+_claves = {c for b in server.LIGAS["fa"]["zonas_de"] for c in b["reglas"]}
+chequear("todo destino del Federal A tiene su color en la leyenda",
+         _claves <= {x["clave"] for x in server.LEYENDA_DESTINOS},
+         _claves - {x["clave"] for x in server.LEYENDA_DESTINOS})
+_COLORES = set(re.findall(r"'(#[0-9a-f]{6})':\[", HTML))
+chequear("y la pantalla sabe pintar ese color",
+         {x["color"] for x in server.LEYENDA_DESTINOS
+          if x["clave"] in _claves} <= _COLORES,
+         {x["color"] for x in server.LEYENDA_DESTINOS
+          if x["clave"] in _claves} - _COLORES)
 
 # La Fase Campeonato y la Revalida se juegan a la vez: una sola pestana.
 def _bloque(fase, grupo, equipos):
@@ -791,6 +803,22 @@ chequear("ningun partido de la fase vieja queda como interzonal",
 chequear("y cada fase agrupa por sus propias zonas",
          len({g["zone"] for g in _r["games"] if g["round"] <= 6}) == 2,
          sorted({g["zone"] for g in _r["games"] if g["round"] <= 6}))
+
+# La fase vieja tambien llega rotulada: con la zona donde esta HOY cada
+# equipo, que no es la de entonces. Quedarse con ese rotulo ponia
+# "Zona Reválida - A" arriba de una fecha de abril.
+_marzo = _torneo_fa()
+for _g in _marzo:                       # como si vinieran de las tablas de hoy
+    _g["zone"] = "Reválida A" if _g["home"]["name"] in _ZONA1 else "Reválida B"
+server.marcar_fases_por_calendario(_marzo, ["Primera Fase", "Segunda Fase"])
+server.zonas_de_cada_fase(_marzo)
+_vieja = {g["zone"] for g in _marzo if g["stage"] == "Primera Fase"}
+chequear("la fase vieja no se queda con los rotulos de la de ahora",
+         not any("Reválida" in z for z in _vieja), sorted(_vieja))
+chequear("pero la fase que se juega si conserva los suyos",
+         {g["zone"] for g in _marzo if g["stage"] == "Segunda Fase"}
+         == {"Reválida A", "Reválida B"},
+         sorted({g["zone"] for g in _marzo if g["stage"] == "Segunda Fase"}))
 chequear("ninguna fecha queda con el doble de partidos",
          set(_porFecha.values()) == {2}, _porFecha)
 chequear("las fechas de la Segunda Fase no pisan a las de la Primera",

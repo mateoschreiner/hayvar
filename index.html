@@ -2926,17 +2926,25 @@ const App=(()=>{
     const d=S.otra, el=$('#right'); if(!d) return;
     // fuera de la portada el panel vuelve a ser una sola caja
     const caja=el.parentElement; if(caja) caja.classList.remove('sin-caja');
-    // Franja de color al costado de la posición. Faltaban las tres de Europa
-    // y por eso LaLiga no marcaba nada.
-    const DEST={final:'z-camp',reducido:'z-lib',
-                champions:'z-lib',europa:'z-camp',conference:'z-sud',
-                avanza:'z-lib',repechaje:'z-camp',
-                desciende:'z-desc'};
-    // el color de la fila entera, más suave que la franja del costado
-    const FILA={final:'fila-final',reducido:'fila-final',champions:'fila-final',
-                europa:'fila-repechaje',conference:'fila-avanza',
-                avanza:'fila-avanza',repechaje:'fila-repechaje',
-                desciende:'fila-desciende'};
+    /* La franja del costado y el tono de la fila, sacados del color que el
+       servidor le puso a cada destino en la leyenda.
+
+       Antes eran dos listas escritas a mano acá. El problema de escribirlas
+       a mano es que un destino nuevo nace sin color y no se pinta, y nada
+       avisa: la Fase Campeonato del Federal A quedó sin resaltar nadie y
+       sólo se veían los descensos, que eran los únicos que ya estaban en la
+       lista. Ahora el que define un destino define su color en un solo
+       lugar y la pantalla lo sigue. */
+    const PORCOLOR={'#2f6fed':['z-lib','fila-final'],
+                    '#f0b429':['z-camp','fila-repechaje'],
+                    '#12b76a':['z-sud','fila-avanza'],
+                    '#e5484d':['z-desc','fila-desciende']};
+    const DEST={},FILA={};
+    (d.leyenda||[]).forEach(x=>{
+      const [franja,fila]=PORCOLOR[String(x.color||'').toLowerCase()]
+        ||['z-camp','fila-repechaje'];
+      DEST[x.clave]=franja; FILA[x.clave]=fila;
+    });
     const tabla=(rows,cols)=>`<div class="tablewrap"><table><thead><tr>
       <th style="width:26px"></th><th class="l">Equipo</th>${cols.map(c=>`<th>${c[0]}</th>`).join('')}
       </tr></thead><tbody>${rows.map((r,i)=>{

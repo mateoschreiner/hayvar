@@ -2431,10 +2431,12 @@ def zonas_de_cada_fase(games):
     entre marzo y julio arma las zonas de la Primera Fase, y quiénes se
     enfrentan ahora, las de la Segunda.
 
-    El nombre de la zona se conserva cuando se lo sabe. Si los partidos de
-    un grupo ya venían rotulados —"Reválida A", porque esa fase sí está en
-    las posiciones de hoy— se respeta ese nombre; los de la fase vieja, que
-    no lo tienen, quedan numerados.
+    El nombre de la zona se conserva sólo si todo el grupo coincide en él.
+    Los partidos de la Primera Fase también llegan rotulados —con la zona
+    donde está hoy cada equipo, que no es la de entonces— y quedarse con el
+    rótulo más repetido ponía "Zona Reválida - A" arriba de una fecha de
+    abril. Si adentro de un grupo aparecen dos rótulos distintos, el rótulo
+    es de otra fase y no sirve: esa zona va numerada.
     """
     porFase = {}
     for g in games:
@@ -2442,20 +2444,26 @@ def zonas_de_cada_fase(games):
     if len(porFase) < 2:
         return
 
-    for suyos in porFase.values():
+    # Las posiciones que publica la fuente son las de la fase que se juega
+    # ahora, así que sólo esa puede quedarse con sus rótulos. Se la conoce
+    # por ser la última del calendario.
+    def arranque(ms):
+        return min((m.get("start") or "9999") for m in ms)
+    la_de_ahora = max(porFase, key=lambda f: arranque(porFase[f]))
+
+    for fase, suyos in porFase.items():
         mapa = zonas_por_rivales(suyos)
         if len(set(mapa.values())) < 2:
             continue
 
-        # El rótulo de cada grupo: el que más se repita entre los partidos
-        # que ya lo traían. Si ninguno lo trae, el número.
+        # El rótulo de cada grupo, si todos sus partidos dicen lo mismo.
         rotulos = {}
-        for g in suyos:
-            z = mapa.get(g["home"].get("canon") or g["home"].get("name"))
-            if z is not None and g.get("zone"):
-                rotulos.setdefault(z, {}).setdefault(g["zone"], 0)
-                rotulos[z][g["zone"]] += 1
-        nombre = {z: max(c, key=c.get) for z, c in rotulos.items()}
+        if fase == la_de_ahora:
+            for g in suyos:
+                z = mapa.get(g["home"].get("canon") or g["home"].get("name"))
+                if z is not None and g.get("zone"):
+                    rotulos.setdefault(z, set()).add(g["zone"])
+        nombre = {z: next(iter(c)) for z, c in rotulos.items() if len(c) == 1}
 
         for g in suyos:
             za = mapa.get(g["home"].get("canon") or g["home"].get("name"))
@@ -3070,7 +3078,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · Federal A: zonas por fase y destinos"
+VERSION_APP = "2026-08-19 · Federal A: rotulos por fase y colores desde la leyenda"
 
 
 def reparar_recorridos():

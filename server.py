@@ -567,7 +567,11 @@ LIGAS = {
         "pais": "Europa", "anual": False, "copa": True,
         "zonas_de": {"avanza": (1, 8), "repechaje": (9, 24),
                      "afuera": (25, 36)},
-        "etapas_extra": ["Octavos de final", "Cuartos de final",
+        # La fase de liga va en la lista aunque todavía no tenga partidos: se
+        # sortea en agosto y hasta entonces la etapa no existe para la
+        # fuente, pero es la que uno quiere mirar mientras se juega la
+        # clasificación —ahí se ve quién se va metiendo—.
+        "etapas_extra": ["Fase de liga", "Octavos de final", "Cuartos de final",
                          "Semifinal", "Final"],
         # La clasificación previa no está adentro del torneo: 365scores la
         # publica como una competencia aparte, la 332. Sin esto la Champions
@@ -590,7 +594,7 @@ LIGAS = {
         "pais": "Europa", "anual": False, "copa": True,
         "zonas_de": {"avanza": (1, 8), "repechaje": (9, 24),
                      "afuera": (25, 36)},
-        "etapas_extra": ["Octavos de final", "Cuartos de final",
+        "etapas_extra": ["Fase de liga", "Octavos de final", "Cuartos de final",
                          "Semifinal", "Final"],
         "sc_extra": [596],       # la clasificación, igual que la Champions
         "final": {"cuando": "2027-05-26", "sede": "Stadion Frankfurt",
@@ -3273,7 +3277,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · finales de Europa y fase de liga con los clasificados"
+VERSION_APP = "2026-08-19 · fase de liga en Champions y Europa"
 
 
 def reparar_recorridos():

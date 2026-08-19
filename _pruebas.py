@@ -1236,6 +1236,16 @@ chequear("y la final trae fecha y sede aunque no tenga equipos",
 chequear("en una fase de liga se muestran los que entraron, no cruces",
          "const esTabla=etapa&&/grupo|liga/i.test(etapa);" in HTML
          and "Entraron desde la clasificación" in HTML)
+# La fase de liga se sortea en agosto: hasta entonces la etapa no existe para
+# la fuente y el boton no aparecia, justo la semana en que uno quiere mirar
+# quien se va metiendo.
+chequear("la fase de liga está en la lista de etapas de Champions y Europa",
+         all("Fase de liga" in server.LIGAS[x]["etapas_extra"]
+             for x in ("champions", "europa")))
+chequear("y va antes que los octavos",
+         all(server.LIGAS[x]["etapas_extra"]
+             == sorted(server.LIGAS[x]["etapas_extra"], key=server.rango_etapa)
+             for x in ("champions", "europa")))
 chequear("la de la Copa Argentina dice que la cancha no está confirmada",
          server.LIGAS["ca"]["final"]["sede"] is None
          and "no se confirmó" in server.LIGAS["ca"]["final"]["nota"])

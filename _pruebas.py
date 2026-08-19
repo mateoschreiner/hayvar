@@ -1111,6 +1111,18 @@ chequear("pero la clasificación que se está jugando sí",
          {m["id"] for m in _r} == {3, 4}, [m["id"] for m in _r])
 chequear("y nada de eso se borra de la base",
          len(server.almacen.leer("fixture:%d" % _CE)[0]) == 4)
+# La tabla es tan vieja como el calendario: tambien tiene que irse.
+_stg4 = server._sc_standings
+server._sc_standings = lambda comp, ttl=25, juntar=None: [
+    {"name": "Fase de liga", "num": 1,
+     "rows": [{"team": {"name": "Lyon"}, "pos": 1, "pts": 21, "pj": 8}]}]
+_liga = server.api_liga({"id": ["europa"]})
+chequear("la tabla de la edición terminada tampoco se muestra",
+         _liga["zonas"] == [], _liga["zonas"])
+chequear("y se dice por qué, en vez de dejar el panel vacío",
+         "todavía no empezó" in (_liga.get("zonasNota") or ""),
+         _liga.get("zonasNota"))
+server._sc_standings = _stg4
 
 # Sin nada mas nuevo guardado, la ultima edicion se sigue mostrando: si no,
 # la Copa Argentina desapareceria cada enero hasta que arranque la siguiente.
@@ -1177,6 +1189,12 @@ chequear("y encadena por equipo cuando no es una escalera",
          "const hijoDe=" in HTML and "hijoDe[c][i]" in HTML)
 chequear("la línea sale hacia el cruce que dice el encadenado",
          "const destino=hijoDe[c][i];" in HTML)
+chequear("el cuadro cuelga de la última ronda, no de la más ancha",
+         "const base=cupos.length-1;" in HTML)
+chequear("y dos cruces que caen a la misma altura se separan",
+         "fila[i]<piso+paso" in HTML)
+chequear("cuando no hay tabla se dice por qué en vez de 'Sin datos'",
+         "const sinTabla=()=>" in HTML and "d.zonasNota" in HTML)
 chequear("y no se pone 'Por definir' donde no va a haber cruce",
          re.search(r"if\(escalera\)\s*\n\s*cajas\+=`<div class=\"brk vacia\"", HTML)
          is not None)

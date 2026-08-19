@@ -2563,6 +2563,9 @@ const App=(()=>{
                 ...(S.fasesZona.length>1
                     ? S.fasesZona.map((f,i)=>['f'+i,f.nombre])
                     : juntos?[['zonas','Grupos']]
+                    // sin tabla pero con una explicación, la pestaña queda
+                    // igual: se entra a leer por qué, no a un panel vacío
+                    : (!d.zonas.length&&d.zonasNota)?[['z0','Tabla']]
                             :d.zonas.map((z,i)=>['z'+i,nombreZona(z,i)])),
                 ...(hayCuadro?[['cuadro','Cuadro']]:[]),
                 ...(d.conAnual===false?[]:[['anual','Anual']]),
@@ -2863,14 +2866,20 @@ const App=(()=>{
         }));
       }
     }else{
-      /* Un cuadro que no parte al medio se acomoda al revés: manda la ronda
-         más ancha —la que tiene más cruces— y las demás se cuelgan de ella
-         siguiendo a los equipos. La Fase Previa 1 de la Libertadores queda
-         a la altura del cruce de la Fase Previa 2 donde juega el que ganó,
-         y los trece que entran recién en la 2 no dejan ningún hueco atrás:
-         simplemente no tienen nada a la izquierda. */
+      /* Un cuadro que no parte al medio se acomoda al revés: manda la ÚLTIMA
+         ronda y las demás se cuelgan de ella siguiendo a los equipos. La
+         Fase Previa 1 de la Libertadores queda a la altura del cruce de la
+         Fase Previa 2 donde juega el que ganó, y los trece que entran recién
+         en la 2 no dejan ningún hueco atrás: simplemente no tienen nada a la
+         izquierda.
+
+         Anclar en la ronda más ancha parecía mejor —es la que más lugar
+         necesita— pero deja el lado derecho a la deriva, y el cuadro se lee
+         hacia allá: en la clasificación de la Champions daba cincuenta y un
+         cruces de líneas contra once, y encima más alto. Un cuadro converge
+         a la derecha, así que de la derecha tiene que colgar. */
       ys=cupos.map(n=>new Array(n).fill(null));
-      const base=cupos.indexOf(Math.max(...cupos));
+      const base=cupos.length-1;
       for(let i=0;i<cupos[base];i++) ys[base][i]=i*paso;
 
       /* Dos cosas que hay que arreglar en cada columna.
@@ -3098,13 +3107,16 @@ const App=(()=>{
        columna va primero y manda. Las demás siguen con Pts. */
     const COLS_PROM=[['Prom',r=>(r.prom??0).toFixed(3),1],['Pts',r=>r.pts],
                      ['PJ',r=>r.pj],['DIF',r=>(r.dif>0?'+':'')+r.dif]];
+    // Cuando no hay tabla, decir por qué. "Sin datos" a secas parece un
+    // error de la página, y a veces es que el torneo no empezó.
+    const sinTabla=()=>`<div class="empty">${esc(d.zonasNota||'Sin datos.')}</div>`;
     const tarjetas=zs=>zs.length
       ? `<div class="zonas-wrap">${zs.map((z,i)=>`<div class="zona-card">
           <h5>${esc(z.corto||z.name||('Grupo '+(i+1)))}</h5>
           ${tabla(z.rows,z.rows.some(r=>r.prom!=null)?COLS_PROM:COLS)}
           ${z.nota?`<div class="note">${esc(z.nota)}</div>`:''}</div>`).join('')}</div>`
         + leyendaSiempre()
-      : '<div class="empty">Sin datos.</div>';
+      : sinTabla();
 
     if(S.tab.startsWith('f')&&S.fasesZona&&S.fasesZona.length>1){
       const f=S.fasesZona[+S.tab.slice(1)];
@@ -3116,7 +3128,7 @@ const App=(()=>{
       el.innerHTML=z
         ? tabla(z.rows,[['Pts',r=>r.pts,1],['PJ',r=>r.pj],['GF',r=>r.gf],['GC',r=>r.gc],
                         ['DIF',r=>(r.dif>0?'+':'')+r.dif]]) + leyenda()
-        : '<div class="empty">Sin datos.</div>';
+        : sinTabla();
     } else if(S.tab==='cuadro'){
       el.innerHTML=cuadroLlaves(S.llaves)+golesCorto(d.goleadores||[],d.errorGoleadores);
     } else if(S.tab==='previa'){

@@ -2289,6 +2289,17 @@ def api_liga(q):
            # Metro. Ahí la acumulada no aporta y se esconde la pestaña.
            "conAnual": cfg.get("anual", True)}
 
+    # La tabla de una edición que ya terminó es tan vieja como su calendario.
+    # El calendario ya dejaba de mostrarse, pero la tabla seguía ahí con los
+    # puntos y los equipos del año pasado.
+    if edicion_terminada(cfg["sc"]):
+        nota = ("La edición anterior terminó y la nueva todavía no empezó: "
+                "por ahora se juega la clasificación.")
+        out["zonasNota"] = nota
+        out["notaGoleadores"] = nota
+        out["golesDetallados"] = False
+        return out
+
     # posiciones por zona, con escudos
     try:
         out["zonas"] = _sc_standings(cfg["sc"], juntar=cfg.get("fases_juntas"))
@@ -3138,17 +3149,8 @@ def _sc_fixture(comp, ttl=120):
     # jugando—. Sin esa segunda condición, la Copa Argentina desaparecería
     # de la página cada enero, entre que termina una edición y arranca la
     # siguiente, cuando ahí lo correcto es seguir mostrando la última.
-    termino = False
-    if actual is not None:
-        suyos = [m for m in acumulado.values()
-                 if m.get("comp") in (None, comp)
-                 and m.get("temporada") == actual]
-        if suyos and all(m.get("status") == "FIN" for m in suyos):
-            ultimo = max((m.get("start") or "") for m in suyos)[:10]
-            hace_rato = (dt.date.today() - dt.timedelta(days=45)).isoformat()
-            hay_mas_nuevo = any((m.get("start") or "")[:10] > ultimo
-                                for m in acumulado.values())
-            termino = bool(ultimo and ultimo < hace_rato and hay_mas_nuevo)
+    termino = ya_termino(acumulado.values(), comp, actual)
+    almacen.guardar("termino:%s" % comp, bool(termino))
 
     if actual is not None:
         # Cada partido se compara contra la temporada de SU competencia. Los
@@ -3251,7 +3253,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · cuadro sin cajas encimadas y edición terminada"
+VERSION_APP = "2026-08-19 · cuadro colgado de la última ronda y tabla vieja fuera"
 
 
 def reparar_recorridos():
@@ -3389,6 +3391,44 @@ def fixture_de_liga(cfg, ttl=120):
             unicos[k].update({"stage": m["stage"], "previa": True,
                               "stageNum": m.get("stageNum")})
     return sorted(unicos.values(), key=lambda x: (x.get("start") or ""))
+
+
+def ya_termino(juegos, comp, actual):
+    """
+    ¿La edición que la fuente da por corriente ya se jugó entera?
+
+    Entre una y la otra, 365scores tarda en mover el número de temporada. En
+    agosto seguía diciendo que la Europa League corría la 61, que es la que
+    terminó en mayo, y la página mostraba esa fase de liga con su tabla
+    completa —y sus octavos, cuartos y la final— como si fuera la de ahora.
+    La Champions no tenía el problema porque ahí el número sí había
+    avanzado: el mismo caso, resuelto de dos maneras distintas por la fuente.
+
+    Se la da por terminada sólo si están todos sus partidos jugados Y hay
+    partidos más nuevos guardados —los de la clasificación, que ya se está
+    jugando—. Sin esa segunda condición, la Copa Argentina desaparecería de
+    la página cada enero, entre que termina una edición y arranca la
+    siguiente, cuando ahí lo correcto es seguir mostrando la última.
+    """
+    if actual is None:
+        return False
+    juegos = list(juegos)
+    suyos = [m for m in juegos
+             if m.get("comp") in (None, comp) and m.get("temporada") == actual]
+    if not suyos or not all(m.get("status") == "FIN" for m in suyos):
+        return False
+    ultimo = max((m.get("start") or "") for m in suyos)[:10]
+    if not ultimo:
+        return False
+    hace_rato = (dt.date.today() - dt.timedelta(days=45)).isoformat()
+    hay_mas_nuevo = any((m.get("start") or "")[:10] > ultimo for m in juegos)
+    return ultimo < hace_rato and hay_mas_nuevo
+
+
+def edicion_terminada(comp):
+    """Lo mismo, pero leído de lo que ya se calculó al servir el calendario."""
+    guardado, _ = almacen.leer("termino:%s" % comp)
+    return bool(guardado)
 
 
 def temporada_actual(comp):

@@ -3315,7 +3315,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · las tres de Argentinos, el escudo en la camiseta y la ficha del club ordenada"
+VERSION_APP = "2026-08-21 · sin la raya del costado y los vivos cortados por la costura"
 
 
 def reparar_recorridos():

@@ -110,6 +110,22 @@ chequear("y una camiseta puede pedir que no se lo pongan",
          .get("sinEscudo") is True)
 # Lo que dice el cuello por dentro tiene que caer sobre la cinta, y la
 # cinta se mueve con el escote: si el número fuera fijo, quedaría flotando.
+# Una costura es un doblez: sombra de un lado, luz del otro. Con una sola
+# línea se veía pintada encima.
+chequear("las costuras van en dos líneas y no en una",
+         HTML.count('stroke="rgba(255,255,255,.17)"') >= 3
+         and 'stroke="rgba(0,0,0,.22)"' in HTML)
+# El borde de la manga que va contra el cuerpo no es silueta sino costura:
+# trazarlo como los demás dejaba una raya oscura y recta cruzando el costado.
+chequear("el contorno de la manga no traza la costura contra el cuerpo",
+         'd="${MANGA_I}" fill="none" stroke="rgba(0,0,0,.30)"' not in HTML
+         and 'd="M78 28 Q58 33 48 46 Q38 62 37 88 Q50 96 64 98" fill="none"'
+         in HTML)
+chequear("y los vivos de Argentinos los corta la costura, no una altura fija",
+         'clip-path="url(#ragl${u})"' in HTML
+         and '<clipPath id="ragl${u}">' in HTML)
+chequear("y la ranglan termina en la sisa, no en medio del pecho",
+         "Q68 60 67 64" in HTML)
 chequear("lo del cuello de atrás se ubica con el escote",
          "y=\"${(HUNDE + GRUESO_CUELLO / 2 - 1.1).toFixed(1)}\"" in HTML)
 

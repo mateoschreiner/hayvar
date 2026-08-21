@@ -15,4 +15,5 @@ _*.js
 *.db
 *.db-wal
 *.db-shm
+_*.html
  

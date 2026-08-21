@@ -3315,7 +3315,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · sin la raya del costado y los vivos cortados por la costura"
+VERSION_APP = "2026-08-21 · las tres de Argentinos calcadas de la foto"
 
 
 def reparar_recorridos():
@@ -6358,28 +6358,29 @@ _OTROS_CLUBES = {
         "fundado": 1904, "estadio": "Estadio Diego Armando Maradona",
         "direccion": "Boyacá 2152, La Paternal, CABA",
         "capacidad": 26000, "sitio": "https://argentinosjuniors.com.ar",
-        # Las tres de Umbro 25/26, medidas sobre las fotos oficiales.
+        # Las tres de Umbro 25/26, calcadas de las fotos oficiales.
         #
-        # Lo que tienen en común: manga ranglan —la costura sale del cuello
-        # y baja en diagonal hasta la axila—, cuello banda, el costado
-        # partido en los últimos centímetros y un panel estampado de
+        # Lo que comparten: manga ranglan —y la costura no es la misma de
+        # los dos lados: adelante cae casi a plomo desde el cuello y atrás
+        # baja mucho más tendida—, cuello banda y un panel estampado de
         # estrellas y del año 1985. El panel no hace el mismo recorrido en
-        # las tres, y por eso hay tres formas y no una sola.
+        # las tres, y por eso hay dos formas y no una sola con distinto
+        # ancho.
         #
         # La roja: dos vivos blancos que caen en el 70% y el 80% del ancho
-        # del pecho —no pegados al costado— y que arrancan abajo de la
-        # costura del hombro. El panel va sobre el filo del cuerpo, así que
-        # la mitad cae fuera del contorno y casi no se ve, y en la manga es
-        # una cuña que se cierra desde el puño. Atrás, la cinta roja se abre
-        # un tramo blanco con las iniciales.
+        # del pecho, cortados por la costura, que es de donde nacen. El
+        # panel va pegado al filo del cuerpo, dobla sobre la axila y baja
+        # por debajo de la manga hasta el puño —ahí el puño también es del
+        # estampado—. Atrás, la cinta roja del cuello se abre un tramo
+        # blanco con las iniciales.
         "titular": {
             "patron": "vivo", "base": "#d8332e", "raya": "#ffffff",
             "detalle": "#ffffff", "manga": "#d8332e", "puno": "#d8332e",
             "cuello": "#d8332e", "cuelloTipo": "muesca",
-            "cuelloVivo": "#ffffff", "costuras": True,
-            "aberturas": "#f0d6d4",
+            "cuelloVivo": "#ffffff", "cuelloBorde": "#c62c27",
+            "costuras": True,
             "costados": {"fondo": "#f2dcda", "color": "#cf332e",
-                         "borde": 10, "hasta": 79, "mangaCuna": True},
+                         "contorno": True},
             "espalda": {"patron": "liso", "cuello": "#d8332e",
                         "cuelloVivo": "#d8332e",
                         "cuelloTexto": {"texto": "A.A.A.J.",
@@ -6387,40 +6388,32 @@ _OTROS_CLUBES = {
                                         "fondo": "#ffffff"}},
         },
         # La blanca: cinco bandas grises anchas que empiezan bien abajo del
-        # escudo. Acá el panel arranca al lado del cuello, cruza el hombro y
-        # baja curvando por el costado sin llegar al ruedo; arriba de la
-        # manga no hay nada, la tira va en la axila. Atrás es blanca lisa,
-        # con un hilo rojo finito en el ruedo.
+        # escudo. Acá el panel va pegado a la costura ranglan —nace al lado
+        # del cuello, cruza el hombro y sigue por el flanco afinándose
+        # hasta cerrar un poco más abajo de la manga—. Atrás es blanca
+        # lisa, con un hilo rojo finito en el ruedo.
         "suplente": {
             "patron": "franjas", "base": "#fbfbfb", "raya": "#c8ccd1",
             "raya2": "#fbfbfb", "alto": 18, "hueco": 0, "desde": 64,
             "detalle": "#d8332e", "manga": "#fbfbfb", "puno": "#fbfbfb",
             "cuello": "#fbfbfb", "cuelloVivo": "#d8332e", "costuras": True,
-            "aberturas": "#e8b5b1",
             "costados": {"fondo": "#fbfbfb", "color": "#e0483f",
-                         "curva": 9, "desde": 100, "hasta": 176,
-                         "mangaAxila": 16},
+                         "ranglan": 13, "hasta": 133},
             "espalda": {"patron": "liso", "costados": None,
                         "cuello": "#fbfbfb", "cuelloVivo": "#d8332e",
                         "ruedo": "#d8332e", "ruedoAncho": 2,
                         "cuelloTexto": {"texto": "1985", "color": "#ffffff",
                                         "fondo": "#d8332e"}},
         },
-        # La tercera: azul marino jaspeado y paneles crema lisos, sin las
-        # estrellas. El cuello es dorado por delante y azul por detrás.
-        #
-        # Va sin escudo a propósito: el de esta camiseta no es el escudo
-        # del club sino el monograma azul y dorado, y el que podemos
-        # enlazar es el de siempre, que sobre el azul marino queda fuera de
-        # lugar. Dibujar el dorado a mano sería recrear una marca.
+        # La tercera: azul marino jaspeado y el mismo panel que la blanca
+        # pero liso, sin las estrellas. El cuello es dorado por delante y
+        # azul por detrás.
         "tercera": {
             "patron": "liso", "base": "#2b3560", "raya": "#2b3560",
             "detalle": "#e6cda6", "manga": "#2b3560", "puno": "#2b3560",
-            "cuello": "#c9a26d", "sinBrillo": True, "sinEscudo": True,
-            "costuras": True, "aberturas": "#3d4675",
+            "cuello": "#c9a26d", "sinBrillo": True, "costuras": True,
             "costados": {"fondo": "#e8cfae", "color": "#e8cfae",
-                         "liso": True, "curva": 10, "desde": 100,
-                         "hasta": 176, "mangaAxila": 16},
+                         "liso": True, "ranglan": 14, "hasta": 133},
             "agua": {"oscuro": "#39436f", "medio": "#2f3862",
                      "claro": "#252d51", "semilla": 4, "grano": 0.055,
                      "corte": 0.5, "octavas": 2, "punto": 1.2,

@@ -105,9 +105,11 @@ chequear("el escudo va enlazado y sólo en el frente",
          "function camisetaSVG(k0, atras, escudo)" in HTML
          and "${!atras && escudo && !k.sinEscudo ?" in HTML
          and "camisetaSVG(kits[nom],false,d.escudo)" in HTML)
+# Hoy no la usa ninguna —la tercera de Argentinos terminó llevándolo—
+# pero la puerta queda abierta para la camiseta que lleve un escudo
+# especial que no podamos enlazar.
 chequear("y una camiseta puede pedir que no se lo pongan",
-         server.CLUBES_INFO["Argentinos Juniors"]["camisetas"]["tercera"]
-         .get("sinEscudo") is True)
+         "!k.sinEscudo" in HTML)
 # Lo que dice el cuello por dentro tiene que caer sobre la cinta, y la
 # cinta se mueve con el escote: si el número fuera fijo, quedaría flotando.
 # Una costura es un doblez: sombra de un lado, luz del otro. Con una sola
@@ -117,6 +119,11 @@ chequear("las costuras van en dos líneas y no en una",
          and 'stroke="rgba(0,0,0,.22)"' in HTML)
 # El borde de la manga que va contra el cuerpo no es silueta sino costura:
 # trazarlo como los demás dejaba una raya oscura y recta cruzando el costado.
+# Ni el borde de la manga contra el cuerpo ni las dos sisas son silueta:
+# los tapa la otra pieza. Trazarlos dejaba rayas negras y rectas.
+chequear("el contorno del cuerpo no traza las sisas",
+         'd="${CUERPO}" fill="none" stroke="rgba(0,0,0,.32)"' not in HTML
+         and 'd="M78 28 L${ESCOTE} L152 28" fill="none"' in HTML)
 chequear("el contorno de la manga no traza la costura contra el cuerpo",
          'd="${MANGA_I}" fill="none" stroke="rgba(0,0,0,.30)"' not in HTML
          and 'd="M78 28 Q58 33 48 46 Q38 62 37 88 Q50 96 64 98" fill="none"'
@@ -124,8 +131,15 @@ chequear("el contorno de la manga no traza la costura contra el cuerpo",
 chequear("y los vivos de Argentinos los corta la costura, no una altura fija",
          'clip-path="url(#ragl${u})"' in HTML
          and '<clipPath id="ragl${u}">' in HTML)
-chequear("y la ranglan termina en la sisa, no en medio del pecho",
-         "Q68 60 67 64" in HTML)
+# La ranglan no es la misma de los dos lados: adelante cae casi a plomo
+# desde el cuello y atrás baja mucho más tendida. Son dos piezas distintas
+# de la camiseta.
+chequear("la ranglan de adelante no es la de atrás",
+         "const RANGLAN_I = atras" in HTML
+         and HTML.count("'102 34 Q86 36 78 55 Q70 70 67 84'") == 1
+         and HTML.count("'97 36 Q86 37 79 47 Q70 55 66 66 L65 84'") == 1)
+chequear("y el panel de la blanca se traza sobre esa misma línea",
+         'd="M${RANGLAN_I}" fill="none" stroke="${PANEL}"' in HTML)
 chequear("lo del cuello de atrás se ubica con el escote",
          "y=\"${(HUNDE + GRUESO_CUELLO / 2 - 1.1).toFixed(1)}\"" in HTML)
 

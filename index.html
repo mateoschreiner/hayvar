@@ -1424,6 +1424,15 @@ const App=(()=>{
        cuello y la recorta el propio contorno, así que la cinta apoya
        exactamente sobre el borde del escote y termina justo contra la
        línea del hombro. */
+    /* La costura ranglan, calcada de la camiseta. Adelante sale del
+       cuello y cae casi a plomo; atrás baja mucho más tendida. */
+    const RANGLAN_I = atras
+      ? '102 34 Q86 36 78 55 Q70 70 67 84'
+      : '97 36 Q86 37 79 47 Q70 55 66 66 L65 84';
+    const RANGLAN_D = atras
+      ? '128 34 Q144 36 152 55 Q160 70 163 84'
+      : '133 36 Q144 37 151 47 Q160 55 164 66 L165 84';
+
     const GRUESO_CUELLO = 8.5;
     const cinta = (relleno) => `<path d="M${ESCOTE}" fill="none"
         stroke="${relleno}" stroke-width="${GRUESO_CUELLO}"
@@ -1584,6 +1593,14 @@ const App=(()=>{
 
     /* El vivo: el hilo de otro color que remata el borde del cuello. Va
        después de la cinta y por afuera, que es donde está en la ropa. */
+    /* El canto del cuello: la cinta lleva un borde de un cuadrado de
+       ancho, del mismo rojo pero un punto más oscuro. Se traza sobre el
+       escote y el propio contorno se come la mitad de afuera, así que lo
+       que queda es justo ese borde. */
+    const bordeCuello = k.cuelloBorde
+      ? `<path d="M${ESCOTE}" fill="none" stroke="${k.cuelloBorde}"
+           stroke-width="8" clip-path="url(#c${u})"/>`
+      : '';
     const vivoCuello = k.cuelloVivo
       ? `<path d="M${ESCOTE}" clip-path="url(#c${u})"
            transform="translate(0 ${GRUESO_CUELLO / 2 - .9})"
@@ -1600,8 +1617,9 @@ const App=(()=>{
         <!-- Lo que queda por debajo de las dos costuras ranglan. Sirve
              para cortar contra ellas cualquier cosa que en la camiseta
              nazca de la costura y no del hombro. -->
-        <clipPath id="ragl${u}"><path d="M67 64 Q68 60 73 51 Q82 33 97 27.4
-          L133 27.4 Q148 33 157 51 Q162 60 163 64 L163 244 L67 244 Z"/>
+        <!-- Lo que queda por debajo de la costura ranglan del lado
+             derecho, que es contra lo que se cortan los dos vivos. -->
+        <clipPath id="ragl${u}"><path d="M${RANGLAN_D} L168 244 L131 244 Z"/>
         </clipPath>
 
         ${k.costados && !k.costados.liso ? `
@@ -1730,9 +1748,12 @@ const App=(()=>{
 
         <!-- la trama del tejido: hilos finitos que a este tamaño se leen
              como textura y no como líneas -->
-        <pattern id="w${u}" width="4" height="4" patternUnits="userSpaceOnUse">
-          <path d="M0 0 V4" stroke="#ffffff" stroke-opacity=".055" stroke-width="1"/>
-          <path d="M0 0 H4" stroke="#000000" stroke-opacity=".045" stroke-width="1"/>
+        <!-- Más suave y más espaciada de lo que era. A tamaño de ficha
+             —150 píxeles— la trama anterior se amontonaba y las camisetas
+             claras se leían punteadas en vez de blancas. -->
+        <pattern id="w${u}" width="5" height="5" patternUnits="userSpaceOnUse">
+          <path d="M0 0 V5" stroke="#ffffff" stroke-opacity=".035" stroke-width="1"/>
+          <path d="M0 0 H5" stroke="#000000" stroke-opacity=".028" stroke-width="1"/>
         </pattern>
 
         ${k.diagonal ? `
@@ -1758,13 +1779,13 @@ const App=(()=>{
              cae en el pecho y no donde termine la caja del SVG. -->
         <linearGradient id="lat${u}" gradientUnits="userSpaceOnUse"
           x1="65" y1="0" x2="165" y2="0">
-          <stop offset="0" stop-color="#000000" stop-opacity=".26"/>
-          <stop offset=".10" stop-color="#000000" stop-opacity=".09"/>
+          <stop offset="0" stop-color="#000000" stop-opacity=".21"/>
+          <stop offset=".10" stop-color="#000000" stop-opacity=".07"/>
           <stop offset=".28" stop-color="#ffffff" stop-opacity="${k.sinBrillo ? 0 : .10}"/>
           <stop offset=".44" stop-color="#ffffff" stop-opacity="${k.sinBrillo ? 0 : .15}"/>
           <stop offset=".64" stop-color="#ffffff" stop-opacity="${k.sinBrillo ? 0 : .06}"/>
-          <stop offset=".86" stop-color="#000000" stop-opacity=".12"/>
-          <stop offset="1" stop-color="#000000" stop-opacity=".28"/>
+          <stop offset=".86" stop-color="#000000" stop-opacity=".10"/>
+          <stop offset="1" stop-color="#000000" stop-opacity=".23"/>
         </linearGradient>
         <!-- la sombra abajo del cuello y la caída del ruedo -->
         <linearGradient id="ver${u}" gradientUnits="userSpaceOnUse"
@@ -1838,42 +1859,7 @@ const App=(()=>{
         <rect x="0" y="0" width="230" height="260" fill="url(#agi${u})"
           mask="url(#agp${u})"/>
       </g>` : ''}
-      ${k.costados ? `
-      <!-- El panel del costado. No hace el mismo recorrido en las tres, y
-           en las tres sigue una costura de verdad:
 
-           · en la roja va pegado al filo del cuerpo —por eso se ve poco:
-             la mitad de la tira cae fuera del contorno y la recorta— y en
-             la manga es una cuña que arranca ancha en el puño y se va
-             cerrando en diagonal hasta juntarse con la del cuerpo;
-           · en la blanca y en la azul arranca al lado del cuello, cruza el
-             hombro y baja curvando por el costado sin llegar al ruedo. Y
-             en la manga no va arriba sino en la axila: la parte de arriba
-             queda limpia. -->
-      <g clip-path="url(#t${u})">
-        ${k.costados.borde ? `
-        <path d="M66 224 L69 150 Q63 104 66 ${k.costados.hasta || 79}"
-          fill="none" stroke="${PANEL}" stroke-width="${k.costados.borde}"/>
-        <path d="M164 224 L161 150 Q167 104 164 ${k.costados.hasta || 79}"
-          fill="none" stroke="${PANEL}" stroke-width="${k.costados.borde}"/>`
-        : ''}
-        ${k.costados.curva ? `
-        <path d="M${k.costados.desde || 100} 26 Q82 31 71 47 Q63 63 61 86
-          L64 ${k.costados.hasta || 180}" fill="none" stroke="${PANEL}"
-          stroke-width="${k.costados.curva}" stroke-linejoin="round"/>
-        <path d="M${230 - (k.costados.desde || 100)} 26 Q148 31 159 47
-          Q167 63 169 86 L166 ${k.costados.hasta || 180}" fill="none"
-          stroke="${PANEL}" stroke-width="${k.costados.curva}"
-          stroke-linejoin="round"/>` : ''}
-        ${k.costados.mangaCuna ? `
-        <path d="M64 98 L50 93 L73 52 L78 38 Z" fill="${PANEL}"/>
-        <path d="M166 98 L180 93 L157 52 L152 38 Z" fill="${PANEL}"/>` : ''}
-        ${k.costados.mangaAxila ? `
-        <path d="M64 98 Q67 60 78 28" fill="none" stroke="${PANEL}"
-          stroke-width="${k.costados.mangaAxila}"/>
-        <path d="M166 98 Q163 60 152 28" fill="none" stroke="${PANEL}"
-          stroke-width="${k.costados.mangaAxila}"/>` : ''}
-      </g>` : ''}
       ${k.textura && tiras ? `
       <g clip-path="url(#c${u})"><g clip-path="url(#tx${u})">
         <rect x="0" y="0" width="230" height="260" fill="url(#ol${u})"/>
@@ -1930,7 +1916,7 @@ const App=(()=>{
            Puesto después quedaba sin sombra ninguna, y en una camiseta
            donde el cuello es del mismo color que el cuerpo —la roja de
            Argentinos— se veía un pico más claro, como si fuera diseño. -->
-      ${cuello}${vivoCuello}
+      ${cuello}${bordeCuello}${vivoCuello}
 
       <!-- Las costuras. La ranglan sale del cuello y baja en diagonal
            hasta la axila —es la que se ve en la foto cruzando el hombro— y
@@ -1939,33 +1925,83 @@ const App=(()=>{
            sobre una camiseta clara que sobre una oscura. -->
       ${k.costuras ? `
       <g clip-path="url(#c${u})">
-        <!-- Una costura no es una raya: es un doblez. De un lado la tela
-             se hunde y hace sombra, del otro se levanta y toma luz. Por
-             eso van dos líneas finitas y corridas, una oscura y una
-             clara, y no una sola más gruesa —que era lo que la hacía
-             parecer pintada encima—. Y en blanco y negro translúcidos,
-             así funcionan igual sobre la roja que sobre la azul.
+        <!-- La ranglan no es la misma de los dos lados: adelante cae casi
+             a plomo desde el cuello y atrás baja mucho más tendida. Son
+             dos piezas distintas de la camiseta, así que son dos curvas.
 
-             La ranglan termina justo donde el cuerpo se abre para la
-             manga, en la sisa. Antes seguía de largo y se cortaba sola
-             en medio del pecho. -->
-        <g stroke-linecap="round">
-          <path d="M97 27.4 Q82 33 73 51 Q68 60 67 64" fill="none"
-            stroke="rgba(0,0,0,.22)" stroke-width=".9"/>
-          <path d="M98.4 27.8 Q83.4 33.4 74.4 51.4 Q69.4 60.4 68.4 64.4" fill="none"
-            stroke="rgba(255,255,255,.17)" stroke-width=".8"/>
-          <path d="M133 27.4 Q148 33 157 51 Q162 60 163 64" fill="none"
-            stroke="rgba(0,0,0,.22)" stroke-width=".9"/>
-          <path d="M131.6 27.8 Q146.6 33.4 155.6 51.4 Q160.6 60.4 161.6 64.4" fill="none"
-            stroke="rgba(255,255,255,.17)" stroke-width=".8"/>
-          <path d="M${ESCOTE}" fill="none" stroke="rgba(0,0,0,.22)" stroke-width=".9"
+             Y una costura no es una raya: es un doblez. De un lado la tela
+             se hunde y hace sombra, del otro se levanta y toma luz. Por
+             eso van dos líneas finitas y corridas, una oscura y una clara,
+             en blanco y negro translúcidos: así funcionan igual sobre la
+             roja que sobre la azul. -->
+        <g stroke-linecap="round" fill="none">
+          <path d="M${RANGLAN_I}" stroke="rgba(0,0,0,.22)" stroke-width=".9"/>
+          <path d="M${RANGLAN_I}" stroke="rgba(255,255,255,.17)"
+            stroke-width=".8" transform="translate(1.4 .4)"/>
+          <path d="M${RANGLAN_D}" stroke="rgba(0,0,0,.22)" stroke-width=".9"/>
+          <path d="M${RANGLAN_D}" stroke="rgba(255,255,255,.17)"
+            stroke-width=".8" transform="translate(-1.4 .4)"/>
+          <path d="M${ESCOTE}" stroke="rgba(0,0,0,.22)" stroke-width=".9"
             transform="translate(0 ${(GRUESO_CUELLO / 2).toFixed(2)})"/>
-          <path d="M${ESCOTE}" fill="none" stroke="rgba(255,255,255,.17)"
+          <path d="M${ESCOTE}" stroke="rgba(255,255,255,.17)"
             stroke-width=".8"
             transform="translate(0 ${(GRUESO_CUELLO / 2 + 1.1).toFixed(2)})"/>
         </g>
       </g>` : ''}
 
+      ${k.costados ? `
+      <!-- El panel del costado. No hace el mismo recorrido en las tres, y
+           en las tres sigue una costura de verdad:
+
+           · en la roja va pegado al filo del cuerpo —por eso se ve poco:
+             la mitad de la tira cae fuera del contorno y la recorta— y en
+             la manga es una cuña que arranca ancha en el puño y se va
+             cerrando en diagonal hasta juntarse con la del cuerpo;
+           · en la blanca y en la azul arranca al lado del cuello, cruza el
+             hombro y baja curvando por el costado sin llegar al ruedo. Y
+             en la manga no va arriba sino en la axila: la parte de arriba
+             queda limpia. -->
+      <g clip-path="url(#t${u})">
+        ${k.costados.contorno ? `
+        <!-- Una sola pieza y no dos. Sube por el filo del cuerpo, dobla
+             sobre la axila y baja por la manga hasta el puño, que es como
+             está cosida: antes eran una tira en el flanco y otra en la
+             manga y se veía el corte donde pasa la costura.
+
+             Se dibuja como el relleno de todo lo que queda del lado de
+             afuera de esa línea; el contorno de la camiseta se encarga
+             del otro borde. -->
+        <path d="M67 236 L72 150 Q71 108 68 92 Q65 74 61 68
+          Q55 71 51 83 L48 94 L36 87 L26 78 L26 236 Z" fill="${PANEL}"/>
+        <path d="M163 236 L158 150 Q159 108 162 92 Q165 74 169 68
+          Q175 71 179 83 L182 94 L194 87 L204 78 L204 236 Z" fill="${PANEL}"/>` : ''}
+        ${k.costados.ranglan ? `
+        <!-- La blanca y la azul llevan el panel pegado a la costura
+             ranglan: nace al lado del cuello, la acompaña cruzando el
+             hombro hasta la axila y de ahí sigue por el flanco, pero
+             afinándose hasta cerrar un poco más abajo de la manga. Por eso
+             son dos piezas: una cinta de grosor parejo sobre la costura, y
+             una cuña sobre el costado. Una cinta sola no sabe afinarse.
+
+             La cinta va sobre la misma línea que la costura, así que si la
+             costura se mueve el panel la sigue solo. -->
+        <path d="M${RANGLAN_I}" fill="none" stroke="${PANEL}"
+          stroke-width="${k.costados.ranglan}" stroke-linejoin="round"/>
+        <path d="M${RANGLAN_D}" fill="none" stroke="${PANEL}"
+          stroke-width="${k.costados.ranglan}" stroke-linejoin="round"/>
+        <!-- La cuña del costado va recortada contra el cuerpo y no
+             contra la silueta entera: si no, el lado de afuera se metía en
+             la manga y dejaba una barra cruzada a la altura del hombro. -->
+        <g clip-path="url(#c${u})">
+          <path d="M75 62 Q70 78 68.6 98 Q67.6 118 67 ${k.costados.hasta || 133}
+            L56 ${k.costados.hasta || 133} L56 62 Z" fill="${PANEL}"/>
+          <path d="M155 62 Q160 78 161.4 98 Q162.4 118 163 ${k.costados.hasta || 133}
+            L174 ${k.costados.hasta || 133} L174 62 Z" fill="${PANEL}"/>
+        </g>` : ''}
+      </g>` : ''}
+
+      <!-- El panel va después del puño: donde se cruzan, el puño también
+           es del estampado. Puesto antes, el puño lo tapaba de rojo. -->
       <g clip-path="url(#t${u})">
         <rect x="0" y="0" width="230" height="260" fill="url(#w${u})"/>
         <!-- los pliegues: dos caídas anchas a los costados del pecho y dos
@@ -1995,8 +2031,11 @@ const App=(()=>{
            altura del final de la sisa. Antes estaba más abajo y más al
            medio, y quedaba flotando en medio del pecho en vez de apoyado
            donde se lo espera. -->
-      ${!atras && escudo && !k.sinEscudo ? `<image href="${escudo}" x="117"
-        y="49" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`
+      <!-- El escudo va al costado, no sobre el pecho: a la altura de la
+           primera banda de la suplente, y en la titular pisando los dos
+           vivos blancos. Es donde está en las fotos de las tres. -->
+      ${!atras && escudo && !k.sinEscudo ? `<image href="${escudo}" x="133"
+        y="64" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`
         : ''}
       <!-- Lo que va escrito en el cuello por dentro —A.A.A.J. en las de
            Argentinos, 1985 en la blanca— se ve al dar vuelta la camiseta.
@@ -2010,8 +2049,10 @@ const App=(()=>{
         fill="none"/>` : ''}
       ${atras && k.cuelloTexto ? `<text x="115"
         y="${(HUNDE + GRUESO_CUELLO / 2 - 1.1).toFixed(1)}"
-        text-anchor="middle" font-size="3" font-weight="700"
+        text-anchor="middle" font-size="3" font-weight="800"
         letter-spacing=".3"
+        stroke="${k.cuelloTexto.color || det}" stroke-width=".22"
+        paint-order="stroke"
         font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
           Helvetica, Arial, sans-serif"
         fill="${k.cuelloTexto.color || det}"
@@ -2027,7 +2068,16 @@ const App=(()=>{
         stroke="rgba(0,0,0,.30)" stroke-width="1.6"/>
       <path d="M152 28 Q172 33 182 46 Q192 62 193 88 Q180 96 166 98"
         fill="none" stroke="rgba(0,0,0,.30)" stroke-width="1.6"/>
-      <path d="${CUERPO}" fill="none" stroke="rgba(0,0,0,.32)" stroke-width="1.8"/>
+      <!-- El contorno del cuerpo, pero sin las dos sisas: el tramo que va
+           del hombro a la axila no es silueta —lo tapa la manga— y
+           trazarlo dejaba dos rayas negras y rectas cruzando las mangas.
+           Se dibuja entonces en dos tramos abiertos: el escote y el
+           costado con el ruedo. -->
+      <path d="M78 28 L${ESCOTE} L152 28" fill="none"
+        stroke="rgba(0,0,0,.32)" stroke-width="1.8"/>
+      <path d="M164 60 Q167 104 161 150 L164 221 Q115 231 66 221
+        L69 150 Q63 104 66 60" fill="none"
+        stroke="rgba(0,0,0,.32)" stroke-width="1.8"/>
     </svg>`;
   }
 

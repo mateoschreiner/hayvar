@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · arreglado el caché de AFA que rompí al cambiar la firma"
+VERSION_APP = "2026-08-21 · los goles de la lista ya no se congelan a mitad del partido"
 
 
 def reparar_recorridos():
@@ -3560,7 +3560,21 @@ def temporada_actual(comp):
 # goles son los que son. Por eso se cachea fuerte y sólo se refresca lo que
 # está en juego.
 def detalle_liviano(game_id, en_juego=False, liga="lpf"):
-    ttl = 30 if en_juego else 60 * 60 * 12
+    """
+    Los goles y el canal de un partido.
+
+    La caché era de doce horas para lo que no estuviera en juego, y ahí
+    estaba media trampa: un partido leído antes del pitazo inicial —sin
+    ningún gol todavía— quedaba guardado doce horas, así que la lista lo
+    mostraba sin goles el resto del día aunque la ficha del partido, que
+    pide el detalle por otro lado, los mostrara todos. Peor todavía: al
+    querer arreglarlo, el pedido volvía a caer en esa misma foto vieja.
+
+    Ahora son cinco minutos. No cuesta casi nada porque el detalle de un
+    partido terminado ya no se vuelve a pedir: queda guardado aparte, y de
+    eso se ocupa `goles_al_dia`.
+    """
+    ttl = 30 if en_juego else 300
     data = fetch("game", {"gameId": game_id}, ttl=ttl)
     g = data.get("game") or {}
     hid = (g.get("homeCompetitor") or {}).get("id")
@@ -3629,7 +3643,10 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
               "a": (g.get("awayCompetitor") or {}).get("name") or ""}
     for x in goles:
         x["equipo"] = equipo.get(x["side"], "")
-    anotar_goles(liga, game_id, goles)
+    # Se anota si el partido ya estaba terminado según la fuente, no según
+    # lo que creía el que llamó: es lo que distingue un dato definitivo de
+    # una foto sacada a los veinte minutos.
+    anotar_goles(liga, game_id, goles, status_of(g) == "FIN")
 
     tv = limpiar_tv([t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")])
     if tv:
@@ -3701,26 +3718,27 @@ def api_detalles(q):
     # nada a nadie. Sólo se sale a buscar lo que falta, y de a poco. Antes se
     # pedía todo cada vez y con el tope de 40 los grupos de la Libertadores
     # —que tienen casi cien partidos— se quedaban a medias.
+    #
+    # Pero "guardado" no es lo mismo que "listo": un partido leído mientras
+    # se jugaba deja los goles que iban hasta ese momento. Eso lo decide
+    # `goles_al_dia`, que además compara la cantidad con el resultado.
     pendientes = []
     for x, g in con_id:
-        if g.get("status") == "LIVE":
+        guardado, listo = goles_al_dia(x, g)
+        if not listo:
             pendientes.append((x, g))
             continue
-        guardado, _ = almacen.leer("goles:%s:%s" % (x, g["liveId"]))
         tv, _ = almacen.leer("tv:%s:%s" % (x, g["liveId"]))
         pen, _ = almacen.leer("pen:%s:%s" % (x, g["liveId"]))
-        if guardado is None:
-            pendientes.append((x, g))
-        else:
-            salida[str(g["id"])] = {
-                "tv": tv or [],
-                "penales": pen,
-                "goles": [{"player": q["j"], "equipo": q.get("e") or "",
-                           "min": q.get("m"), "added": 0,
-                           "side": q.get("s") or "h", "sub": "",
-                           "anulado": False, "penales": False}
-                          for q in guardado],
-            }
+        salida[str(g["id"])] = {
+            "tv": tv or [],
+            "penales": pen,
+            "goles": [{"player": q["j"], "equipo": q.get("e") or "",
+                       "min": q.get("m"), "added": 0,
+                       "side": q.get("s") or "h", "sub": "",
+                       "anulado": False, "penales": False}
+                      for q in guardado],
+        }
     faltan = max(0, len(pendientes) - TOPE)
     pendientes = pendientes[:TOPE]
 
@@ -5721,7 +5739,57 @@ def anotar_partido(nombre, liga, game_id):
     almacen.guardar(clave, dato)
 
 
-def anotar_goles(liga, game_id, goles):
+def leer_goles(liga, game_id):
+    """
+    Los goles guardados de un partido: (lista, si es definitivo).
+
+    Convive con lo guardado antes, que era una lista pelada sin decir si el
+    partido había terminado. No se migra: una base que se vuelve a llenar
+    sola no vale una migración, y el formato viejo se reconoce solo.
+    """
+    dato, _ = almacen.leer("goles:%s:%s" % (liga, game_id))
+    if dato is None:
+        return None, False
+    if isinstance(dato, dict):
+        return dato.get("g") or [], bool(dato.get("fin"))
+    return dato, False
+
+
+def goles_al_dia(liga, g):
+    """
+    ¿Lo guardado de este partido ya se puede mostrar sin volver a pedirlo?
+
+    Antes alcanzaba con que hubiera *algo* guardado, y ese era el error: un
+    partido leído antes de empezar dejaba una lista vacía que se servía para
+    siempre. Ahora:
+
+      · en juego → nunca, hay que ir a buscarlo
+      · terminado → si lo guardamos ya terminado, o si la cantidad de goles
+        coincide con el resultado (esto último es para lo guardado antes de
+        que anotáramos la primera cosa)
+      · todavía no empezó → alcanza con haberlo leído una vez; lo único que
+        puede haber es el canal de TV
+
+    El caso "terminado pero incompleto" se vuelve a pedir una sola vez: al
+    releerlo queda marcado como definitivo aunque la fuente siga sin decir
+    quién hizo un gol. Si no, esos partidos se pedirían para siempre y le
+    robarían el lugar a los que sí faltan.
+    """
+    lista, fin = leer_goles(liga, g.get("liveId"))
+    if lista is None:
+        return None, False
+    estado = g.get("status")
+    if estado == "LIVE":
+        return lista, False
+    if estado != "FIN":
+        return lista, True
+    if fin:
+        return lista, True
+    total = (g.get("gh") or 0) + (g.get("ga") or 0)
+    return lista, len(lista) >= total
+
+
+def anotar_goles(liga, game_id, goles, fin=False):
     """
     Guarda quién hizo los goles de un partido.
 
@@ -5732,17 +5800,29 @@ def anotar_goles(liga, game_id, goles):
     Se guarda por partido y no sumando de a uno: si el mismo partido se lee
     diez veces —pasa, se refresca cada veinte segundos— el último pisa al
     anterior y nadie termina con treinta goles.
+
+    `fin` dice si el partido ya había terminado cuando lo leímos. Sin ese
+    dato, un partido leído a los veinte minutos quedaba guardado con los
+    goles de ese momento y no se volvía a mirar nunca: en la lista se veía
+    "Arrascaeta 35'" y el resultado 2-1, y los otros dos goles no aparecían
+    hasta abrir la ficha. Ahora lo provisorio se vuelve a pedir.
+
+    Los goles sin autor se guardan igual, con el nombre vacío. Descartarlos
+    era peor: el gol desaparecía de la lista en vez de mostrarse como el
+    minuto solo, y encima la cuenta no cerraba con el resultado, así que no
+    había forma de darse cuenta de que faltaba algo.
     """
     if not game_id:
         return
     # ni los anulados ni los de la tanda de penales cuentan para la tabla.
     # Se guarda también de qué lado fue cada gol, para poder mostrarlos en la
     # lista de partidos sin volver a pedir el detalle.
-    limpios = [{"j": g["player"], "e": g.get("equipo") or "", "m": g.get("min"),
-                "s": g.get("side") or "h"}
+    limpios = [{"j": g.get("player") or "", "e": g.get("equipo") or "",
+                "m": g.get("min"), "s": g.get("side") or "h"}
                for g in goles
-               if g.get("player") and not g.get("anulado") and not g.get("penales")]
-    almacen.guardar("goles:%s:%s" % (liga, game_id), limpios)
+               if not g.get("anulado") and not g.get("penales")]
+    almacen.guardar("goles:%s:%s" % (liga, game_id),
+                    {"g": limpios, "fin": bool(fin)})
 
     # la tanda, aparte: sirve para mostrar quién pasó en el cuadro
     tanda = [g for g in goles if g.get("penales") and not g.get("anulado")]
@@ -5763,7 +5843,7 @@ def goleadores_propios(liga, escudos=None):
         return []
     cuenta = {}
     for gid in indice:
-        goles, _ = almacen.leer("goles:%s:%s" % (liga, gid))
+        goles, _ = leer_goles(liga, gid)
         for g in (goles or []):
             k = norm(g["j"])
             if not k:
@@ -7510,12 +7590,16 @@ def juntar_goles(lid, limite=25):
     # las categorías de AFA el id del partido es otro —viene del fixture
     # oficial— y preguntando por ése nunca encontrábamos nada guardado: se
     # volvían a pedir los mismos partidos una y otra vez, para siempre.
+    #
+    # Y no alcanza con que haya algo guardado: si lo leímos mientras se
+    # jugaba, lo que hay es la mitad de los goles. Los partidos que quedaron
+    # así también entran acá y se arreglan solos en las próximas vueltas.
     faltan = []
     for g in juegos:
         if g.get("status") != "FIN" or not g.get("liveId"):
             continue
-        guardado, _ = almacen.leer("goles:%s:%s" % (lid, g["liveId"]))
-        if guardado is None:
+        _, listo = goles_al_dia(lid, g)
+        if not listo:
             faltan.append(g)
 
     hechos = 0

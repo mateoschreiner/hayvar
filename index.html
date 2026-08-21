@@ -2670,7 +2670,12 @@ const App=(()=>{
           ? `Penales ${tanda.filter(g=>g.side==='h').length}-${tanda.filter(g=>g.side==='a').length}`
           : '');
     const lado=s=>(d.goles||[]).filter(g=>g.side===s&&!g.penales).map(g=>{
-      const txt=`${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`;
+      // A veces la fuente da el gol pero todavía no dice quién lo hizo. Se
+      // muestra el minuto solo: es menos de lo que uno quiere, pero es
+      // cierto, y esconder el gol dejaba la lista sin cerrar con el
+      // resultado, que es peor.
+      const quien=esc((g.player||'').split(' ').slice(-1)[0]);
+      const txt=`${quien?quien+' ':''}${g.min}${g.added?'+'+g.added:''}'`;
       return `<span class="gol">${g.anulado
         ? `<span class="gol-anulado" title="Gol anulado por el VAR">${txt}</span>`
         : txt}</span>`;
@@ -3663,10 +3668,14 @@ const App=(()=>{
     const filas=k.partidos.map(p=>{
       const d=p.start?new Date(p.start):null;
       const det=S.detalles[p.id]||{};
+      // igual que en la portada: si la fuente todavía no dijo quién lo hizo,
+      // va el minuto solo
+      const quien=g=>{const q=esc((g.player||'').split(' ').slice(-1)[0]);
+                      return q?q+' ':'';};
       const lado=s=>((det.goles||[]).filter(g=>g.side===s&&!g.penales)
         .map(g=>`<span class="gol">${g.anulado
-          ? `<span class="gol-anulado">${esc(g.player.split(' ').slice(-1)[0])} ${g.min}'</span>`
-          : `${esc(g.player.split(' ').slice(-1)[0])} ${g.min}${g.added?'+'+g.added:''}'`}</span>`).join(''));
+          ? `<span class="gol-anulado">${quien(g)}${g.min}'</span>`
+          : `${quien(g)}${g.min}${g.added?'+'+g.added:''}'`}</span>`).join(''));
       // el local de ESTE partido, no el de la llave: en la vuelta se invierten
       const loc=p.home||{}, vis=p.away||{};
       return `<div class="serie-p" onclick="App.openMatch('${js(p.id)}')">

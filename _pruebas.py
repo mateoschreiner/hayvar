@@ -1624,6 +1624,125 @@ chequear("y en la página va la bandera y no el contador de titularidades",
          'class="pais"' in HTML and "tit.</span>" not in HTML)
 
 
+print("\n── los goles de la lista no se congelan a mitad del partido ──")
+# El error: alcanzaba con que hubiera *algo* guardado para no volver a
+# pedirlo nunca. Un partido leído a los cuarenta minutos quedaba con los
+# goles de ese momento, y uno leído antes de empezar quedaba sin ninguno.
+# Olimpia 1-4 Vasco se mostró toda la noche sin goles en la lista mientras
+# la ficha del partido —que pide el detalle por otro lado— los tenía todos.
+_p_vivo = {"liveId": 8101, "status": "LIVE", "gh": 1, "ga": 0}
+_p_fin = {"liveId": 8102, "status": "FIN", "gh": 1, "ga": 4}
+_p_por_jugar = {"liveId": 8103, "status": "SOON", "gh": None, "ga": None}
+
+server.anotar_goles("cp", 8101, [{"player": "Uno", "min": 20, "side": "h"}], False)
+chequear("un partido en juego se vuelve a pedir siempre",
+         server.goles_al_dia("cp", _p_vivo)[1] is False)
+
+# leído antes de empezar: cero goles y el partido termina 1-4
+server.anotar_goles("cp", 8102, [], False)
+chequear("lo leído antes del pitazo inicial no se da por bueno",
+         server.goles_al_dia("cp", _p_fin)[1] is False)
+
+# ahora sí, ya terminado
+server.anotar_goles("cp", 8102, [
+    {"player": "Matus", "min": 15, "side": "h"},
+    {"player": "Mendes", "min": 29, "side": "a"},
+    {"player": "David", "min": 36, "side": "a"},
+    {"player": "Adson", "min": 70, "side": "a"},
+    {"player": "Spinelli", "min": 84, "side": "a"},
+    {"player": "Sandoval", "min": 79, "side": "h", "anulado": True},
+], True)
+_lista, _listo = server.goles_al_dia("cp", _p_fin)
+chequear("una vez terminado queda como definitivo", _listo is True)
+chequear("y están los cinco goles, sin el anulado",
+         len(_lista) == 5, len(_lista))
+
+# El caso que hay que dejar cerrado: si la fuente nunca dice quién hizo un
+# gol, el partido no puede quedar pidiéndose para siempre. Se lee una vez
+# más y queda marcado, aunque la cuenta no cierre.
+server.anotar_goles("cp", 8104, [{"player": "", "min": 30, "side": "h"}], True)
+chequear("un partido incompleto pero ya releído no se pide de nuevo",
+         server.goles_al_dia("cp", {"liveId": 8104, "status": "FIN",
+                                    "gh": 2, "ga": 0})[1] is True)
+chequear("el gol sin autor se guarda igual, con el minuto",
+         server.leer_goles("cp", 8104)[0] == [{"j": "", "e": "", "m": 30,
+                                               "s": "h"}],
+         server.leer_goles("cp", 8104)[0])
+
+# lo guardado con el formato viejo —una lista pelada— se sigue entendiendo
+server.almacen.guardar("goles:cp:8105", [{"j": "Viejo", "m": 10, "s": "h"}])
+chequear("lo guardado antes se sigue leyendo",
+         server.leer_goles("cp", 8105)[0][0]["j"] == "Viejo")
+chequear("y si la cantidad coincide con el resultado se da por bueno",
+         server.goles_al_dia("cp", {"liveId": 8105, "status": "FIN",
+                                    "gh": 1, "ga": 0})[1] is True)
+chequear("pero si faltan goles se vuelve a pedir",
+         server.goles_al_dia("cp", {"liveId": 8105, "status": "FIN",
+                                    "gh": 3, "ga": 1})[1] is False)
+chequear("un partido que todavía no empezó no hace falta releerlo",
+         server.goles_al_dia("cp", _p_por_jugar)[1] is False
+         or server.leer_goles("cp", 8103)[0] is None)
+
+# La tabla de goleadores propia no puede contar los goles sin autor.
+server.almacen.guardar("golesidx:cp", ["8102", "8104"])
+_tabla = server.goleadores_propios("cp")
+chequear("la tabla de goleadores ignora los goles sin autor",
+         len(_tabla) == 5 and all(r["name"] for r in _tabla),
+         [r["name"] for r in _tabla])
+
+# Y el rescate de fondo tiene que ir a buscar justamente esos.
+_j2 = [{"status": "FIN", "liveId": 8102},      # definitivo
+       {"status": "FIN", "liveId": 8105},      # formato viejo, completo
+       {"status": "FIN", "liveId": 8106}]      # nunca leído
+_j2[1].update(gh=1, ga=0); _j2[0].update(gh=1, ga=4); _j2[2].update(gh=0, ga=0)
+_pedidos2 = []
+_lg_real, _det_real = server.api_liga_games, server.detalle_liviano
+server.api_liga_games = lambda q: {"games": _j2}
+server.detalle_liviano = lambda gid, **kw: _pedidos2.append(gid)
+server.LIGAS["cp"] = {"nombre": "de prueba"}
+server.juntar_goles("cp", limite=10)
+server.api_liga_games, server.detalle_liviano = _lg_real, _det_real
+del server.LIGAS["cp"]
+chequear("el rescate sólo va a buscar lo que falta",
+         _pedidos2 == [8106], _pedidos2)
+
+# La otra mitad del error estaba en la caché: el detalle se guardaba doce
+# horas, así que el intento de arreglarlo volvía a caer en la misma foto.
+chequear("el detalle del partido ya no se cachea doce horas",
+         "ttl = 30 if en_juego else 300" in _SRV)
+chequear("y la lista mira si lo guardado está al día, no si existe",
+         "guardado, listo = goles_al_dia(x, g)" in _SRV
+         and 'guardado, _ = almacen.leer("goles:%s:%s"' not in _SRV)
+# Y la prueba de verdad: la lista de partidos, entera. Es la que reproduce
+# lo que se vio en pantalla el jueves.
+server.anotar_goles("lpf", 8201, [{"player": "Arrascaeta", "min": 35,
+                                   "side": "h"}], False)
+server.anotar_goles("lpf", 8202, [{"player": "Conechny", "min": 4,
+                                   "side": "h"}], True)
+_lista_j = [{"id": "A", "liveId": 8201, "status": "FIN", "gh": 2, "ga": 1,
+             "start": "2026-08-19T21:30:00-03:00"},
+            {"id": "B", "liveId": 8202, "status": "FIN", "gh": 1, "ga": 0,
+             "start": "2026-08-19T19:15:00-03:00"}]
+_releidos = []
+_all_real3, _det_real3 = server.all_games, server.detalle_liviano
+server.all_games = lambda ttl=25: _lista_j
+server.detalle_liviano = lambda gid, **kw: (_releidos.append(gid)
+                                            or {"tv": [], "goles": [],
+                                                "penales": None})
+_res = server.api_detalles({"id": ["lpf"]})
+server.all_games, server.detalle_liviano = _all_real3, _det_real3
+chequear("el 2-1 con un solo gol guardado se vuelve a pedir",
+         _releidos == [8201], _releidos)
+chequear("y el 1-0 que ya estaba completo se sirve de la base",
+         len(_res["detalles"]["B"]["goles"]) == 1
+         and _res["detalles"]["B"]["goles"][0]["player"] == "Conechny",
+         _res["detalles"].get("B"))
+
+chequear("el gol sin autor se muestra como el minuto solo",
+         HTML.count("quien?quien+' ':''") + HTML.count("q?q+' ':''") == 2,
+         HTML.count("quien?quien+' ':''") + HTML.count("q?q+' ':''"))
+
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

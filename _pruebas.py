@@ -1541,6 +1541,27 @@ chequear("la cuenta de bytes coincide con lo guardado",
          (server._cache_bytes, sum(v[2] for v in server._cache.values())))
 server._cache.clear(); server._cache_bytes = 0
 
+# Y el que llama sin decir el tamaño también tiene que andar. Esto no es
+# teórico: al cambiar la firma de esta función quedaron rotas las cuatro
+# llamadas de AFA y la página mostró el error en pantalla durante horas.
+# La prueba anterior no lo agarró porque llamaba a la función directo, con
+# todos los argumentos. Así que además de probarla, se revisan todas las
+# llamadas que hay en el archivo.
+server._guardar_en_cache("sinTamano", {"a": 1})
+chequear("se puede guardar sin decir cuánto ocupa",
+         "sinTamano" in server._cache and server._cache_bytes > 0)
+
+import ast as _ast, inspect as _insp
+_arbol = _ast.parse(_SRV)
+_firma = _insp.signature(server._guardar_en_cache)
+_minimo = sum(1 for p in _firma.parameters.values() if p.default is p.empty)
+_malas = [n.lineno for n in _ast.walk(_arbol)
+          if isinstance(n, _ast.Call) and getattr(n.func, "id", "")
+          == "_guardar_en_cache" and len(n.args) < _minimo]
+chequear("y todas las llamadas del archivo le pasan lo que pide",
+         not _malas, _malas)
+server._cache.clear(); server._cache_bytes = 0
+
 # Recorrer el calendario entero es lo caro. Una vez al día, alcanza con
 # mirarlo de vez en cuando.
 chequear("el rescate deja de recorrer el calendario cuando está al día",

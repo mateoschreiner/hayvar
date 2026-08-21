@@ -389,9 +389,22 @@ _CACHE_MAX_UNO = 300 * 1024
 _cache_bytes = 0
 
 
-def _guardar_en_cache(url, valor, cuanto):
-    """Guarda en el caché de memoria mientras entre en el presupuesto."""
+def _guardar_en_cache(url, valor, cuanto=None):
+    """
+    Guarda en el caché de memoria mientras entre en el presupuesto.
+
+    `cuanto` es cuánto ocupa el valor como texto. Es opcional a propósito:
+    quien ya lo sabe —el que acaba de leerlo de la base— lo pasa y se
+    ahorra la cuenta, y el que no, lo deja y se mide acá. Cuando esto era
+    obligatorio, las cuatro llamadas de AFA quedaron rotas y la página
+    mostró el error en el cartel de arriba durante horas.
+    """
     global _cache_bytes
+    if cuanto is None:
+        try:
+            cuanto = len(json.dumps(valor, ensure_ascii=False))
+        except Exception:
+            return
     if cuanto > _CACHE_MAX_UNO:
         return
     with _lock:
@@ -3337,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · el caché en memoria medido en bytes, para que Render no lo mate"
+VERSION_APP = "2026-08-21 · arreglado el caché de AFA que rompí al cambiar la firma"
 
 
 def reparar_recorridos():

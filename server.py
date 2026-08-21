@@ -250,6 +250,44 @@ SITIOS = {
     "Vélez Sarsfield": "https://www.velezsarsfield.com.ar/",
 }
 
+# La tienda online oficial, que casi nunca vive en el sitio del club sino en
+# un dominio aparte: Boca vende en bocashop, River en tiendariver, Racing en
+# locademia. Por eso no alcanza con enlazar el sitio y hay que tenerlas.
+#
+# Van sólo las del propio club. Las de Mercado Libre, las cadenas
+# deportivas y las de la marca que los viste quedan afuera: no son la
+# tienda del club aunque vendan su camiseta.
+#
+# Los que faltan no tienen tienda online propia —venden por Instagram o en
+# el local— y para ésos la ficha no muestra la tarjeta. Es preferible eso a
+# mandar a alguien a un link que no es.
+TIENDAS = {
+    "Aldosivi": "https://www.tiendatiburon.com.ar/",
+    "Argentinos Juniors": "https://bichostore.com.ar/",
+    "Banfield": "https://shopclubabanfield.mitiendanube.com/",
+    "Belgrano": "https://www.republicadealberdi.com.ar/",
+    "Boca Juniors": "https://www.bocashop.com.ar/",
+    "Defensa y Justicia": "https://dyj.tienda.accessfan.ar/",
+    "Estudiantes (LP)": "https://tiendapincha.com/",
+    "Gimnasia y Esgrima (LP)": "https://www.loboshop.com.ar/",
+    "Gimnasia y Esgrima (M)": "https://www.tiendapituca.com.ar/",
+    "Huracán": "https://tienda.cahuracan.com/",
+    "Independiente": "https://www.independientestore.com.ar/",
+    "Independiente Rivadavia": "https://tiendaazul.com.ar/",
+    "Instituto": "https://www.tiendainstituto.com.ar/",
+    "Lanús": "https://tiendagranate.clublanus.com/",
+    "Newell's Old Boys": "https://tiendanewells.com/",
+    "Platense": "https://platensemania.com.ar/",
+    "Racing": "https://locademia.racingclub.com.ar/",
+    "River Plate": "https://www.tiendariver.com/",
+    "Rosario Central": "https://centraltienda.com.ar/",
+    "San Lorenzo": "https://www.soycuervo.com/",
+    "Talleres (C)": "https://tienda.clubtalleres.com.ar/",
+    "Tigre": "https://www.tiendatigre.com.ar/",
+    "Unión": "https://www.tiendaunion.com.ar/",
+    "Vélez Sarsfield": "https://tiendavelez.com.ar/",
+}
+
 # Primera Nacional. Varios de estos clubes no tienen web propia o la tienen
 # caída, así que se enlaza el Instagram oficial, que es donde realmente
 # publican. La clave es el nombre que usa 365scores.
@@ -3277,7 +3315,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-19 · River y Talleres fieles a la foto"
+VERSION_APP = "2026-08-21 · las tres de Aldosivi, banderas del plantel, tienda oficial y el radar del torneo"
 
 
 def reparar_recorridos():
@@ -4806,9 +4844,7 @@ def perfil_atleta(atleta_id):
                           "f_png,w_160,h_160,c_limit,q_auto:best,dpr_2/"
                           "v%s/Athletes/%s" % (a.get("imageVersion", 1), a["id"]))
     if a.get("nationalityId"):
-        salida["bandera"] = ("https://imagecache.365scores.com/image/upload/"
-                             "f_png,w_48,h_48,c_limit,q_auto:eco,dpr_2/"
-                             "v1/Countries/Round/%s" % a["nationalityId"])
+        salida["bandera"] = bandera_url(a["nationalityId"])
     return {k: v for k, v in salida.items() if v not in (None, "")}
 
 
@@ -4962,6 +4998,14 @@ def anotar_stats(liga, game_id, local, visita, vals_h, vals_a, gh=None, ga=None)
 
     Van también los goles, porque la efectividad y la solidez no salen de
     las estadísticas sino del resultado.
+
+    El índice guarda los últimos quinientos partidos, que son más de un
+    torneo y hasta más de una temporada. Hoy el radar del club no los usa
+    —promedia sólo el torneo que se está jugando— pero se siguen
+    guardando a propósito: es la única serie larga que tenemos, y sin
+    juntarla ahora no la vamos a tener nunca. Con eso adentro se pueden
+    hacer las comparaciones contra el año pasado o contra la historia del
+    club, que hoy no existen.
     """
     if not game_id or not (vals_h or vals_a):
         return
@@ -4999,7 +5043,27 @@ def _valor_eje(ac, e):
     return 0
 
 
-def radar_promedio(liga, club):
+def del_torneo():
+    """
+    Los partidos del torneo que se está jugando, por su id de 365scores.
+
+    El fixture de AFA ya viene filtrado al Clausura, así que alcanza con
+    juntar los ids que se le pegaron de 365scores —que son los mismos con
+    los que se guardan las estadísticas—. Los que todavía no tienen id
+    tampoco tienen estadísticas, así que no se pierde nada.
+
+    Devuelve None si el fixture no se pudo leer, y eso quiere decir "no
+    filtres": es preferible un promedio con partidos de más que una
+    página vacía.
+    """
+    try:
+        ids = {str(m["liveId"]) for m in all_games() if m.get("liveId")}
+    except Exception:
+        return None
+    return ids or None
+
+
+def radar_promedio(liga, club, equipos=None, partidos=None):
     """
     El promedio del club contra el de toda la liga, eje por eje, y en qué
     puesto lo deja eso.
@@ -5011,10 +5075,33 @@ def radar_promedio(liga, club):
 
     Por eso se acumula club por club y no sólo "el club" contra "la liga":
     con la tabla entera armada, el puesto sale de ordenarla.
+
+    Los dos filtros existen por el mismo motivo. El índice de estadísticas
+    guarda los últimos quinientos partidos de la competencia, y eso pasa de
+    largo el torneo y hasta la temporada.
+
+    `equipos` es contra quiénes se compara. Sin eso quedaban adentro los
+    que se fueron al descenso, y cualquier nombre que no reconocemos
+    entraba como si fuera un club más: se llegaba a "48º de 53" en un
+    torneo de treinta.
+
+    `partidos` es qué partidos entran en la cuenta. Sin eso, el promedio
+    de un club mezclaba el Clausura con el Apertura, que se juegan con
+    otro plantel y a veces con otro técnico.
+
+    Los quinientos siguen guardándose igual. Que hoy no se usen no
+    significa que sobren: son la única serie larga que tenemos, y el día
+    que queramos "cómo viene comparado con el año pasado" va a salir de
+    ahí. Para eso alcanza con no pasar `partidos`.
     """
     idx, _ = almacen.leer("statsidx:%s" % liga)
     if not idx:
         return None
+    permitidos = {norm(x) for x in equipos} if equipos else None
+    if partidos is not None:
+        idx = [g for g in idx if str(g) in partidos]
+        if not idx:
+            return None
 
     def vacio():
         return {"partidos": 0, "remates": 0.0, "gf": 0.0, "gc": 0.0,
@@ -5033,6 +5120,8 @@ def radar_promedio(liga, club):
                 continue
             eq = match_team(lo.get("eq") or "") or (lo.get("eq") or "")
             if not eq:
+                continue
+            if permitidos is not None and norm(eq) not in permitidos:
                 continue
             destinos = [liga_ac, por_club.setdefault(eq, vacio())]
             remates = _buscar_eje(vals, ["total remates", "remates"]) or 0
@@ -5090,7 +5179,10 @@ def radar_promedio(liga, club):
         ejes.append(fila)
 
     return {"partidos": mio["partidos"], "ejes": ejes,
-            "deLiga": liga_ac["partidos"], "clubes": len(rivales)}
+            "deLiga": liga_ac["partidos"], "clubes": len(rivales),
+            # para que la página pueda decir de qué se está hablando en vez
+            # de un genérico "en la liga"
+            "torneo": (LIGAS.get(liga) or {}).get("torneo") if partidos else None}
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -5463,8 +5555,56 @@ def anotar_plantel(club, ficha, titular, dia):
     almacen.guardar(clave, plantel)
 
 
+def bandera_url(pais_id):
+    return ("https://imagecache.365scores.com/image/upload/"
+            "f_png,w_48,h_48,c_limit,q_auto:eco,dpr_2/"
+            "v1/Countries/Round/%s" % pais_id)
+
+
+def nacionalidades(ids):
+    """
+    De qué país es cada jugador, para toda una lista de una sola vez.
+
+    La ficha de un jugador ya traía la nacionalidad, pero pedirla de a uno
+    para un plantel entero son treinta pedidos cada vez que alguien abre
+    la página de un club. La fuente acepta varios atletas en la misma
+    dirección, así que van todos juntos.
+
+    Y se guarda por jugador, no por club: el mismo tipo aparece en el
+    plantel de su club y en el de los clubes por los que pasó, y la
+    nacionalidad no cambia. Una vez pedida, no se vuelve a pedir.
+    """
+    faltan, salida = [], {}
+    for i in {str(x) for x in ids if x}:
+        guardado, _ = almacen.leer("nac:%s" % i)
+        if guardado:
+            salida[i] = guardado
+        else:
+            faltan.append(i)
+    for tanda in [faltan[x:x + 40] for x in range(0, len(faltan), 40)]:
+        try:
+            data = fetch("athletes", {"athletes": ",".join(tanda)},
+                         ttl=60 * 60 * 24)
+        except Exception:
+            continue
+        for a in (data.get("athletes") or []):
+            if not a.get("id"):
+                continue
+            ficha = {"pais": a.get("nationalityName") or ""}
+            if a.get("nationalityId"):
+                ficha["bandera"] = bandera_url(a["nationalityId"])
+            if not ficha["pais"]:
+                continue
+            almacen.guardar("nac:%s" % a["id"], ficha)
+            salida[str(a["id"])] = ficha
+    return salida
+
+
 def plantel_de(club):
-    """El plantel guardado, ordenado por puesto y después por dorsal."""
+    """
+    El plantel guardado, ordenado por puesto y después por dorsal, con la
+    bandera de cada uno.
+    """
     plantel, _ = almacen.leer("plantel:" + norm(club))
     if not plantel:
         return []
@@ -5481,6 +5621,17 @@ def plantel_de(club):
     filas.sort(key=lambda x: (puesto_rango(x.get("puesto")),
                               x.get("n") if isinstance(x.get("n"), int) else 99,
                               norm(x.get("nombre"))))
+    # Si la fuente no contesta, el plantel se muestra igual: lo que falta
+    # es la banderita, no la lista.
+    try:
+        paises = nacionalidades([f.get("id") for f in filas])
+    except Exception:
+        paises = {}
+    for f in filas:
+        p = paises.get(str(f.get("id") or ""))
+        if p:
+            f["pais"] = p.get("pais")
+            f["bandera"] = p.get("bandera")
     return filas
 
 
@@ -6397,10 +6548,53 @@ _OTROS_CLUBES = {
         "estadioApodo": "El Minella",
         "direccion": "Mar del Plata",
         "capacidad": 35354, "sitio": "https://www.aldosivi.com",
-        "titular": ("rayas", "#f0cf1c", "#1c9e78", "#12241c"),
-        # la suplente es casi negra, verde muy oscuro, con los vivos en
-        # verde lima
-        "suplente": ("liso", "#101d18", "#101d18", "#8ed13a"),
+        # Las tres de la 2026/27, sacadas de las fotos oficiales.
+        #
+        # La titular: siete franjas contadas —cuatro verdes y tres
+        # amarillas, la del medio amarilla— y no rayas sueltas, que
+        # quedaban centradas donde caía la cuenta. Las mangas repiten el
+        # rayado siguiendo la curva del brazo. Atrás, abajo del cuello,
+        # dice LA FAMILIA, que es el nombre de la colección.
+        "titular": {
+            "patron": "rayasn", "cantidad": 7,
+            "base": "#f2d65c", "raya": "#2f9e82", "detalle": "#f2d65c",
+            "manga": "#2f9e82", "mangaRayas": True, "puno": "#f2d65c",
+            "cuello": "#2f9e82", "cuelloLados": "#f2d65c",
+            "cuelloAtras": "#f2d65c", "textura": "#4dbb9b",
+            "leyenda": {"texto": "LA FAMILIA", "letra": "didona",
+                        "color": "#23492f", "tam": 4, "y": 42,
+                        "ancho": 19, "claro": 6},
+        },
+        # La suplente: negra, con el puño mitad amarillo flúor y mitad
+        # verde, y el cuello negro adelante con un costado de cada color.
+        # Atrás dice EL BARRIO, verde arriba y amarillo abajo.
+        "suplente": {
+            "patron": "liso",
+            "base": "#141414", "raya": "#141414", "detalle": "#c9e04a",
+            "cuello": "#141414", "cuelloIzq": "#3fbe6a",
+            "cuelloDer": "#d8e832", "puno": "#d8e832", "puno2": "#3fbe6a",
+            "sinBrillo": True,
+            "leyenda": {"texto": "EL BARRIO", "letra": "angulosa",
+                        "degrade": ["#3fd06d", "#e6e838"], "tam": 4,
+                        "y": 42, "ancho": 17, "claro": 7, "trazo": 9},
+        },
+        # La tercera: la trama sublimada que imita el mar, verde petróleo
+        # arriba y aguamarina abajo. No son manchas dibujadas a mano sino
+        # ruido fractal cortado con un escalón, con el borde punteado,
+        # que es como está hecha la de verdad.
+        "tercera": {
+            "patron": "liso",
+            "base": "#cfeae4", "raya": "#cfeae4", "detalle": "#0f7b8a",
+            "manga": "#cfeae4", "cuello": "#0f7b8a", "puno": "#0f7b8a",
+            "sinBrillo": True,
+            "agua": {"oscuro": "#0a6274", "medio": "#2e959e",
+                     "claro": "#d2eae5", "semilla": 7, "grano": 0.05,
+                     "corte": 0.57, "octavas": 2, "punto": 1.2,
+                     "franja": "0 .35 1 .35 0"},
+            "leyenda": {"texto": "LOS PRINCIPIOS", "letra": "sistema",
+                        "color": "#ecdfba", "tam": 4, "y": 42,
+                        "ancho": 28, "peso": 700, "espacio": 0.35},
+        },
     },
     "Sarmiento (J)": {
         "nombre": "Club Atlético Sarmiento", "apodo": "El Verde",
@@ -6448,7 +6642,14 @@ def _kit(t):
     un color suelto para el segundo tono de las franjas alternadas —el
     celeste y oro de la suplente de Boca— o un diccionario con lo que sea
     que ese diseño necesite, como el grosor de las líneas.
+
+    El atajo es para las camisetas que se resuelven con cuatro datos. Las
+    que no —las tres de Aldosivi, con las franjas contadas, las leyendas
+    de la espalda y la trama del mar— se escriben derecho como
+    diccionario y pasan tal cual.
     """
+    if isinstance(t, dict):
+        return dict(t)
     patron, base, raya, detalle = t[:4]
     k = {"patron": patron, "base": base, "raya": raya,
          "detalle": detalle, "cuello": detalle}
@@ -6466,8 +6667,11 @@ for _n, _d in _OTROS_CLUBES.items():
         "estadio": _d["estadio"], "estadioApodo": _d.get("estadioApodo"),
         "direccion": _d["direccion"], "capacidad": _d["capacidad"],
         "sitio": _d["sitio"],
-        "camisetas": {"titular": _kit(_d["titular"]),
-                      "suplente": _kit(_d["suplente"])},
+        # La tercera sólo la tienen algunos: se agrega si está cargada y
+        # si no, el club muestra dos y listo.
+        "camisetas": {_c: _kit(_d[_c])
+                      for _c in ("titular", "suplente", "tercera")
+                      if _d.get(_c)},
     }
 
 
@@ -6553,8 +6757,12 @@ def api_club_info(q):
         "club": canon,
         "escudo": escudo,
         "fixture": [dict(fixture[l], liga=l) for l in orden],
-        # el radar promedio, sólo de la liga: en copa son pocos partidos
-        "radar": radar_promedio("lpf", canon),
+        # El radar promedio, sólo de la liga: en copa son pocos partidos.
+        # Y del torneo que se está jugando, contra los treinta que lo
+        # juegan. Si el fixture no se pudo leer se compara con lo que haya
+        # guardado, que es peor pero es mejor que no mostrar nada.
+        "radar": radar_promedio("lpf", canon, set(COLORES) | {canon},
+                                del_torneo()),
         "primary": colores[0] if colores else None,
         "accent": colores[1] if colores else None,
         "var": "#111111" if canon in VAR_NEGRO else (colores[1] if colores else None),
@@ -6562,6 +6770,7 @@ def api_club_info(q):
         "plantel": plantel_de(canon),
         "partidos": api_club({"name": [canon]}),
         "sitio": ficha.get("sitio") or SITIOS.get(canon),
+        "tienda": TIENDAS.get(canon),
     }
 
 
@@ -7277,8 +7486,17 @@ def rescatar_todo():
     # ratos. Antes cortaba en la doce y no volvía hasta el próximo arranque:
     # si la fuente se caía un par de veces —o si aparecía una fase nueva a
     # mitad de temporada— el hueco se quedaba ahí hasta el siguiente deploy.
-    VUELTAS_SEGUIDAS, VUELTAS_TOTAL = 12, 60
-    for vuelta in range(1, VUELTAS_TOTAL + 1):
+    #
+    # Y tampoco termina cuando se pone al día: se queda mirando cada cuarto
+    # de hora. Antes se daba por cumplido y se iba, así que los partidos que
+    # se jugaban después no los levantaba nadie hasta el próximo deploy —o
+    # hasta que alguien los abriera a mano, que es peor: significa que la
+    # base se llena sólo si hay visitas—. Una fecha entera son quince
+    # partidos y entran en una sola pasada.
+    VUELTAS_SEGUIDAS = 12
+    vuelta, al_dia = 0, False
+    while True:
+        vuelta += 1
         pendientes, goles_pendientes = 0, 0
         for lid, cfg in LIGAS.items():
           # las previas de la Champions son otra competencia: se recorren igual
@@ -7346,15 +7564,20 @@ def rescatar_todo():
                       % ("Liga Profesional", n), flush=True)
         except Exception:
             pass
-        # se corta cuando no queda historia por traer ni goles por buscar
+        # Cuando no queda historia por traer ni goles por buscar, baja el
+        # ritmo pero no se va: lo que se juegue de acá en más entra solo.
         if not pendientes and not goles_pendientes:
-            print("  Historia completa: no queda nada por traer\n", flush=True)
-            return
+            if not al_dia:
+                print("  Historia completa: de acá en más miro cada 15 "
+                      "minutos si se jugó algo nuevo\n", flush=True)
+                al_dia = True
+            time.sleep(900)
+            continue
+        al_dia = False
         if vuelta == VUELTAS_SEGUIDAS:
             print("  Quedan %d recorridos sin terminar: sigo cada 15 minutos\n"
                   % pendientes, flush=True)
         time.sleep(60 if vuelta < VUELTAS_SEGUIDAS else 900)
-    print("  Pausa del rescate: sigue en el próximo arranque\n", flush=True)
 
 
 def main():

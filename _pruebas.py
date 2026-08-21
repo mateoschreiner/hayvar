@@ -60,14 +60,61 @@ def universo(comp, cuantos, desde=4700000, temporada=69, semilla=1):
 
 print("\n── camisetas ──")
 SABE = set(re.findall(r"k\.patron\s*===?\s*'(\w+)'", HTML)) | {"liso"}
-malos = [(n, c) for n, d in server.CLUBES_INFO.items()
-         for c in ("titular", "suplente")
-         if d["camisetas"][c]["patron"] not in SABE]
+# Todas las camisetas de todos los clubes, no sólo las dos primeras: un club
+# puede tener tercera y esa también hay que saber dibujarla.
+TODAS = [(n, c, k) for n, d in server.CLUBES_INFO.items()
+         for c, k in d["camisetas"].items()]
+malos = [(n, c) for n, c, k in TODAS if k["patron"] not in SABE]
 chequear("los 30 clubes tienen ficha", len(server.CLUBES_INFO) == 30,
          len(server.CLUBES_INFO))
 chequear("todos los patrones se saben dibujar", not malos, malos)
 chequear("nadie quedó sin sitio oficial",
          all(d.get("sitio") for d in server.CLUBES_INFO.values()))
+
+# Lo que el diseño de una camiseta pide y el dibujo tiene que entender. Es
+# el mismo error de siempre: se agrega una opción en la configuración y el
+# que dibuja no se entera, así que la camiseta sale sin eso y nadie avisa.
+ABECEDARIOS = {"didona", "angulosa", "sistema"}
+chequear("el dibujo conoce los abecedarios de las leyendas",
+         all(("'%s'" % a) in HTML for a in ABECEDARIOS - {"didona"})
+         and "const DIDONA" in HTML)
+letras = {(k.get("leyenda") or {}).get("letra") for _, _, k in TODAS}
+chequear("y ninguna leyenda pide una letra que no existe",
+         not (letras - ABECEDARIOS - {None}), letras)
+# Las leyendas que van dibujadas letra por letra sólo pueden usar letras
+# que estén en el abecedario. Con la del sistema no hace falta: esa la pone
+# el navegador.
+falta_glifo = sorted({c for _, _, k in TODAS
+                      if (k.get("leyenda") or {}).get("letra") in
+                      ("didona", "angulosa")
+                      for c in k["leyenda"]["texto"].upper()
+                      if c != " " and not re.search(
+                          r"'%s':\s*\{av:" % re.escape(c), HTML)})
+chequear("y toda letra dibujada tiene su glifo", not falta_glifo, falta_glifo)
+chequear("y el dibujo sabe hacer la trama de agua",
+         "k.agua" in HTML and "feTurbulence" in HTML)
+chequear("Aldosivi tiene las tres",
+         list(server.CLUBES_INFO["Aldosivi"]["camisetas"]) ==
+         ["titular", "suplente", "tercera"])
+
+
+print("\n── la tienda oficial ──")
+ajenas = ("mercadolibre", "dexter", "opensports", "solodeporte", "instagram",
+          "facebook", "adidas.", "puma.", "kappa", "umbro", "nike.")
+chequear("todas las tiendas son de un club de Primera",
+         not (set(server.TIENDAS) - set(server.CLUBES_INFO)),
+         set(server.TIENDAS) - set(server.CLUBES_INFO))
+chequear("y ninguna es de un tercero",
+         not [n for n, u in server.TIENDAS.items()
+              if any(a in u.lower() for a in ajenas)],
+         [n for n, u in server.TIENDAS.items()
+          if any(a in u.lower() for a in ajenas)])
+chequear("y todas van por https",
+         all(u.startswith("https://") for u in server.TIENDAS.values()))
+# El club que no tiene tienda propia no muestra la tarjeta: es preferible
+# eso a mandar a alguien a un link que no es del club.
+chequear("el que no tiene tienda no muestra la tarjeta",
+         "dato('Tienda oficial', d.tienda?" in HTML)
 
 
 print("\n── direcciones de club ──")
@@ -1361,6 +1408,124 @@ chequear("las pestañas van previa, grupos y cuadro",
          < HTML.index("hayCuadro?[['cuadro','Cuadro']]:[]),\n                ...(d.conAnual"))
 chequear("pero una copa se abre en el cuadro",
          "S.tab=hayCuadro?'cuadro':faseQueSeJuega(tabs);" in HTML)
+
+
+print("\n── el radar compara contra los que están jugando ──")
+# El índice de estadísticas guarda los últimos quinientos partidos de la
+# competencia y eso pasa de largo la temporada: quedan adentro los que se
+# fueron al descenso, y cualquier nombre que no reconocemos entra como si
+# fuera un club más. Así se llegaba a "48º de 53" en un torneo de treinta.
+_EJE = server.EJES_RADAR[0]["eje"]
+_CLAVE = server.EJES_RADAR[0]["claves"][0]
+
+
+def _partido(gid, local, visita, vl, vv):
+    server.almacen.guardar("stats:radar:%s" % gid,
+                           {"h": {"eq": local, "v": {_CLAVE: vl}, "gf": 1, "gc": 0},
+                            "a": {"eq": visita, "v": {_CLAVE: vv}, "gf": 0, "gc": 1}})
+
+
+_hoy = ["Belgrano", "Boca Juniors", "River Plate", "Racing", "Talleres (C)"]
+_ids = []
+for _i in range(4):                     # dos partidos por club, que es el mínimo
+    for _a, _b in ((0, 1), (2, 3)):
+        _partido(9000 + len(_ids), _hoy[_a], _hoy[_b], 10 + _i, 8 + _i)
+        _ids.append(str(9000 + len(_ids)))
+for _i in range(2):                     # y un par de intrusos
+    _partido(9500 + _i, "Belgrano", "Equipo Que Ya No Juega", 10, 40)
+    _ids.append(str(9500 + _i))
+    _partido(9600 + _i, "Talleres (C)", "Otro Fantasma", 10, 40)
+    _ids.append(str(9600 + _i))
+server.almacen.guardar("statsidx:radar", _ids)
+
+_libre = server.radar_promedio("radar", "Belgrano")
+_acotado = server.radar_promedio("radar", "Belgrano", set(server.COLORES))
+chequear("sin lista se cuelan los que no son de la liga",
+         _libre and _libre["clubes"] > 4, _libre and _libre["clubes"])
+chequear("con la lista se compara sólo contra ésos",
+         _acotado and _acotado["clubes"] == len(_hoy),
+         _acotado and _acotado["clubes"])
+# Y no es sólo el puesto: el promedio de la liga también se ensuciaba,
+# porque los intrusos entraban a la cuenta.
+chequear("y el promedio de la liga también deja de contarlos",
+         _acotado["ejes"][0]["liga"] < _libre["ejes"][0]["liga"],
+         (_libre["ejes"][0]["liga"], _acotado["ejes"][0]["liga"]))
+_SRV = open(os.path.join(AQUI, "server.py"), encoding="utf-8").read()
+chequear("la ficha del club pasa los treinta de Primera",
+         "radar_promedio(\"lpf\", canon, set(COLORES) | {canon},\n"
+         "                                del_torneo())" in _SRV)
+
+# Y el otro filtro: sólo los partidos del torneo que se está jugando. El
+# Apertura se juega con otro plantel y a veces con otro técnico, así que
+# mezclarlo con el Clausura da un promedio que no es de nadie.
+_del_torneo = set(_ids[:8])            # los del round robin, sin los intrusos
+_torneo = server.radar_promedio("radar", "Belgrano", set(server.COLORES),
+                                _del_torneo)
+chequear("se puede acotar a los partidos de un solo torneo",
+         _torneo and _torneo["partidos"] == 4, _torneo and _torneo["partidos"])
+chequear("y el resto del historial sigue guardado",
+         len(server.almacen.leer("statsidx:radar")[0]) == len(_ids))
+chequear("si el torneo todavía no tiene nada cargado, no se inventa",
+         server.radar_promedio("radar", "Belgrano", None, {"999999"}) is None)
+chequear("y el gráfico dice de qué torneo habla",
+         _torneo["torneo"] is None and _libre["torneo"] is None
+         and "r.torneo?'del '+esc(r.torneo)" in HTML)
+
+
+print("\n── las estadísticas se juntan solas ──")
+# El promedio no puede depender de que alguien abra los partidos a mano: si
+# nadie entra, la base no se llena y el gráfico queda a medias para siempre.
+_juegos = [{"status": "FIN", "liveId": 7001},
+           {"status": "FIN", "liveId": 7002},
+           {"status": "SOON", "liveId": 7003},     # todavía no se jugó
+           {"status": "FIN", "liveId": None}]      # sin id no se puede pedir
+server.almacen.guardar("stats:lpf:7001", {"h": {"gf": 1}, "a": {"gf": 0}})
+server.almacen.guardar("jug:lpf:7001", {})
+_abiertos = []
+_all_real, _match_real = server.all_games, server.api_match
+server.all_games = lambda ttl=25: _juegos
+server.api_match = lambda q: _abiertos.append(q["id"][0])
+_hechos = server.juntar_stats("lpf", limite=15)
+server.all_games, server.api_match = _all_real, _match_real
+chequear("va a buscar los partidos terminados que no tienen estadísticas",
+         _abiertos == ["7002"], _abiertos)
+chequear("y no vuelve a pedir los que ya están", _hechos == 1, _hechos)
+chequear("el rescate no se va cuando se pone al día",
+         "Historia completa: no queda nada por traer" not in _SRV
+         and re.search(r"al_dia = True\n\s+time\.sleep\(900\)\n\s+continue", _SRV)
+         is not None)
+
+
+print("\n── la bandera del plantel ──")
+# Treinta jugadores no pueden ser treinta pedidos. La fuente acepta varios
+# atletas en la misma dirección, así que van todos juntos; y se guarda por
+# jugador, que es lo que no cambia cuando cambia de club.
+_pedidos = []
+_falso_atletas = {"athletes": [
+    {"id": 111, "nationalityName": "Argentina", "nationalityId": 10},
+    {"id": 222, "nationalityName": "Uruguay", "nationalityId": 15},
+    {"id": 333, "nationalityName": "Colombia", "nationalityId": 26},
+]}
+_fetch_real = server.fetch
+server.fetch = lambda path, params, ttl=15: (
+    _pedidos.append(params) or _falso_atletas)
+_n1 = server.nacionalidades([111, 222, 333])
+chequear("el plantel entero se pide de una vez", len(_pedidos) == 1, _pedidos)
+chequear("y en el mismo pedido van todos los jugadores",
+         sorted(_pedidos[0]["athletes"].split(",")) == ["111", "222", "333"],
+         _pedidos)
+chequear("cada uno vuelve con su país y su bandera",
+         _n1["222"]["pais"] == "Uruguay" and "Countries/Round/15"
+         in _n1["222"]["bandera"], _n1.get("222"))
+_pedidos.clear()
+server.nacionalidades([111, 222, 333])
+chequear("y no se vuelve a pedir lo que ya está guardado", not _pedidos, _pedidos)
+server.fetch = lambda path, params, ttl=15: (_ for _ in ()).throw(OSError("caída"))
+chequear("si la fuente se cae, el plantel sigue saliendo",
+         server.nacionalidades([444]) == {})
+server.fetch = _fetch_real
+chequear("y en la página va la bandera y no el contador de titularidades",
+         'class="pais"' in HTML and "tit.</span>" not in HTML)
 
 
 print("\n" + ("Todo bien." if not fallas

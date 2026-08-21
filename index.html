@@ -270,6 +270,10 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cl-jug .num{width:22px;text-align:center;font-weight:800;color:var(--txt3);font-size:11.5px;flex:none}
 .cl-jug .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cl-jug .pj{font-size:10.5px;color:var(--txt3)}
+/* la bandera del jugador. Ancho fijo aunque no haya bandera, así los
+   nombres no bailan entre los que la tienen y los que no */
+.cl-jug .pais{width:17px;flex:none;display:flex;justify-content:flex-end}
+.cl-jug .pais img{width:15px;height:15px;border-radius:50%;display:block}
 .cl-puesto{grid-column:1/-1;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
   color:var(--txt3);font-weight:800;margin:10px 0 2px}
 /* cómo viene el equipo en ese torneo, al lado del nombre de la competencia */
@@ -1214,20 +1218,6 @@ const App=(()=>{
      servidor devuelve el mismo index y acá se decide qué mostrar.       */
   /* La camiseta.
 
-     Se dibuja en piezas —las dos mangas, el cuerpo, los puños y el cuello—
-     y no como una silueta sola, porque así están hechas de verdad: el puño
-     de Boca es blanco aunque la manga sea azul, y las rayas de Talleres
-     terminan en la costura del hombro y no siguen por el brazo. Por eso el
-     diseño va recortado contra el cuerpo y no contra el contorno entero.
-
-     `atras` dibuja la espalda. Cuando el club la tiene distinta —Platense
-     lleva la franja marrón sólo adelante, la suplente de Unión es roja
-     adelante y azul atrás— eso viene en `k.espalda` y pisa lo que haga
-     falta.
-
-     Sin sponsors, sin escudo, sin marca y sin número: son marcas ajenas. */
-  /* La camiseta.
-
      Se dibuja en piezas —las dos mangas, el cuerpo, los puños, el ruedo y el
      cuello— y no como una silueta sola, porque así están hechas de verdad: el
      puño de Boca es blanco aunque la manga sea azul, y las rayas de Talleres
@@ -1251,6 +1241,122 @@ const App=(()=>{
      adelante y azul atrás— eso viene en `k.espalda` y pisa lo que haga falta.
 
      Sin sponsors, sin escudo, sin marca y sin número: son marcas ajenas. */
+
+  /* Las leyendas de la espalda —el lema del club, abajo del cuello— van
+     dibujadas letra por letra y no escritas con una tipografía del sistema.
+
+     La razón es que no hay ninguna tipografía del sistema que se parezca.
+     "LA FAMILIA" está en una didona: asta gruesa, línea de unión finita y
+     serifas rectas sin garganta. "EL BARRIO" está en un abecedario
+     inventado, de trazo parejo y todo en ángulos, donde la O es un hexágono
+     y las panzas de la B y la R son triángulos. Pidiendo una fuente por
+     nombre, cada navegador termina poniendo otra cosa.
+
+     Las letras se describen en una caja de 100 de alto, con la línea de
+     base en 0 y creciendo hacia arriba. Las de la didona son figuras que se
+     rellenan; las angulosas son recorridos que se trazan con un grosor.
+     `av` es lo que avanza el renglón después de cada letra. */
+  const DIDONA = {
+    ' ': {av: 30, fig: []},
+    'A': {av: 60, fig: [
+      [[0,0],[8,0],[29,86],[38,0],[58,0],[34,100],[25,100]],
+      [[13,18],[45,18],[45,23.5],[13,23.5]],
+      [[-2,0],[13,0],[13,2.8],[-2,2.8]],
+      [[35,0],[61,0],[61,2.8],[35,2.8]]]},
+    'F': {av: 48, fig: [
+      [[7,0],[21,0],[21,100],[7,100]],
+      [[7,93.5],[45,93.5],[45,100],[7,100]],
+      [[39,88],[47,88],[47,100],[39,100]],
+      [[7,50],[40,50],[40,55.5],[7,55.5]],
+      [[35,46.5],[42,46.5],[42,59],[35,59]],
+      [[0,0],[28,0],[28,2.8],[0,2.8]]]},
+    'I': {av: 28, fig: [
+      [[7,0],[21,0],[21,100],[7,100]],
+      [[0,97.2],[28,97.2],[28,100],[0,100]],
+      [[0,0],[28,0],[28,2.8],[0,2.8]]]},
+    'L': {av: 50, fig: [
+      [[7,0],[21,0],[21,100],[7,100]],
+      [[0,97.2],[28,97.2],[28,100],[0,100]],
+      [[7,0],[44,0],[44,5.6],[7,5.6]],
+      [[39,0],[47,0],[47,11.5],[39,11.5]]]},
+    'M': {av: 76, fig: [
+      [[4,0],[18,0],[18,100],[4,100]],
+      [[58,0],[72,0],[72,100],[58,100]],
+      [[5,100],[15,100],[41,8],[34,8]],
+      [[34,8],[41,8],[66,100],[56,100]],
+      [[-2,97.2],[24,97.2],[24,100],[-2,100]],
+      [[52,97.2],[78,97.2],[78,100],[52,100]],
+      [[-2,0],[24,0],[24,2.8],[-2,2.8]],
+      [[52,0],[78,0],[78,2.8],[52,2.8]]]}
+  };
+  /* La línea del medio de estas letras no cae en la mitad: va a un tercio.
+     A un tercio de arriba en la E y en la B —el palito de la E queda alto y
+     la panza de la B queda corta arriba y larga abajo— y a un tercio de
+     abajo en la R y en la A. Y la A no es un triángulo con una barra: son
+     dos patas rectas bien separadas que suben hasta la barra, y recién de
+     ahí para arriba nace el triángulo. Es la letra que más se despega del
+     resto del abecedario. */
+  const ANGULOSA = {
+    ' ': {av: 22, tra: []},
+    'A': {av: 84, tra: [[[6,0],[6,33],[42,100],[78,33],[78,0]],
+                        [[6,33],[78,33]]]},
+    'B': {av: 46, tra: [[[5,100],[3,0]], [[5,100],[38,86],[4,66]],
+                        [[4,66],[43,33],[3,0]]]},
+    'E': {av: 38, tra: [[[35,103],[5,98],[3,2],[37,0]], [[4,66],[27,69]]]},
+    'I': {av: 20, tra: [[[10,100],[7,0]]]},
+    'L': {av: 34, tra: [[[5,100],[3,2],[32,0]]]},
+    'O': {av: 50, tra: [[[22,100],[46,72],[45,20],[24,0],[2,22],[3,74],[22,100]]]},
+    'R': {av: 48, tra: [[[5,100],[3,0]], [[5,100],[43,63],[4,33]],
+                        [[4,33],[44,0]]]}
+  };
+
+  /* Arma la leyenda: mide el renglón con las letras que le tocan, lo
+     achica o lo estira para que entre en el ancho pedido y lo centra. */
+  function leyendaSVG(ley, u, color){
+    /* Cuando el lema está escrito en una tipografía común y corriente
+       —"LOS PRINCIPIOS" de la tercera de Aldosivi está en la misma letra
+       que usa cualquier interfaz— lo correcto es pedirla y no dibujarla:
+       sale más limpia a tamaño chico que cualquier contorno hecho a mano.
+       Dibujadas van sólo las que ninguna fuente del sistema tiene. */
+    if(ley.letra === 'sistema'){
+      const alto = ley.tam || 9;
+      return `<text x="115" y="${ley.y || 46}" text-anchor="middle"
+        font-size="${(alto * 1.39).toFixed(2)}"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          Helvetica, Arial, sans-serif"
+        font-weight="${ley.peso || 600}"
+        letter-spacing="${ley.espacio == null ? .35 : ley.espacio}"
+        fill="${ley.color || color}"
+        ${ley.ancho ? `textLength="${ley.ancho}" lengthAdjust="spacingAndGlyphs"`
+                    : ''}>${ley.texto}</text>`;
+    }
+    const abc = ley.letra === 'angulosa' ? ANGULOSA : DIDONA;
+    const letras = ley.texto.toUpperCase().split('')
+      .map(c => abc[c] || abc[' ']);
+    const claro = (ley.claro == null ? 8 : ley.claro);   // aire entre letras
+    const natural = letras.reduce((s, g) => s + g.av + claro, 0) - claro;
+    const alto = ley.tam || 9, base = ley.y || 46;
+    const s = alto / 100;
+    const fx = ley.ancho ? Math.max(.55, Math.min(1.5, ley.ancho / (natural * s)))
+                         : 1;
+    const paso = c => c * s * fx;
+    let x = 115 - paso(natural) / 2, d = '';
+    const XY = (p) => (x + paso(p[0])).toFixed(2) + ' ' + (base - p[1] * s).toFixed(2);
+    for(const g of letras){
+      for(const f of (g.fig || []))
+        d += 'M' + f.map(XY).join(' L') + ' Z';
+      for(const t of (g.tra || []))
+        d += 'M' + t.map(XY).join(' L');
+      x += paso(g.av + claro);
+    }
+    const pintura = ley.degrade ? `url(#lg${u})` : (ley.color || color);
+    return abc === ANGULOSA
+      ? `<path d="${d}" fill="none" stroke="${pintura}"
+           stroke-width="${(ley.trazo || 8) * s}" stroke-linejoin="miter"
+           stroke-linecap="round" stroke-miterlimit="6"/>`
+      : `<path d="${d}" fill="${pintura}" fill-rule="nonzero"/>`;
+  }
+
   function camisetaSVG(k0, atras){
     const k = (atras && k0.espalda) ? Object.assign({}, k0, k0.espalda) : k0;
     const u = Math.random().toString(36).slice(2, 8);
@@ -1260,13 +1366,46 @@ const App=(()=>{
        colgada no es un rectángulo. Se mantiene adentro de la misma caja que
        antes —de 63 a 167 de ancho— porque los diseños de los clubes se
        recortan contra esto y correrlo movería todas las rayas. */
-    const CUERPO = 'M78 28 L98 19 Q115 33 132 19 L152 28 L164 60 '
+    /* El escote es más alto atrás que adelante: una camiseta no tiene el
+       mismo hueco de los dos lados, y dibujar los dos iguales es lo que
+       hacía que la cinta de la nuca pareciera pegada encima. Por eso el
+       contorno cambia según qué cara se está dibujando. */
+    const HUNDE = atras ? 30 : 33;          // hasta dónde baja el escote
+    /* Dos curvas y no una: el escote de una camiseta no es una pera, es
+       una U de fondo chato. Y arranca casi horizontal, así que donde se
+       junta con la línea del hombro no queda el pico que quedaba antes.
+
+       Las esquinas del cuello están apenas más altas que la punta del
+       hombro —tres de diferencia en veinte— porque si están mucho más
+       altas la silueta queda con dos cuernos y el escote parece un tajo. */
+    const ESCOTE = `95 26.5 C103 27 105 ${HUNDE} 115 ${HUNDE} `
+                 + `C125 ${HUNDE} 127 27 135 26.5`;
+    const CUERPO = `M78 28 L${ESCOTE} L152 28 L164 60 `
                  + 'Q167 104 161 150 L164 221 Q115 231 66 221 '
                  + 'L69 150 Q63 104 66 60 Z';
     const MANGA_I = 'M78 28 Q58 33 48 46 Q38 62 37 88 Q50 96 64 98 '
                   + 'Q67 60 78 28 Z';
     const MANGA_D = 'M152 28 Q172 33 182 46 Q192 62 193 88 Q180 96 166 98 '
                   + 'Q163 60 152 28 Z';
+
+    /* El cuello es el mismo escote trazado con un grosor, y recortado
+       contra el cuerpo.
+
+       Dibujarlo como una figura con borde de arriba y borde de abajo
+       parece lo mismo pero no lo es: los dos bordes se miden en vertical,
+       y donde el escote sube hacia el hombro la cinta se va afinando hasta
+       desaparecer. Por eso quedaba corta en las puntas. Un trazo, en
+       cambio, tiene el mismo grosor medido en perpendicular vaya para
+       donde vaya, que es como está tejida una cinta de verdad.
+
+       Se traza el doble de ancho: la mitad de arriba cae en el hueco del
+       cuello y la recorta el propio contorno, así que la cinta apoya
+       exactamente sobre el borde del escote y termina justo contra la
+       línea del hombro. */
+    const GRUESO_CUELLO = 8.5;
+    const cinta = (relleno) => `<path d="M${ESCOTE}" fill="none"
+        stroke="${relleno}" stroke-width="${GRUESO_CUELLO}"
+        clip-path="url(#c${u})"/>`;
 
     const det = k.detalle || '#ffffff';
     const manga = k.manga || k.base;
@@ -1279,6 +1418,20 @@ const App=(()=>{
     let p = '';
     if(k.patron === 'rayas')                  // finas: Racing, Talleres, Unión
       for(let i = 0; i < 7; i++) p += vertical(62 + i * 15, 7.5, k.raya);
+    /* Franjas contadas: el pecho partido en N tiras iguales que alternan,
+       empezando y terminando por `raya`. Con N impar la del medio queda del
+       color del fondo —Aldosivi son cuatro verdes y tres amarillas, y la
+       central es amarilla— y eso con las rayas sueltas no salía: quedaban
+       centradas donde caía la cuenta y no donde las puso el que la diseñó. */
+    let tiras = '';
+    if(k.patron === 'rayasn'){
+      const n = k.cantidad || 7, an = (k.anchoTotal || 112) / n;
+      for(let i = 0; i < n; i += 2){
+        const x = 115 - (n / 2) * an + i * an;
+        p += vertical(x, an, k.raya);
+        tiras += `<rect x="${x}" y="12" width="${an}" height="224"/>`;
+      }
+    }
     /* Bastones anchos: Central, Estudiantes, River. `hilo` es la línea
        finita que algunos llevan entre el bastón y el fondo —la tricolor de
        River tiene un hilo negro a cada lado de cada bastón rojo— y sin eso
@@ -1290,8 +1443,6 @@ const App=(()=>{
                     p += vertical(x + 15, 2.5, k.hilo); }
         p += vertical(x, 15, k.raya);
       }
-    /* La diagonal. No todas caen para el mismo lado: la de River baja de
-       izquierda a derecha y la de Banfield al revés. */
     /* Mirada de atrás, la diagonal cae para el otro lado: es la misma
        banda, vista desde el otro lado del cuerpo. Antes la espalda de River
        repetía la del frente, que es imposible. */
@@ -1324,17 +1475,6 @@ const App=(()=>{
         + vertical(138, 4, k.raya);
     if(k.patron === 'vivo')                   // los dos de Argentinos
       p = vertical(140, 5, k.raya) + vertical(150, 5, k.raya);
-    /* Un bastón central ancho partido al medio, más dos laterales finos:
-       la titular de Talleres 2026. El corte del medio lo abre en dos, así
-       que de lejos se lee como una franja gruesa con un hilo adentro y no
-       como dos bastones sueltos. */
-    /* Un paño en diagonal del hombro a la axila, en un tono del mismo
-       color: no es una franja de otro color sino un corte de la tela que
-       se ve por cómo pega la luz. La suplente de Talleres tiene una a cada
-       lado. Va con el diseño, no encima: por eso entra acá. */
-    /* Una diagonal gruesa de un hombro a la axila de enfrente. Es un solo
-       paño cruzado, no dos cuñas simétricas: la suplente de Talleres tiene
-       una sola y cruzarla dos veces la convertía en otra camiseta. */
     /* Un paño cruzado de un hombro a la axila de enfrente, difuminado en
        los dos bordes: no es una franja pegada sino la tela que cambia de
        tono. Y no siempre está atrás —la suplente de Talleres la tiene sólo
@@ -1343,13 +1483,6 @@ const App=(()=>{
       p += k.diagonalInvertida
         ? `<path d="M170 4 L40 124 L40 168 L170 52 Z" fill="url(#dg${u})"/>`
         : `<path d="M60 4 L190 124 L190 168 L60 52 Z" fill="url(#dg${u})"/>`;
-    /* La titular de Talleres, de adentro hacia afuera: una franja central
-       gruesa que en el medio pierde el azul y se funde con el blanco del
-       resto, dos bastones más finos a los costados, blanco, y los laterales
-       azules que bajan de la manga hasta el ruedo.
-
-       El desvanecido del medio es un degradé y no una línea blanca: son dos
-       cosas distintas y de lejos se notan. */
     /* La titular de Talleres. Un blanco horizontal se come casi todo el
        pecho: arriba de él sólo sigue la franja gruesa del medio, y los
        bastones finos y los laterales recién arrancan más abajo, saliendo
@@ -1371,24 +1504,53 @@ const App=(()=>{
 
     /* El cuello. Atrás no hay ni pico ni polo: se ve la cinta que remata la
        nuca, que es lo único que se ve de un cuello desde atrás. */
-    const cuelloBanda = `<path d="M97 20 Q115 31 133 20 L135 16 Q115 28 95 16 Z"
-        fill="${k.cuello || det}"/>`;
-    const cuello = atras ? cuelloBanda : (
+    /* La leyenda de la espalda es el lema del club, no un sponsor ni una
+       marca. Se dibuja con las tipografías del sistema —no se puede
+       incrustar una fuente acá— así que lo que se copia es cómo está
+       hecha: la de la titular es con serifas y la de la suplente es de
+       trazo fino y parejo, yendo de un color al otro.
+
+       Ojo con contornear la letra para imitar un trazo fino: eso deja dos
+       bordes con un hueco en el medio, que es otra cosa. A este tamaño una
+       letra delgada y maciza se parece mucho más a la original.
+
+       La cinta de la nuca. Cuando los dos costados son de distinto color
+       —la suplente de Aldosivi va verde de un lado y amarilla del otro— la
+       vuelta de atrás los mezcla. Y va al revés que el frente: mirando la
+       espalda, el hombro que en el frente estaba a la izquierda queda a la
+       derecha. */
+    const mezclaNuca = atras && k.cuelloIzq && k.cuelloDer
+      && k.cuelloIzq !== k.cuelloDer;
+    const cuello = atras
+      ? cinta(mezclaNuca ? `url(#cq${u})`
+              : (k.cuelloAtras || k.cuelloLados || k.cuello || det))
+      : (
       k.cuelloTipo === 'v'
         ? `<path d="M101 20 L115 48 L129 20 L124 18.5 L115 39 L106 18.5 Z"
              fill="${k.cuello || det}"/>`
       : k.cuelloTipo === 'polo'
         // tapeta con dos botones y las dos puntas del cuello abiertas
-        ? `<path d="M108 24 L122 24 L121 62 L109 62 Z" fill="${k.cuello || det}"/>
-           <path d="M115 24 L115 62" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
-           <circle cx="115" cy="36" r="1.9" fill="rgba(0,0,0,.35)"/>
-           <circle cx="115" cy="50" r="1.9" fill="rgba(0,0,0,.35)"/>
-           <path d="M98 20 Q106 21 110 26 L104 40 Q95 30 93 23 Z"
+        ? `<path d="M108 26 L122 26 L121 64 L109 64 Z" fill="${k.cuello || det}"/>
+           <path d="M115 26 L115 64" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
+           <circle cx="115" cy="38" r="1.9" fill="rgba(0,0,0,.35)"/>
+           <circle cx="115" cy="52" r="1.9" fill="rgba(0,0,0,.35)"/>
+           <path d="M100 21 Q108 22 112 27 L106 41 Q97 31 95 24 Z"
              fill="${k.cuello || det}"/>
-           <path d="M132 20 Q124 21 120 26 L126 40 Q135 30 137 23 Z"
+           <path d="M130 21 Q122 22 118 27 L124 41 Q133 31 135 24 Z"
              fill="${k.cuello || det}"/>`
-        : `<path d="M99 20 Q115 33 131 20 L134 23.5 Q115 38 96 23.5 Z"
-             fill="${k.cuello || det}"/>`);
+      /* Una sola cinta, con el color cambiando a lo largo. Los tramos se
+         marcan con paradas juntas en el degradé, así el corte entre uno y
+         otro es limpio pero la cinta sigue siendo una pieza. */
+      : cinta((k.cuelloIzq || k.cuelloDer || k.cuelloLados)
+              ? `url(#cf${u})` : (k.cuello || det)));
+
+    /* El vivo: el hilo de otro color que remata el borde del cuello. Va
+       después de la cinta y por afuera, que es donde está en la ropa. */
+    const vivoCuello = k.cuelloVivo
+      ? `<path d="M${ESCOTE}" clip-path="url(#c${u})"
+           transform="translate(0 ${GRUESO_CUELLO / 2 - .9})"
+           stroke="${k.cuelloVivo}" stroke-width="1.8" fill="none"/>`
+      : '';
 
     return `<svg viewBox="0 0 230 260" width="150" height="170" aria-hidden="true">
       <defs>
@@ -1397,6 +1559,119 @@ const App=(()=>{
         <clipPath id="d${u}"><path d="${MANGA_D}"/></clipPath>
         <clipPath id="t${u}"><path d="${CUERPO}"/><path d="${MANGA_I}"/>
           <path d="${MANGA_D}"/></clipPath>
+
+        ${k.agua ? `
+        <!-- La trama sublimada de la tercera de Aldosivi: un ruido fractal
+             recortado con un escalón, que es exactamente como está hecha la
+             de verdad —una mancha de dos tonos, con el borde punteado— y no
+             una lista de manchas dibujadas a mano. La semilla la fija el
+             diseño, así que sale igual todas las veces.
+
+             Van dos capas del mismo ruido: abajo el degradé que va del
+             oscuro arriba al claro abajo, y encima el degradé al revés
+             asomando sólo por donde el ruido deja pasar. Por eso arriba las
+             manchas son claras sobre fondo oscuro y abajo al revés. -->
+        <linearGradient id="agf${u}" gradientUnits="userSpaceOnUse"
+          x1="0" y1="20" x2="0" y2="226">
+          <stop offset="0" stop-color="${k.agua.oscuro}"/>
+          <stop offset=".58" stop-color="${k.agua.medio || k.agua.oscuro}"/>
+          <stop offset="1" stop-color="${k.agua.claro}"/>
+        </linearGradient>
+        <linearGradient id="agi${u}" gradientUnits="userSpaceOnUse"
+          x1="0" y1="20" x2="0" y2="226">
+          <stop offset="0" stop-color="${k.agua.claro}"/>
+          <stop offset=".38" stop-color="${k.agua.claro}"/>
+          <stop offset="1" stop-color="${k.agua.oscuro}"/>
+        </linearGradient>
+        <filter id="agr${u}" x="0" y="0" width="100%" height="100%"
+          color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise"
+            baseFrequency="${k.agua.grano || .055} ${(k.agua.grano || .055) * 1.9}"
+            numOctaves="${k.agua.octavas || 3}" seed="${k.agua.semilla || 7}"/>
+          <feColorMatrix type="matrix"
+            values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 ${-(k.agua.corte || .5)}"/>
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="26" intercept="0"/>
+          </feComponentTransfer>
+        </filter>
+        <mask id="agm${u}">
+          <rect x="0" y="0" width="230" height="260" filter="url(#agr${u})"/>
+        </mask>
+        <!-- El borde punteado. En la camiseta real el corte entre los dos
+             tonos no es limpio: hay una franja de puntitos, que es como la
+             estampa resuelve el degradé. Se arma con el mismo ruido pasado
+             por una curva que sólo deja pasar lo que está cerca del corte
+             —esa es la franja— y ahí adentro se mete un ruido mucho más
+             fino, que son los puntos. -->
+        <filter id="agb${u}" x="0" y="0" width="100%" height="100%"
+          color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise"
+            baseFrequency="${k.agua.grano || .055} ${(k.agua.grano || .055) * 1.9}"
+            numOctaves="${k.agua.octavas || 3}" seed="${k.agua.semilla || 7}"/>
+          <feColorMatrix type="matrix"
+            values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 ${-(k.agua.corte || .5) + .5}"/>
+          <feComponentTransfer>
+            <feFuncA type="table" tableValues="${k.agua.franja || '0 0 1 0 0'}"/>
+          </feComponentTransfer>
+        </filter>
+        <filter id="agf2${u}" x="0" y="0" width="100%" height="100%"
+          color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise"
+            baseFrequency="${k.agua.punto || .9}" numOctaves="1"
+            seed="${(k.agua.semilla || 7) + 3}"/>
+          <feColorMatrix type="matrix"
+            values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 -.52"/>
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="30" intercept="0"/>
+          </feComponentTransfer>
+        </filter>
+        <mask id="agbm${u}">
+          <rect x="0" y="0" width="230" height="260" filter="url(#agb${u})"/>
+        </mask>
+        <mask id="agp${u}">
+          <g mask="url(#agbm${u})">
+            <rect x="0" y="0" width="230" height="260" filter="url(#agf2${u})"/>
+          </g>
+        </mask>` : ''}
+        ${k.textura && tiras ? `
+        <clipPath id="tx${u}">${tiras}</clipPath>
+        <!-- el oleaje de la titular de Aldosivi: no son líneas paralelas
+             sino ondas encimadas, que es lo que hace que a este tamaño se
+             lea como agua y no como un rayado -->
+        <pattern id="ol${u}" width="34" height="30" patternUnits="userSpaceOnUse">
+          <path d="M-6 7 Q6 0 17 7 T40 7" stroke="${k.textura}"
+            stroke-width="3.4" fill="none" opacity=".75"/>
+          <path d="M-6 18 Q9 25 20 17 T42 20" stroke="${k.textura}"
+            stroke-width="2.6" fill="none" opacity=".55"/>
+          <path d="M-6 27 Q7 21 18 28 T40 26" stroke="${k.textura}"
+            stroke-width="2" fill="none" opacity=".4"/>
+        </pattern>` : ''}
+
+        ${!atras && (k.cuelloIzq || k.cuelloDer || k.cuelloLados) ? `
+        <linearGradient id="cf${u}" gradientUnits="userSpaceOnUse"
+          x1="95" y1="0" x2="135" y2="0">
+          <stop offset="0" stop-color="${k.cuelloIzq || k.cuelloLados || k.cuello || det}"/>
+          <stop offset=".30" stop-color="${k.cuelloIzq || k.cuelloLados || k.cuello || det}"/>
+          <stop offset=".36" stop-color="${k.cuello || det}"/>
+          <stop offset=".64" stop-color="${k.cuello || det}"/>
+          <stop offset=".70" stop-color="${k.cuelloDer || k.cuelloLados || k.cuello || det}"/>
+          <stop offset="1" stop-color="${k.cuelloDer || k.cuelloLados || k.cuello || det}"/>
+        </linearGradient>` : ''}
+        ${mezclaNuca ? `
+        <linearGradient id="cq${u}" gradientUnits="userSpaceOnUse"
+          x1="95" y1="0" x2="135" y2="0">
+          <stop offset="0" stop-color="${k.cuelloDer}"/>
+          <stop offset="1" stop-color="${k.cuelloIzq}"/>
+        </linearGradient>` : ''}
+        ${atras && k.leyenda && k.leyenda.degrade ? `
+        <!-- de arriba hacia abajo, no de un costado al otro: las letras de
+             la suplente de Aldosivi van verdes arriba y amarillas abajo -->
+        <linearGradient id="lg${u}" gradientUnits="userSpaceOnUse"
+          x1="0" y1="${(k.leyenda.y || 46) - (k.leyenda.tam || 9)}"
+          x2="0" y2="${k.leyenda.y || 46}">
+          <stop offset="0" stop-color="${k.leyenda.degrade[0]}"/>
+          <stop offset="1" stop-color="${k.leyenda.degrade[1]}"/>
+        </linearGradient>` : ''}
 
         <!-- la trama del tejido: hilos finitos que a este tamaño se leen
              como textura y no como líneas -->
@@ -1418,7 +1693,7 @@ const App=(()=>{
         <linearGradient id="fd${u}" gradientUnits="userSpaceOnUse"
           x1="0" y1="60" x2="0" y2="148">
           <stop offset="0" stop-color="${k.base}" stop-opacity="0"/>
-          <stop offset=".22" stop-color="${k.base}" stop-opacity="1"/>
+          <stop offset=".30" stop-color="${k.base}" stop-opacity="1"/>
           <stop offset=".62" stop-color="${k.base}" stop-opacity="1"/>
           <stop offset="1" stop-color="${k.base}" stop-opacity="0"/>
         </linearGradient>` : ''}
@@ -1430,9 +1705,9 @@ const App=(()=>{
           x1="65" y1="0" x2="165" y2="0">
           <stop offset="0" stop-color="#000000" stop-opacity=".26"/>
           <stop offset=".10" stop-color="#000000" stop-opacity=".09"/>
-          <stop offset=".28" stop-color="#ffffff" stop-opacity=".10"/>
-          <stop offset=".44" stop-color="#ffffff" stop-opacity=".15"/>
-          <stop offset=".64" stop-color="#ffffff" stop-opacity=".06"/>
+          <stop offset=".28" stop-color="#ffffff" stop-opacity="${k.sinBrillo ? 0 : .10}"/>
+          <stop offset=".44" stop-color="#ffffff" stop-opacity="${k.sinBrillo ? 0 : .15}"/>
+          <stop offset=".64" stop-color="#ffffff" stop-opacity="${k.sinBrillo ? 0 : .06}"/>
           <stop offset=".86" stop-color="#000000" stop-opacity=".12"/>
           <stop offset="1" stop-color="#000000" stop-opacity=".28"/>
         </linearGradient>
@@ -1441,7 +1716,7 @@ const App=(()=>{
           x1="0" y1="19" x2="0" y2="234">
           <stop offset="0" stop-color="#000000" stop-opacity=".20"/>
           <stop offset=".14" stop-color="#000000" stop-opacity="0"/>
-          <stop offset=".78" stop-color="#000000" stop-opacity="0"/>
+          <stop offset=".70" stop-color="#000000" stop-opacity="0"/>
           <stop offset="1" stop-color="#000000" stop-opacity=".17"/>
         </linearGradient>
         <!-- donde el brazo se junta con el cuerpo -->
@@ -1472,12 +1747,53 @@ const App=(()=>{
 
       <path d="${MANGA_I}" fill="${manga}"/>
       <path d="${MANGA_D}" fill="${manga}"/>
+      ${k.mangaRayas ? `
+      <!-- La manga rayada, de afuera hacia adentro: el fondo es del color de
+           la raya, encima va una cinta ancha del color del fondo y encima de
+           esa una cinta angosta otra vez del color de la raya. Las tres
+           apoyadas en el mismo canto de arriba.
+
+           Las tres apoyan en el mismo canto, así que los dos bordes del
+           amarillo son paralelos entre sí y paralelos al borde de arriba:
+           la cinta tiene el mismo grosor de punta a punta.
+
+           El verde de la axila no se dibuja, es el fondo asomando. Y como
+           la manga se angosta hacia el hombro, ese filo se va comiendo solo
+           hasta desaparecer arriba —donde el cuerpo lo tapa— sin que el
+           amarillo cambie de ancho en ningún momento. -->
+      <g clip-path="url(#i${u})">
+        <path d="M78 28 Q58 33 48 46 Q38 62 37 88" stroke="${k.base}"
+          stroke-width="42" fill="none"/>
+        <path d="M78 28 Q58 33 48 46 Q38 62 37 88" stroke="${k.raya}"
+          stroke-width="17" fill="none"/>
+      </g>
+      <g clip-path="url(#d${u})">
+        <path d="M152 28 Q172 33 182 46 Q192 62 193 88" stroke="${k.base}"
+          stroke-width="42" fill="none"/>
+        <path d="M152 28 Q172 33 182 46 Q192 62 193 88" stroke="${k.raya}"
+          stroke-width="17" fill="none"/>
+      </g>` : ''}
       <path d="${CUERPO}" fill="${k.base}"/>
       <g clip-path="url(#c${u})">${p}</g>
+      ${k.agua ? `
+      <g clip-path="url(#t${u})">
+        <rect x="0" y="0" width="230" height="260" fill="url(#agf${u})"/>
+        <rect x="0" y="0" width="230" height="260" fill="url(#agi${u})"
+          mask="url(#agm${u})"/>
+        <rect x="0" y="0" width="230" height="260" fill="url(#agi${u})"
+          mask="url(#agp${u})"/>
+      </g>` : ''}
+      ${k.textura && tiras ? `
+      <g clip-path="url(#c${u})"><g clip-path="url(#tx${u})">
+        <rect x="0" y="0" width="230" height="260" fill="url(#ol${u})"/>
+      </g></g>` : ''}
       ${k.hombro ? `<g clip-path="url(#t${u})"><path
         d="M62 28 Q115 46 168 28 L168 12 L62 12 Z" fill="${k.hombro}"/></g>` : ''}
 
-      <!-- los remates: cintas con su costura, no una línea encima -->
+      <!-- Los remates: cintas con su costura, no una línea encima. El puño
+           va sobre la misma curva que cierra la manga —antes era una recta
+           contra un borde curvo— así que apoya parejo de punta a punta y no
+           se despega justo donde la manga se junta con el cuerpo. -->
       ${k.mangaBanda ? `
       <g clip-path="url(#i${u})">
         ${k.mangaHilo ? `<path d="M78 28 Q58 33 48 46 Q38 62 37 88"
@@ -1492,12 +1808,18 @@ const App=(()=>{
           stroke-width="15" fill="none"/>
       </g>` : ''}
       <g clip-path="url(#i${u})">
-        <path d="M30 88 L70 97" stroke="${puno}" stroke-width="7" fill="none"/>
-        <path d="M30 84 L70 93" stroke="rgba(0,0,0,.18)" stroke-width="1" fill="none"/>
+        <path d="M33 86 Q50 95 69 99" stroke="${puno}" stroke-width="8" fill="none"/>
+        ${k.puno2 ? `<path d="M33 86 Q42 90.5 51 93.5" stroke="${k.puno2}"
+          stroke-width="8" fill="none"/>` : ''}
+        <path d="M33 82 Q50 91 69 95" stroke="rgba(0,0,0,.18)"
+          stroke-width="1" fill="none"/>
       </g>
       <g clip-path="url(#d${u})">
-        <path d="M200 88 L160 97" stroke="${puno}" stroke-width="7" fill="none"/>
-        <path d="M200 84 L160 93" stroke="rgba(0,0,0,.18)" stroke-width="1" fill="none"/>
+        <path d="M197 86 Q180 95 161 99" stroke="${puno}" stroke-width="8" fill="none"/>
+        ${k.puno2 ? `<path d="M197 86 Q188 90.5 179 93.5" stroke="${k.puno2}"
+          stroke-width="8" fill="none"/>` : ''}
+        <path d="M197 82 Q180 91 161 95" stroke="rgba(0,0,0,.18)"
+          stroke-width="1" fill="none"/>
       </g>
       <g clip-path="url(#c${u})">
         ${k.ruedo ? `<path d="M60 216 Q115 226 170 216" stroke="${k.ruedo}"
@@ -1530,8 +1852,9 @@ const App=(()=>{
         <rect x="0" y="0" width="230" height="260" fill="url(#md${u})"/>
       </g>
 
-      ${cuello}
-      ${atras ? `<path d="M92 30 Q115 38 138 30" stroke="rgba(0,0,0,.14)"
+      ${cuello}${vivoCuello}
+      ${atras && k.leyenda ? leyendaSVG(k.leyenda, u, det) : ''}
+      ${atras ? `<path d="M92 27 Q115 34 138 27" stroke="rgba(0,0,0,.14)"
         stroke-width="1.4" fill="none"/>` : ''}
       <path d="${MANGA_I}" fill="none" stroke="rgba(0,0,0,.30)" stroke-width="1.6"/>
       <path d="${MANGA_D}" fill="none" stroke="rgba(0,0,0,.30)" stroke-width="1.6"/>
@@ -1619,7 +1942,8 @@ const App=(()=>{
     const col=(d.primary&&claro(d.primary))?d.accent:(d.primary||'#2f6fed');
     return `<div class="cl-sec">Cómo juega
       <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt3)">
-        · promedio de ${r.partidos} partidos en la liga</span></div>
+        · promedio de ${r.partidos} ${r.partidos===1?'partido':'partidos'}
+        ${r.torneo?'del '+esc(r.torneo):'en la liga'}</span></div>
       ${radarPanel(r,{color:col, etiqueta:'liga',
         notaInvertido:'goles recibidos, menos es mejor',
         mio:e=>e.club, medio:e=>e.liga})}
@@ -1685,7 +2009,9 @@ const App=(()=>{
       if(pu!==ultimo){ plantel+=`<div class="cl-puesto">${esc(pu)}</div>`; ultimo=pu; }
       plantel+=`<div class="cl-jug" onclick="App.jugador('${js(j.nombre)}',${j.id||'null'})">
         <span class="num">${j.n??'–'}</span><span class="nm">${esc(j.nombre)}</span>
-        <span class="pj">${j.titulares||0} tit.</span></div>`;
+        <span class="pais">${j.bandera
+          ? `<img src="${esc(j.bandera)}" alt="${esc(j.pais||'')}"
+               title="${esc(j.pais||'')}" loading="lazy">` : ''}</span></div>`;
     });
 
     const kits=i.camisetas||{};
@@ -1710,6 +2036,7 @@ const App=(()=>{
         ${dato('Dónde queda', i.mapa?`<a href="${esc(i.mapa)}" target="_blank" rel="noopener">Ver en el mapa ↗</a>
            <div style="font-size:11px;font-weight:400;color:var(--txt2)">${esc(i.direccion||'')}</div>`:'')}
         ${dato('Sitio oficial', d.sitio?`<a href="${esc(d.sitio)}" target="_blank" rel="noopener">Entrar ↗</a>`:'')}
+        ${dato('Tienda oficial', d.tienda?`<a href="${esc(d.tienda)}" target="_blank" rel="noopener">Ver camisetas ↗</a>`:'')}
       </div>
       ${kitHtml?`<div class="cl-sec">Camisetas</div><div class="kits">${kitHtml}</div>`:''}
       ${radarClub(d.radar,d)}

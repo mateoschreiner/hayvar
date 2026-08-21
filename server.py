@@ -370,23 +370,45 @@ def match_team(name):
 # ─────────────────────────────────────────────────────────────────────────
 _cache, _lock = {}, threading.Lock()
 
-# Cuántas respuestas se guardan en memoria. Sin tope, el caché iba creciendo
-# con cada dirección distinta —y el rescate de partidos viejos visita
-# cientos— hasta que Render mataba el proceso por consumir toda la memoria.
-# La base en disco sigue teniendo todo: esto es sólo el atajo rápido.
-_CACHE_MAX = 300
+# El caché en memoria se mide en bytes, no en cantidad de respuestas.
+#
+# Contar entradas era contar peras: la tabla de posiciones ocupa dos kilos
+# y una página del fixture de una copa entera puede ocupar cinco megas, y
+# con trescientas entradas permitidas el proceso se comía toda la memoria
+# de Render y lo mataban. Peor todavía: un JSON convertido a objetos de
+# Python pesa varias veces lo que ocupa como texto, así que el tope real
+# era mucho más alto de lo que parecía.
+#
+# Ahora hay dos límites. Uno por respuesta: lo que pase de trescientos
+# kilos no entra —son justamente las páginas del recorrido, que se piden
+# una vez y no se vuelven a mirar—. Y uno total, para el resto. Nada de
+# esto se pierde: la base en disco sigue teniendo todo, esto es sólo el
+# atajo para no volver a leer y parsear.
+_CACHE_MAX_BYTES = 8 * 1024 * 1024
+_CACHE_MAX_UNO = 300 * 1024
+_cache_bytes = 0
 
 
-def _guardar_en_cache(url, valor):
-    """Guarda en el caché de memoria, sacando lo más viejo si hace falta."""
+def _guardar_en_cache(url, valor, cuanto):
+    """Guarda en el caché de memoria mientras entre en el presupuesto."""
+    global _cache_bytes
+    if cuanto > _CACHE_MAX_UNO:
+        return
     with _lock:
-        if len(_cache) >= _CACHE_MAX:
-            # se descarta la mitad más vieja de una, para no estar podando
-            # de a uno en cada pedido
-            porEdad = sorted(_cache.items(), key=lambda kv: kv[1][0])
-            for k, _ in porEdad[:len(porEdad) // 2 + 1]:
+        viejo = _cache.pop(url, None)
+        if viejo:
+            _cache_bytes -= viejo[2]
+        _cache[url] = (time.time(), valor, cuanto)
+        _cache_bytes += cuanto
+        if _cache_bytes > _CACHE_MAX_BYTES:
+            # se saca lo más viejo hasta volver a entrar, no la mitad de
+            # una: con tamaños tan dispares, sacar la mitad podía liberar
+            # casi nada o tirar todo lo útil
+            for k, v in sorted(_cache.items(), key=lambda kv: kv[1][0]):
+                if _cache_bytes <= _CACHE_MAX_BYTES * 0.8:
+                    break
                 _cache.pop(k, None)
-        _cache[url] = (time.time(), valor)
+                _cache_bytes -= v[2]
 
 
 def fetch(path, params, ttl=15):
@@ -418,7 +440,7 @@ def fetch(path, params, ttl=15):
     if info.get("origen") == "cache-vieja":
         ULTIMO_PROBLEMA["365scores"] = info
 
-    _guardar_en_cache(url, data)
+    _guardar_en_cache(url, data, info.get("bytes") or 0)
     return data
 
 
@@ -1005,7 +1027,7 @@ def emblema(comp, ver=1):
 
 _CDN = "https://imagecache.365scores.com/image/upload/f_png,w_128,h_128,c_limit,q_auto:best,dpr_2"
 _IMG_CACHE = {}
-_IMG_MAX = 400          # los escudos pesan pocos KB: entran todos de sobra
+_IMG_MAX = 150          # 150 escudos son unos pocos megas; con 400 no
 
 
 # Un escudo pesa unos pocos KB y no cambia nunca. Guardarlos en la base
@@ -3315,7 +3337,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · las tres de Argentinos calcadas de la foto"
+VERSION_APP = "2026-08-21 · el caché en memoria medido en bytes, para que Render no lo mate"
 
 
 def reparar_recorridos():
@@ -7191,7 +7213,18 @@ def api_diagnostico(q):
         if nombre in ULTIMO_PROBLEMA:
             fuentes[nombre]["ultimo_problema"] = ULTIMO_PROBLEMA[nombre]
 
+    # Cuánta memoria se está usando de caché. Sirve para diagnosticar los
+    # reinicios por memoria del hosting sin tener que adivinar: si esto
+    # está cerca del tope, el problema es acá; si está bajo, hay que
+    # mirar en otro lado.
+    with _lock:
+        memoria = {"respuestas": len(_cache),
+                   "megas": round(_cache_bytes / 1024 / 1024, 2),
+                   "tope_megas": round(_CACHE_MAX_BYTES / 1024 / 1024, 1),
+                   "escudos": len(_IMG_CACHE)}
+
     return {"apifootball": af, "base": almacen.estado(), "fuentes": fuentes,
+            "memoria": memoria,
             "consejo": ("Si alguna liga dice ok=false con 0 partidos, el plan "
                         "gratis no cubre esa temporada. Mientras tanto la página "
                         "sigue andando con AFA y 365scores.")}
@@ -7561,7 +7594,13 @@ def rescatar_todo():
     while True:
         vuelta += 1
         pendientes, goles_pendientes = 0, 0
-        for lid, cfg in LIGAS.items():
+        # Recorrer el calendario entero es lo caro: cada página del fixture
+        # de una copa son varios megas. Mientras falte historia se hace en
+        # cada vuelta, pero una vez al día basta con mirarlo de vez en
+        # cuando —lo que se juega nuevo lo levantan igual los dos
+        # recolectores de abajo, que piden el fixture ya resumido—.
+        recorrer = (not al_dia) or vuelta % 8 == 0
+        for lid, cfg in (LIGAS.items() if recorrer else ()):
           # las previas de la Champions son otra competencia: se recorren igual
           for comp in comps_de(cfg):
             for direccion, como in ((-1, "atrás"), (1, "adelante")):

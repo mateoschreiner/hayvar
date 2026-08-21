@@ -171,13 +171,18 @@ def guardar(clave, valor):
         pass        # no poder guardar nunca debe romper una respuesta
 
 
-def leer(clave, max_edad=None):
+def leer(clave, max_edad=None, con_largo=False):
     """
     Devuelve (valor, edad_en_segundos) o (None, None).
 
     Con `max_edad` devuelve None si lo guardado ya es viejo. Sin `max_edad`
     devuelve lo que haya, por viejo que sea: es el modo de emergencia para
     cuando la fuente no responde.
+
+    Con `con_largo` agrega un tercer valor: cuántos caracteres ocupa lo
+    guardado. Lo usa el caché de memoria del servidor para saber si algo
+    entra o no: hay respuestas de dos kilobytes y otras de cinco megas, y
+    contar entradas en vez de tamaño era contar peras.
     """
     try:
         with _lock:
@@ -186,14 +191,15 @@ def leer(clave, max_edad=None):
     except sqlite3.Error:
         fila = None
     if not fila:
-        return None, None
+        return (None, None, 0) if con_largo else (None, None)
     edad = time.time() - fila[1]
     if max_edad is not None and edad > max_edad:
-        return None, edad
+        return (None, edad, 0) if con_largo else (None, edad)
     try:
-        return json.loads(fila[0]), edad
+        v = json.loads(fila[0])
+        return (v, edad, len(fila[0])) if con_largo else (v, edad)
     except json.JSONDecodeError:
-        return None, edad
+        return (None, edad, 0) if con_largo else (None, edad)
 
 
 def con_respaldo(clave, traer, max_edad, tag=""):
@@ -207,9 +213,10 @@ def con_respaldo(clave, traer, max_edad, tag=""):
     Devuelve (valor, info) donde info explica de dónde salió, para poder
     mostrarlo en pantalla con honestidad.
     """
-    valor, edad = leer(clave, max_edad)
+    valor, edad, largo = leer(clave, max_edad, con_largo=True)
     if valor is not None:
-        return valor, {"origen": "cache", "edad": round(edad), "tag": tag}
+        return valor, {"origen": "cache", "edad": round(edad), "tag": tag,
+                       "bytes": largo}
 
     try:
         fresco = traer()
@@ -221,7 +228,9 @@ def con_respaldo(clave, traer, max_edad, tag=""):
         raise
 
     guardar(clave, fresco)
-    return fresco, {"origen": "fuente", "edad": 0, "tag": tag}
+    _, _, largo = leer(clave, con_largo=True)
+    return fresco, {"origen": "fuente", "edad": 0, "tag": tag,
+                    "bytes": largo or 0}
 
 
 # ── Presupuesto diario de pedidos ────────────────────────────────────────

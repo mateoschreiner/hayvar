@@ -1518,6 +1518,35 @@ chequear("y el gráfico dice de qué torneo habla",
          and "r.torneo?'del '+esc(r.torneo)" in HTML)
 
 
+print("\n── el caché de memoria se mide en bytes ──")
+# Contar respuestas era contar peras: la tabla de posiciones ocupa dos kilos
+# y una página del fixture de una copa puede ocupar cinco megas. Con
+# trescientas entradas permitidas, el proceso se comía la memoria del
+# hosting y lo reiniciaban.
+server._cache.clear()
+server._cache_bytes = 0
+server._guardar_en_cache("chico", {"a": 1}, 2 * 1024)
+chequear("una respuesta chica entra", "chico" in server._cache)
+server._guardar_en_cache("enorme", {"a": 1}, 5 * 1024 * 1024)
+chequear("y una de cinco megas no", "enorme" not in server._cache)
+for _i in range(60):
+    server._guardar_en_cache("u%d" % _i, {"a": _i}, 200 * 1024)
+chequear("el total nunca pasa el tope",
+         server._cache_bytes <= server._CACHE_MAX_BYTES,
+         server._cache_bytes)
+chequear("y lo que se descarta es lo más viejo",
+         "u59" in server._cache and "u0" not in server._cache)
+chequear("la cuenta de bytes coincide con lo guardado",
+         server._cache_bytes == sum(v[2] for v in server._cache.values()),
+         (server._cache_bytes, sum(v[2] for v in server._cache.values())))
+server._cache.clear(); server._cache_bytes = 0
+
+# Recorrer el calendario entero es lo caro. Una vez al día, alcanza con
+# mirarlo de vez en cuando.
+chequear("el rescate deja de recorrer el calendario cuando está al día",
+         "recorrer = (not al_dia) or vuelta % 8 == 0" in _SRV)
+
+
 print("\n── las estadísticas se juntan solas ──")
 # El promedio no puede depender de que alguien abra los partidos a mano: si
 # nadie entra, la base no se llena y el gráfico queda a medias para siempre.

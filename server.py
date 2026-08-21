@@ -3315,7 +3315,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · las tres de Aldosivi, banderas del plantel, tienda oficial y el radar del torneo"
+VERSION_APP = "2026-08-21 · las tres de Argentinos, el escudo en la camiseta y la ficha del club ordenada"
 
 
 def reparar_recorridos():
@@ -6250,13 +6250,16 @@ CLUBES_INFO = {
 # verticales; la suplente de River es la tricolor a bastones y no la banda
 # en otro color. Cuando alguna cambie, se cambia acá y listo.
 #
-# Lo que NO va, y no va a ir: sponsors, escudo y marca. Son marcas
-# registradas ajenas y hospedarlas es meterse en un lío al pedo. La
-# camiseta se reconoce igual por el color y el corte.
+# Lo que NO va: los sponsors y la marca deportiva. Son marcas registradas
+# ajenas, no identifican al club y copiarlas acá es meterse en un lío al
+# pedo. Redibujarlas a mano o copiar el png de otro sitio, lo mismo.
 #
-# NO van los sponsors ni el escudo ni la marca. Son marcas registradas
-# ajenas y hospedarlas en la página es meterse en un lío que no hace falta.
-# Copiar el png de otro sitio, lo mismo.
+# El escudo sí va, pero enlazado y no copiado: la camiseta apunta a la
+# misma imagen que la página ya usa al lado del nombre del club, que es la
+# de la fuente. No se hospeda ninguna copia ni se redibuja nada. Es el
+# mismo uso que hace cualquier tabla de posiciones —identificar al club—
+# y sin él la camiseta de un club de rayas blancas y negras es la de
+# cualquiera de los cuatro que juegan igual.
 #
 # Si querés una camiseta puntual clavada al detalle de este año, pasame la
 # foto como hiciste con la de Belgrano y la dejo exacta.
@@ -6355,10 +6358,77 @@ _OTROS_CLUBES = {
         "fundado": 1904, "estadio": "Estadio Diego Armando Maradona",
         "direccion": "Boyacá 2152, La Paternal, CABA",
         "capacidad": 26000, "sitio": "https://argentinosjuniors.com.ar",
-        # roja con los dos vivos blancos al costado del pecho
-        "titular": ("vivo", "#d8232a", "#ffffff", "#ffffff"),
-        # blanca con franjas grises apenas marcadas
-        "suplente": ("franjas", "#fbfbfb", "#d5d7da", "#d8232a"),
+        # Las tres de Umbro 25/26, medidas sobre las fotos oficiales.
+        #
+        # Lo que tienen en común: manga ranglan —la costura sale del cuello
+        # y baja en diagonal hasta la axila—, cuello banda, el costado
+        # partido en los últimos centímetros y un panel estampado de
+        # estrellas y del año 1985. El panel no hace el mismo recorrido en
+        # las tres, y por eso hay tres formas y no una sola.
+        #
+        # La roja: dos vivos blancos que caen en el 70% y el 80% del ancho
+        # del pecho —no pegados al costado— y que arrancan abajo de la
+        # costura del hombro. El panel va sobre el filo del cuerpo, así que
+        # la mitad cae fuera del contorno y casi no se ve, y en la manga es
+        # una cuña que se cierra desde el puño. Atrás, la cinta roja se abre
+        # un tramo blanco con las iniciales.
+        "titular": {
+            "patron": "vivo", "base": "#d8332e", "raya": "#ffffff",
+            "detalle": "#ffffff", "manga": "#d8332e", "puno": "#d8332e",
+            "cuello": "#d8332e", "cuelloTipo": "muesca",
+            "cuelloVivo": "#ffffff", "costuras": True,
+            "aberturas": "#f0d6d4",
+            "costados": {"fondo": "#f2dcda", "color": "#cf332e",
+                         "borde": 10, "hasta": 79, "mangaCuna": True},
+            "espalda": {"patron": "liso", "cuello": "#d8332e",
+                        "cuelloVivo": "#d8332e",
+                        "cuelloTexto": {"texto": "A.A.A.J.",
+                                        "color": "#d8332e",
+                                        "fondo": "#ffffff"}},
+        },
+        # La blanca: cinco bandas grises anchas que empiezan bien abajo del
+        # escudo. Acá el panel arranca al lado del cuello, cruza el hombro y
+        # baja curvando por el costado sin llegar al ruedo; arriba de la
+        # manga no hay nada, la tira va en la axila. Atrás es blanca lisa,
+        # con un hilo rojo finito en el ruedo.
+        "suplente": {
+            "patron": "franjas", "base": "#fbfbfb", "raya": "#c8ccd1",
+            "raya2": "#fbfbfb", "alto": 18, "hueco": 0, "desde": 64,
+            "detalle": "#d8332e", "manga": "#fbfbfb", "puno": "#fbfbfb",
+            "cuello": "#fbfbfb", "cuelloVivo": "#d8332e", "costuras": True,
+            "aberturas": "#e8b5b1",
+            "costados": {"fondo": "#fbfbfb", "color": "#e0483f",
+                         "curva": 9, "desde": 100, "hasta": 176,
+                         "mangaAxila": 16},
+            "espalda": {"patron": "liso", "costados": None,
+                        "cuello": "#fbfbfb", "cuelloVivo": "#d8332e",
+                        "ruedo": "#d8332e", "ruedoAncho": 2,
+                        "cuelloTexto": {"texto": "1985", "color": "#ffffff",
+                                        "fondo": "#d8332e"}},
+        },
+        # La tercera: azul marino jaspeado y paneles crema lisos, sin las
+        # estrellas. El cuello es dorado por delante y azul por detrás.
+        #
+        # Va sin escudo a propósito: el de esta camiseta no es el escudo
+        # del club sino el monograma azul y dorado, y el que podemos
+        # enlazar es el de siempre, que sobre el azul marino queda fuera de
+        # lugar. Dibujar el dorado a mano sería recrear una marca.
+        "tercera": {
+            "patron": "liso", "base": "#2b3560", "raya": "#2b3560",
+            "detalle": "#e6cda6", "manga": "#2b3560", "puno": "#2b3560",
+            "cuello": "#c9a26d", "sinBrillo": True, "sinEscudo": True,
+            "costuras": True, "aberturas": "#3d4675",
+            "costados": {"fondo": "#e8cfae", "color": "#e8cfae",
+                         "liso": True, "curva": 10, "desde": 100,
+                         "hasta": 176, "mangaAxila": 16},
+            "agua": {"oscuro": "#39436f", "medio": "#2f3862",
+                     "claro": "#252d51", "semilla": 4, "grano": 0.055,
+                     "corte": 0.5, "octavas": 2, "punto": 1.2,
+                     "franja": "0 0 0 0 0", "dureza": 4},
+            "espalda": {"cuello": "#2b3560", "costados": None,
+                        "cuelloTexto": {"texto": "A.A.A.J.",
+                                        "color": "#e6cda6"}},
+        },
     },
     "Lanús": {
         "nombre": "Club Atlético Lanús", "apodo": "El Granate",

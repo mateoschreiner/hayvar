@@ -254,12 +254,24 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cl-top .esc{width:74px;height:74px;object-fit:contain;flex:none}
 .cl-top h2{font-size:23px;font-weight:800;letter-spacing:-.4px;margin:0}
 .cl-top .sub{font-size:12.5px;color:var(--txt2);margin-top:2px}
-.cl-datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
-  gap:10px;padding:0 16px 16px}
+/* Los datos del club. Antes eran cinco tarjetas iguales en una grilla y
+   con dos links adentro, y a esos anchos todo se partía en dos renglones:
+   el nombre del estadio, "35.354 personas", y hasta la flechita del link
+   quedaba sola abajo. Ahora los tres datos van en tarjeta —cada uno con
+   su renglón chico debajo, que es donde va lo secundario— y los links
+   salen a una fila propia como botones, que además es donde se los busca. */
+.cl-datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+  gap:10px;padding:0 16px 10px}
 .cl-dato{background:var(--bg);border-radius:10px;padding:10px 12px}
 .cl-dato .lb{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2)}
-.cl-dato .vl{font-size:14px;font-weight:700;margin-top:3px}
+.cl-dato .vl{font-size:14px;font-weight:700;margin-top:3px;line-height:1.25}
+.cl-dato .pie{font-size:11px;font-weight:400;color:var(--txt2);margin-top:1px}
 .cl-dato a{color:var(--acc)}
+.cl-links{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 16px}
+.cl-links a{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  background:var(--bg);border:1px solid var(--line);border-radius:999px;
+  padding:7px 14px;font-size:12.5px;font-weight:700;color:var(--acc)}
+.cl-links a:hover{border-color:var(--acc)}
 .cl-sec{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);
   font-weight:800;padding:12px 16px 8px}
 .cl-plantel{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0 18px;
@@ -1357,7 +1369,10 @@ const App=(()=>{
       : `<path d="${d}" fill="${pintura}" fill-rule="nonzero"/>`;
   }
 
-  function camisetaSVG(k0, atras){
+  /* `escudo` es la dirección de la imagen del escudo del club, la misma
+     que ya usa la página al lado del nombre. Va sólo en el frente y no se
+     copia a ningún lado: se apunta a donde ya estaba. */
+  function camisetaSVG(k0, atras, escudo){
     const k = (atras && k0.espalda) ? Object.assign({}, k0, k0.espalda) : k0;
     const u = Math.random().toString(36).slice(2, 8);
 
@@ -1378,8 +1393,15 @@ const App=(()=>{
        Las esquinas del cuello están apenas más altas que la punta del
        hombro —tres de diferencia en veinte— porque si están mucho más
        altas la silueta queda con dos cuernos y el escote parece un tajo. */
-    const ESCOTE = `95 26.5 C103 27 105 ${HUNDE} 115 ${HUNDE} `
-                 + `C125 ${HUNDE} 127 27 135 26.5`;
+    /* La muesca: el escote es redondo y se parte en el medio con una V
+       corta. Es lo que tienen la roja y la azul de Argentinos —un cuello
+       banda abierto adelante— y no es lo mismo que un pico: el pico baja
+       desde el hombro, la muesca sólo corta el centro. Atrás no la lleva. */
+    const ESCOTE = (k.cuelloTipo === 'muesca' && !atras)
+      ? `95 26.5 C103 27 105 ${HUNDE} 108 ${HUNDE} L115 ${HUNDE + 4.5} `
+        + `L122 ${HUNDE} C125 ${HUNDE} 127 27 135 26.5`
+      : `95 26.5 C103 27 105 ${HUNDE} 115 ${HUNDE} `
+        + `C125 ${HUNDE} 127 27 135 26.5`;
     const CUERPO = `M78 28 L${ESCOTE} L152 28 L164 60 `
                  + 'Q167 104 161 150 L164 221 Q115 231 66 221 '
                  + 'L69 150 Q63 104 66 60 Z';
@@ -1408,6 +1430,11 @@ const App=(()=>{
         clip-path="url(#c${u})"/>`;
 
     const det = k.detalle || '#ffffff';
+    /* El panel del costado puede ir estampado —la roja y la blanca lo
+       tienen cubierto de estrellas y del año 1985— o liso, como el crema
+       de la azul. */
+    const PANEL = (k.costados && k.costados.liso)
+      ? k.costados.fondo : `url(#est${u})`;
     const manga = k.manga || k.base;
     const puno = k.puno || det;
     const franja = (y, h, c) =>
@@ -1459,9 +1486,13 @@ const App=(()=>{
        de la suplente de Boca que el hilo blanco de la de Gimnasia. */
     if(k.patron === 'franjas'){
       const otra = k.raya2 || k.raya, alto = k.alto || 13,
-            hueco = (k.hueco == null ? alto : k.hueco), paso = alto + hueco;
-      for(let i = 0; i * paso < 224; i++)
-        p += franja(14 + i * paso, alto, i % 2 ? otra : k.raya);
+            hueco = (k.hueco == null ? alto : k.hueco), paso = alto + hueco,
+            // Dónde cae la primera. La suplente de Argentinos no empieza
+            // arriba de todo: el pecho es blanco y la primera banda gris
+            // recién aparece bastante abajo del escudo.
+            arranque = (k.desde == null ? 14 : k.desde);
+      for(let i = 0; arranque + i * paso < 236; i++)
+        p += franja(arranque + i * paso, alto, i % 2 ? otra : k.raya);
     }
     if(k.patron === 'doblefranja')            // la suplente de Tigre
       p = franja(58, 18, k.raya) + franja(80, 18, k.raya2 || k.raya);
@@ -1473,8 +1504,16 @@ const App=(()=>{
     if(k.patron === 'centro')                 // la vertical de Huracán
       p = vertical(98, 34, k.raya) + vertical(88, 4, k.raya)
         + vertical(138, 4, k.raya);
-    if(k.patron === 'vivo')                   // los dos de Argentinos
-      p = vertical(140, 5, k.raya) + vertical(150, 5, k.raya);
+    /* Los dos vivos de Argentinos. Medidos sobre la foto caen en el 70% y
+       el 80% del ancho del cuerpo, con cinco de grosor cada uno. Y no
+       arrancan arriba de todo: aparecen recién abajo de la costura del
+       hombro, que es de donde nacen. */
+    if(k.patron === 'vivo'){
+      const d0 = (k.desde == null ? 42 : k.desde);
+      const tira = (x, an) => `<rect x="${x}" y="${d0}" width="${an}"`
+        + ` height="${236 - d0}" fill="${k.raya}"/>`;
+      p = tira(135, 5) + tira(144, 4.8);
+    }
     /* Un paño cruzado de un hombro a la axila de enfrente, difuminado en
        los dos bordes: no es una franja pegada sino la tela que cambia de
        tono. Y no siempre está atrás —la suplente de Talleres la tiene sólo
@@ -1525,10 +1564,7 @@ const App=(()=>{
       ? cinta(mezclaNuca ? `url(#cq${u})`
               : (k.cuelloAtras || k.cuelloLados || k.cuello || det))
       : (
-      k.cuelloTipo === 'v'
-        ? `<path d="M101 20 L115 48 L129 20 L124 18.5 L115 39 L106 18.5 Z"
-             fill="${k.cuello || det}"/>`
-      : k.cuelloTipo === 'polo'
+      k.cuelloTipo === 'polo'
         // tapeta con dos botones y las dos puntas del cuello abiertas
         ? `<path d="M108 26 L122 26 L121 64 L109 64 Z" fill="${k.cuello || det}"/>
            <path d="M115 26 L115 64" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
@@ -1560,6 +1596,16 @@ const App=(()=>{
         <clipPath id="t${u}"><path d="${CUERPO}"/><path d="${MANGA_I}"/>
           <path d="${MANGA_D}"/></clipPath>
 
+        ${k.costados && !k.costados.liso ? `
+        <pattern id="est${u}" width="4.6" height="4.6"
+          patternUnits="userSpaceOnUse">
+          <rect width="4.6" height="4.6" fill="${k.costados.fondo}"/>
+          <path d="M1.3 .5 l.4 .8 .9 .1 -.65 .6 .15 .9 -.8 -.45
+                   -.8 .45 .15 -.9 -.65 -.6 .9 -.1 Z"
+            fill="${k.costados.color}"/>
+          <rect x="2.9" y="2.7" width="1.3" height="1.1"
+            fill="${k.costados.color}" opacity=".6"/>
+        </pattern>` : ''}
         ${k.agua ? `
         <!-- La trama sublimada de la tercera de Aldosivi: un ruido fractal
              recortado con un escalón, que es exactamente como está hecha la
@@ -1591,7 +1637,8 @@ const App=(()=>{
           <feColorMatrix type="matrix"
             values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 ${-(k.agua.corte || .5)}"/>
           <feComponentTransfer>
-            <feFuncA type="linear" slope="26" intercept="0"/>
+            <feFuncA type="linear" slope="${k.agua.dureza || 26}"
+              intercept="0"/>
           </feComponentTransfer>
         </filter>
         <mask id="agm${u}">
@@ -1783,6 +1830,42 @@ const App=(()=>{
         <rect x="0" y="0" width="230" height="260" fill="url(#agi${u})"
           mask="url(#agp${u})"/>
       </g>` : ''}
+      ${k.costados ? `
+      <!-- El panel del costado. No hace el mismo recorrido en las tres, y
+           en las tres sigue una costura de verdad:
+
+           · en la roja va pegado al filo del cuerpo —por eso se ve poco:
+             la mitad de la tira cae fuera del contorno y la recorta— y en
+             la manga es una cuña que arranca ancha en el puño y se va
+             cerrando en diagonal hasta juntarse con la del cuerpo;
+           · en la blanca y en la azul arranca al lado del cuello, cruza el
+             hombro y baja curvando por el costado sin llegar al ruedo. Y
+             en la manga no va arriba sino en la axila: la parte de arriba
+             queda limpia. -->
+      <g clip-path="url(#t${u})">
+        ${k.costados.borde ? `
+        <path d="M66 224 L69 150 Q63 104 66 ${k.costados.hasta || 79}"
+          fill="none" stroke="${PANEL}" stroke-width="${k.costados.borde}"/>
+        <path d="M164 224 L161 150 Q167 104 164 ${k.costados.hasta || 79}"
+          fill="none" stroke="${PANEL}" stroke-width="${k.costados.borde}"/>`
+        : ''}
+        ${k.costados.curva ? `
+        <path d="M${k.costados.desde || 100} 26 Q82 31 71 47 Q63 63 61 86
+          L64 ${k.costados.hasta || 180}" fill="none" stroke="${PANEL}"
+          stroke-width="${k.costados.curva}" stroke-linejoin="round"/>
+        <path d="M${230 - (k.costados.desde || 100)} 26 Q148 31 159 47
+          Q167 63 169 86 L166 ${k.costados.hasta || 180}" fill="none"
+          stroke="${PANEL}" stroke-width="${k.costados.curva}"
+          stroke-linejoin="round"/>` : ''}
+        ${k.costados.mangaCuna ? `
+        <path d="M64 98 L50 93 L73 52 L78 38 Z" fill="${PANEL}"/>
+        <path d="M166 98 L180 93 L157 52 L152 38 Z" fill="${PANEL}"/>` : ''}
+        ${k.costados.mangaAxila ? `
+        <path d="M64 98 Q67 60 78 28" fill="none" stroke="${PANEL}"
+          stroke-width="${k.costados.mangaAxila}"/>
+        <path d="M166 98 Q163 60 152 28" fill="none" stroke="${PANEL}"
+          stroke-width="${k.costados.mangaAxila}"/>` : ''}
+      </g>` : ''}
       ${k.textura && tiras ? `
       <g clip-path="url(#c${u})"><g clip-path="url(#tx${u})">
         <rect x="0" y="0" width="230" height="260" fill="url(#ol${u})"/>
@@ -1822,11 +1905,40 @@ const App=(()=>{
           stroke-width="1" fill="none"/>
       </g>
       <g clip-path="url(#c${u})">
+        <!-- las aberturas del ruedo: las tres de Argentinos llevan el
+             costado partido en los últimos centímetros -->
+        ${k.aberturas ? `
+        <path d="M71 205 L70 226" stroke="${k.aberturas}" stroke-width="1.6"
+          fill="none"/>
+        <path d="M159 205 L160 226" stroke="${k.aberturas}" stroke-width="1.6"
+          fill="none"/>` : ''}
         ${k.ruedo ? `<path d="M60 216 Q115 226 170 216" stroke="${k.ruedo}"
-          stroke-width="7" fill="none"/>` : ''}
+          stroke-width="${k.ruedoAncho || 7}" fill="none"/>` : ''}
         <path d="M60 213 Q115 223 170 213" stroke="rgba(0,0,0,.13)"
           stroke-width="1" fill="none"/>
       </g>
+
+      <!-- El cuello va antes del sombreado, con los puños y el ruedo.
+           Puesto después quedaba sin sombra ninguna, y en una camiseta
+           donde el cuello es del mismo color que el cuerpo —la roja de
+           Argentinos— se veía un pico más claro, como si fuera diseño. -->
+      ${cuello}${vivoCuello}
+
+      <!-- Las costuras. La ranglan sale del cuello y baja en diagonal
+           hasta la axila —es la que se ve en la foto cruzando el hombro— y
+           la del cuello corre pegada al borde de abajo de la cinta. Van
+           en negro translúcido y no en un color: así funcionan igual
+           sobre una camiseta clara que sobre una oscura. -->
+      ${k.costuras ? `
+      <g clip-path="url(#c${u})">
+        <path d="M97 27 Q81 32 72 50 Q67 62 66 70" fill="none"
+          stroke="rgba(0,0,0,.20)" stroke-width="1"/>
+        <path d="M133 27 Q149 32 158 50 Q163 62 164 70" fill="none"
+          stroke="rgba(0,0,0,.20)" stroke-width="1"/>
+        <path d="M${ESCOTE}" fill="none" stroke="rgba(0,0,0,.20)"
+          stroke-width="1"
+          transform="translate(0 ${(GRUESO_CUELLO / 2).toFixed(2)})"/>
+      </g>` : ''}
 
       <g clip-path="url(#t${u})">
         <rect x="0" y="0" width="230" height="260" fill="url(#w${u})"/>
@@ -1852,7 +1964,27 @@ const App=(()=>{
         <rect x="0" y="0" width="230" height="260" fill="url(#md${u})"/>
       </g>
 
-      ${cuello}${vivoCuello}
+      ${!atras && escudo && !k.sinEscudo ? `<image href="${escudo}" x="118"
+        y="56" width="16" height="16" preserveAspectRatio="xMidYMid meet"/>`
+        : ''}
+      <!-- Lo que va escrito en el cuello por dentro —A.A.A.J. en las de
+           Argentinos, 1985 en la blanca— se ve al dar vuelta la camiseta.
+           La cinta es del color de la camiseta y sólo se abre un tramo
+           corto en el medio, que es donde está escrito: pintarla entera
+           del otro color era mucho más de lo que tiene. La altura sale
+           del escote, así que si cambia el cuello el texto lo sigue. -->
+      ${atras && k.cuelloTexto && k.cuelloTexto.fondo ? `
+      <path d="M105 ${HUNDE} L125 ${HUNDE}" clip-path="url(#c${u})"
+        stroke="${k.cuelloTexto.fondo}" stroke-width="${GRUESO_CUELLO}"
+        fill="none"/>` : ''}
+      ${atras && k.cuelloTexto ? `<text x="115"
+        y="${(HUNDE + GRUESO_CUELLO / 2 - 1.1).toFixed(1)}"
+        text-anchor="middle" font-size="3" font-weight="700"
+        letter-spacing=".3"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          Helvetica, Arial, sans-serif"
+        fill="${k.cuelloTexto.color || det}"
+        >${k.cuelloTexto.texto}</text>` : ''}
       ${atras && k.leyenda ? leyendaSVG(k.leyenda, u, det) : ''}
       ${atras ? `<path d="M92 27 Q115 34 138 27" stroke="rgba(0,0,0,.14)"
         stroke-width="1.4" fill="none"/>` : ''}
@@ -2018,7 +2150,7 @@ const App=(()=>{
     const kitHtml=Object.keys(kits).map((nom,idx)=>`
       <div class="kit"><div class="escena" onclick="App.girarKit(${idx})">
         <div class="pivote" id="kit${idx}">
-          <div class="cara">${camisetaSVG(kits[nom],false)}</div>
+          <div class="cara">${camisetaSVG(kits[nom],false,d.escudo)}</div>
           <div class="cara atras">${camisetaSVG(kits[nom],true)}</div>
         </div></div><div class="lb">${esc(nom)}</div></div>`).join('');
 
@@ -2031,13 +2163,15 @@ const App=(()=>{
         </div>
       </div>
       <div class="cl-datos">
-        ${dato('Estadio', i.estadio?esc(i.estadio)+(i.estadioApodo?`<div style="font-size:11px;font-weight:400;color:var(--txt2)">${esc(i.estadioApodo)}</div>`:''):'')}
-        ${dato('Capacidad', i.capacidad?i.capacidad.toLocaleString('es-AR')+' personas':'')}
-        ${dato('Dónde queda', i.mapa?`<a href="${esc(i.mapa)}" target="_blank" rel="noopener">Ver en el mapa ↗</a>
-           <div style="font-size:11px;font-weight:400;color:var(--txt2)">${esc(i.direccion||'')}</div>`:'')}
-        ${dato('Sitio oficial', d.sitio?`<a href="${esc(d.sitio)}" target="_blank" rel="noopener">Entrar ↗</a>`:'')}
-        ${dato('Tienda oficial', d.tienda?`<a href="${esc(d.tienda)}" target="_blank" rel="noopener">Ver camisetas ↗</a>`:'')}
+        ${dato('Estadio', i.estadio?esc(i.estadio)+(i.estadioApodo?`<div class="pie">${esc(i.estadioApodo)}</div>`:''):'')}
+        ${dato('Capacidad', i.capacidad?i.capacidad.toLocaleString('es-AR')+`<div class="pie">personas</div>`:'')}
+        ${dato('Dónde queda', i.direccion||i.mapa?esc(i.direccion||'Ver en el mapa')
+           +(i.mapa?`<div class="pie"><a href="${esc(i.mapa)}" target="_blank" rel="noopener">Ver en el mapa ↗</a></div>`:''):'')}
       </div>
+      ${d.sitio||d.tienda?`<div class="cl-links">
+        ${d.sitio?`<a href="${esc(d.sitio)}" target="_blank" rel="noopener">Sitio oficial ↗</a>`:''}
+        ${d.tienda?`<a href="${esc(d.tienda)}" target="_blank" rel="noopener">Tienda oficial ↗</a>`:''}
+      </div>`:''}
       ${kitHtml?`<div class="cl-sec">Camisetas</div><div class="kits">${kitHtml}</div>`:''}
       ${radarClub(d.radar,d)}
       ${fixtureHtml(d.fixture)}`;

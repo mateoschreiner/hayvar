@@ -96,6 +96,22 @@ chequear("y el dibujo sabe hacer la trama de agua",
 chequear("Aldosivi tiene las tres",
          list(server.CLUBES_INFO["Aldosivi"]["camisetas"]) ==
          ["titular", "suplente", "tercera"])
+chequear("y Argentinos también",
+         list(server.CLUBES_INFO["Argentinos Juniors"]["camisetas"]) ==
+         ["titular", "suplente", "tercera"])
+# El escudo se enlaza, no se copia: es la misma imagen que la página ya usa
+# al lado del nombre. Y va sólo en el frente.
+chequear("el escudo va enlazado y sólo en el frente",
+         "function camisetaSVG(k0, atras, escudo)" in HTML
+         and "${!atras && escudo && !k.sinEscudo ?" in HTML
+         and "camisetaSVG(kits[nom],false,d.escudo)" in HTML)
+chequear("y una camiseta puede pedir que no se lo pongan",
+         server.CLUBES_INFO["Argentinos Juniors"]["camisetas"]["tercera"]
+         .get("sinEscudo") is True)
+# Lo que dice el cuello por dentro tiene que caer sobre la cinta, y la
+# cinta se mueve con el escote: si el número fuera fijo, quedaría flotando.
+chequear("lo del cuello de atrás se ubica con el escote",
+         "y=\"${(HUNDE + GRUESO_CUELLO / 2 - 1.1).toFixed(1)}\"" in HTML)
 
 
 print("\n── la tienda oficial ──")
@@ -113,8 +129,8 @@ chequear("y todas van por https",
          all(u.startswith("https://") for u in server.TIENDAS.values()))
 # El club que no tiene tienda propia no muestra la tarjeta: es preferible
 # eso a mandar a alguien a un link que no es del club.
-chequear("el que no tiene tienda no muestra la tarjeta",
-         "dato('Tienda oficial', d.tienda?" in HTML)
+chequear("el que no tiene tienda no muestra el botón",
+         "d.tienda?`<a href=" in HTML and "d.sitio||d.tienda?" in HTML)
 
 
 print("\n── direcciones de club ──")

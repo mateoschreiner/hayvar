@@ -1260,18 +1260,19 @@ chequear("que la pantalla sabe pintar",
 
 
 print("\n── el pop-up ──")
-# De un partido se entra a un jugador y de una serie a un partido: el unico
-# camino para retroceder un paso era cerrar todo y empezar de nuevo.
-chequear("hay una pila de por dónde se pasó",
-         "function navegar(t,...a){ S.pila.push({t,a});" in HTML
-         and "volverModal(){" in HTML)
-chequear("y sólo apilan los botones que toca el usuario",
-         "openMatch(id){ navegar('match',id); }" in HTML
-         and "serie(id){ navegar('serie',id); }" in HTML)
-chequear("cerrar el pop-up vacía la pila",
-         "closeModal(){ S.pila=[];" in HTML)
+# De un partido se entra a un jugador y de una serie a un partido. Esto
+# llevaba su propia pila de por dónde se pasó; ahora la pila es el historial
+# del navegador, porque cada pantalla tiene su dirección. El "‹" del pop-up y
+# la flecha de atrás del navegador tienen que hacer lo mismo.
+chequear("volver es ir para atrás en el historial",
+         "volverModal(){" in HTML and "history.back()" in HTML
+         and "S.pila" not in HTML)
+chequear("y si se entró directo por el link, lleva a la pantalla de abajo",
+         "else Rutas.ir(S.fondo||{t:'home'});" in HTML)
+chequear("cerrar un pop-up con dirección propia también vuelve",
+         "if(S.modal) return api.volverModal();" in HTML)
 chequear("el botón de volver aparece sólo si hay a dónde volver",
-         "S.pila.length>1" in HTML)
+         "const botonesModal=()=>`${S.pasos>0" in HTML)
 chequear("ninguna cruz quedó suelta fuera del botón compartido",
          'class="x" onclick="App.closeModal()">×' not in HTML
          and HTML.count("${botonesModal()}") >= 5)
@@ -1407,7 +1408,7 @@ chequear("y la cuenta de 'uno a uno' sólo se usa donde el cuadro parte al medio
 # solo es un rodeo, muestra una pantalla intermedia para llegar al mismo lado.
 chequear("una llave de un solo partido abre el partido, no la serie",
          "const solo=k.partidos.length===1?k.partidos[0]:null;" in HTML
-         and "App.openMatch('${js(String(solo.id))}')" in HTML)
+         and "const r=solo?rutaPartido(solo):rutaSerie(k);" in HTML)
 # Los cuartos se sortean cuando terminan los octavos: la etapa existe antes
 # de tener partidos, y ahi lo que uno quiere ver es quienes van clasificando.
 chequear("la etapa de una copa aparece aunque todavía no tenga partidos",
@@ -1741,6 +1742,247 @@ chequear("y el 1-0 que ya estaba completo se sirve de la base",
 chequear("el gol sin autor se muestra como el minuto solo",
          HTML.count("quien?quien+' ':''") + HTML.count("q?q+' ':''") == 2,
          HTML.count("quien?quien+' ':''") + HTML.count("q?q+' ':''"))
+
+
+print("\n── cada cosa tiene su dirección ──")
+# El servidor y la página tienen que estar de acuerdo en cómo se llama cada
+# torneo en la dirección. Están escritos dos veces —la página necesita leer
+# la dirección antes de hablar con el servidor— así que esto es lo que
+# impide que se separen sin que nadie se entere.
+_m = re.search(r"const LIGA_RUTA=\{(.*?)\};", HTML, re.S)
+_pagina = dict(re.findall(r"(\w+):'([a-z0-9-]+)'", _m.group(1) if _m else ""))
+chequear("el servidor y la página nombran igual a cada torneo",
+         _pagina == {v: k for k, v in server.RUTAS_LIGA.items()},
+         set(_pagina.items()) ^ set((v, k) for k, v in server.RUTAS_LIGA.items()))
+chequear("y no falta ninguno de los que existen",
+         set(server.RUTAS_LIGA.values()) == set(server.LIGAS),
+         set(server.RUTAS_LIGA.values()) ^ set(server.LIGAS))
+
+# El servidor devuelve la página para todas las direcciones nuestras y para
+# ninguna otra. Si dijera que sí a cualquier cosa, un archivo que falta
+# devolvería la página entera con código 200 en vez de un 404.
+_nuestras = ["/", "/liga-profesional", "/liga-profesional/fecha-5",
+             "/libertadores/llave/river-vs-boca",
+             "/partido/aldosivi-vs-union-4728056",
+             "/jugador/enzo-fernandez-8167", "/belgrano", "/estudiantes-lp"]
+_ajenas = ["/favicon.svg", "/no-existe", "/liga-profesional/cualquiera",
+           "/partido", "/partido/a/b", "/jugador", "/partido/sin-numero"]
+chequear("todas las direcciones nuestras devuelven la página",
+         all(server._titulo_de_ruta(r) for r in _nuestras),
+         [r for r in _nuestras if not server._titulo_de_ruta(r)])
+chequear("y las que no son nuestras siguen siendo un archivo o un 404",
+         not any(server._titulo_de_ruta(r) for r in _ajenas),
+         [r for r in _ajenas if server._titulo_de_ruta(r)])
+chequear("el título dice qué se está mirando",
+         server._titulo_de_ruta("/partido/olimpia-vs-vasco-da-gama-4798160")[0]
+         == "Olimpia vs Vasco Da Gama — HAYVAR",
+         server._titulo_de_ruta("/partido/olimpia-vs-vasco-da-gama-4798160"))
+chequear("y el de un club usa su nombre de verdad, con paréntesis y todo",
+         server._titulo_de_ruta("/estudiantes-lp")[0].startswith("Estudiantes (LP)"))
+
+# La dirección la escribe el visitante: no puede entrar cruda en el HTML.
+_veneno = '/partido/x" onmouseover="alert(1)-9'
+chequear("lo que viene de la dirección se escapa antes de escribirlo",
+         '"' not in server.escapar(server._titulo_de_ruta(_veneno)[0]),
+         server.escapar(server._titulo_de_ruta(_veneno)[0]))
+chequear("y el bloque que reemplaza está marcado en la página",
+         "<!--CABEZA-->" in HTML and "<!--/CABEZA-->" in HTML)
+
+# Tener direcciones y no decirle a Google cuáles son sería la mitad del
+# trabajo. Van los torneos y los clubes; los partidos no, que son miles y
+# cambian todas las fechas.
+chequear("hay mapa del sitio y aviso para los buscadores",
+         '"/sitemap.xml", "/robots.txt"' in _SRV
+         and "Sitemap: %s/sitemap.xml" in _SRV)
+chequear("y el mapa lleva todos los torneos y todos los clubes",
+         '["/"] + ["/" + s for s in RUTAS_LIGA]' in _SRV
+         and '["/" + s for s in sorted(RUTAS_CLUB)]' in _SRV)
+
+# Enlaces de verdad, que es lo que permite abrir en una pestaña nueva. Si
+# alguno vuelve a ser un div con onclick, ctrl+clic deja de funcionar ahí y
+# nadie se da cuenta hasta que lo prueba.
+chequear("la fila de un partido es un enlace",
+         "const abre=r ? ` href=\"${esc(Rutas.url(r))}\" data-ir`" in HTML)
+chequear("los torneos del menú son enlaces",
+         'href="${esc(Rutas.url(id===\'home\'?{t:\'home\'}:{t:\'liga\',id}))}" data-ir' in HTML)
+chequear("y los jugadores también",
+         "const enlaceJugador=(nombre,atletaId,equipo,clase,estilo)=>" in HTML
+         and HTML.count("data-ir") >= 12, HTML.count("data-ir"))
+chequear("el clic con ctrl, con command o con el del medio no se ataja",
+         "e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey" in HTML)
+chequear("y el enlace no queda azul y subrayado adentro de la tabla",
+         "a.match,a.brk,a.serie-p{display:block;color:inherit;text-decoration:none}" in HTML)
+
+# El que llega por el link no tiene nada atrás: el pop-up se despliega y
+# ocupa la página, pero abajo del encabezado, para que pueda seguir a otra
+# cosa desde ahí.
+chequear("el partido abierto en frío ocupa la página",
+         ".pantalla-partido .modal{max-width:720px;max-height:none" in HTML
+         and "inset:var(--enc,56px) 0 0 0" in HTML)
+chequear("y desde adentro de la página sigue siendo un pop-up",
+         "const frio=!mBase;" in HTML
+         and "abrirCapa(frio);" in HTML)
+
+# La ficha de un jugador abierta por el link llega sin el nombre: sólo con
+# el slug. El servidor tiene que poder devolver el nombre bien escrito.
+server.almacen.guardar("jugidx:lpf", None)
+_real = server._nombre_de_slug("no-existe-nadie", "lpf")
+chequear("un slug desconocido igual sirve para buscar",
+         _real == "no existe nadie", _real)
+chequear("y api_atleta acepta el slug de la dirección",
+         "slug = (q.get(\"slug\") or [\"\"])[0].strip()" in _SRV)
+
+# El enrutador de la página se prueba corriéndolo de verdad, no mirando el
+# texto. Se saca el bloque tal cual está en index.html y se lo hace leer y
+# escribir cada dirección: leer y volver a escribir tiene que devolver lo
+# mismo, porque si no, entrar por un link y después tocar algo te cambiaría
+# la dirección sin motivo.
+import shutil as _sh, subprocess as _sub, tempfile as _tmp
+if _sh.which("node"):
+    _i = HTML.index("  const LIGA_RUTA=")
+    _j = HTML.index("  /* La única puerta de entrada")
+    _casos = ["/", "/liga-profesional", "/liga-profesional/fecha-5",
+              "/libertadores/llave/river-plate-vs-boca-juniors",
+              "/partido/aldosivi-vs-union-4728056",
+              "/jugador/enzo-fernandez-8167", "/jugador/di-maria",
+              "/belgrano", "/estudiantes-lp"]
+    _guion = HTML[_i:_j] + ("""
+const casos=%s, salida=[];
+for(const c of casos){ const d=Rutas.leer(c); salida.push(d?Rutas.url(d):null); }
+salida.push(Rutas.leer('/no/es/nuestra'), Rutas.leer('/partido/sin-numero'));
+salida.push(slugTexto("Newell's Old Boys"), slugTexto("Estudiantes (LP)"));
+console.log(JSON.stringify(salida));
+""" % json.dumps(_casos))
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_guion); _ruta = _f.name
+    _r = _sub.run(["node", _ruta], capture_output=True, text=True)
+    os.unlink(_ruta)
+    _out = json.loads(_r.stdout) if _r.returncode == 0 else None
+    chequear("el enrutador de la página corre", _out is not None, _r.stderr[:200])
+    if _out:
+        chequear("leer una dirección y volver a escribirla da la misma",
+                 _out[:len(_casos)] == _casos,
+                 [(a, b) for a, b in zip(_casos, _out) if a != b])
+        chequear("y una dirección que no es nuestra no se la traga",
+                 _out[len(_casos)] is None and _out[len(_casos) + 1] is None,
+                 _out[len(_casos):len(_casos) + 2])
+        chequear("el slug de la página es el mismo que el del servidor",
+                 [_out[-2], _out[-1]]
+                 == [server._slug("Newell's Old Boys"),
+                     server._slug("Estudiantes (LP)")],
+                 [_out[-2], _out[-1]])
+    # Y todas las direcciones que la página sabe escribir, el servidor las
+    # tiene que reconocer. Si no, abrir una en una pestaña nueva daría 404.
+    chequear("todo lo que la página escribe, el servidor lo entiende",
+             all(server._titulo_de_ruta(u) for u in _casos if u),
+             [u for u in _casos if not server._titulo_de_ruta(u)])
+
+    # Lo anterior prueba las dos funciones sueltas. Esto prueba el paseo
+    # entero: se carga la página en un DOM de mentira y se la hace navegar
+    # como navegaría una persona, mirando qué dice la dirección en cada
+    # paso y si el botón de atrás la deja donde corresponde. Es lo único
+    # que agarra un error de cableado entre `aplicar`, `Rutas.ir` y
+    # `popstate`, que es donde puede romperse esto sin que se note.
+    _app = re.sub(r"^App\.init\(\);$", "", HTML.split("<script>")[-1]
+                  .split("</script>")[0], flags=re.M)
+    _paseo = """
+const salida=[];
+const paso=q=>salida.push([q, loc.pathname]);
+paso('arranque');
+App.liga('lpf');                            paso('entra a un torneo');
+App.pick(7);                                paso('cambia de fecha');
+App.liga('lib');                            paso('entra a otro torneo');
+historial.back();                           paso('atrás');
+historial.back();                           paso('atrás');
+App.club('Estudiantes (LP)');               paso('entra a un club');
+App.player('Enzo Fernández','River',8167);  paso('abre un jugador');
+historial.back();                           paso('atrás');
+console.log(JSON.stringify(salida));
+"""
+    _guion2 = (open(os.path.join(AQUI, "_domsito.js"), encoding="utf-8").read()
+               + "\nglobalThis.document=doc; globalThis.window=win;"
+                 "\nglobalThis.location=loc; globalThis.history=historial;"
+                 "\nglobalThis.localStorage=almacenLocal;"
+                 "\nglobalThis.MutationObserver=MutationObserver;"
+                 "\nglobalThis.URL=URL2; globalThis.fetch=fetchFalso;"
+                 "\nglobalThis.requestAnimationFrame=f=>0;"
+                 "\nglobalThis.setTimeout=(f,t)=>0; globalThis.clearTimeout=()=>{};"
+                 "\nlet App;\n"
+               + _app.replace("const App=(()=>{", "App=(()=>{") + _paseo)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_guion2); _ruta2 = _f.name
+    _r2 = _sub.run(["node", _ruta2], capture_output=True, text=True)
+    os.unlink(_ruta2)
+    _paso = json.loads(_r2.stdout) if _r2.returncode == 0 else None
+    chequear("la página entera arranca y se puede navegar",
+             _paso is not None, _r2.stderr.strip().splitlines()[:3])
+    if _paso:
+        _esperado = [
+            ["arranque", "/"],
+            ["entra a un torneo", "/liga-profesional"],
+            ["cambia de fecha", "/liga-profesional/fecha-7"],
+            ["entra a otro torneo", "/libertadores"],
+            ["atrás", "/liga-profesional/fecha-7"],
+            ["atrás", "/liga-profesional"],
+            ["entra a un club", "/estudiantes-lp"],
+            ["abre un jugador", "/jugador/enzo-fernandez-8167"],
+            ["atrás", "/estudiantes-lp"],
+        ]
+        chequear("la dirección acompaña a cada paso, y el atrás también",
+                 _paso == _esperado,
+                 [(a, b) for a, b in zip(_esperado, _paso) if a != b])
+
+    # El otro camino: el que llega por el link, sin nada atrás. El partido
+    # tiene que ocupar la página, y cerrarlo tiene que llevarlo a la
+    # portada en vez de sacarlo del sitio.
+    def _correr(js_extra):
+        _g = (open(os.path.join(AQUI, "_domsito.js"), encoding="utf-8").read()
+              + "\nglobalThis.document=doc; globalThis.window=win;"
+                "\nglobalThis.location=loc; globalThis.history=historial;"
+                "\nglobalThis.localStorage=almacenLocal;"
+                "\nglobalThis.MutationObserver=MutationObserver;"
+                "\nglobalThis.URL=URL2; globalThis.fetch=fetchFalso;"
+                "\nglobalThis.requestAnimationFrame=f=>0;"
+                "\nglobalThis.setTimeout=(f,t)=>0; globalThis.clearTimeout=()=>{};"
+                "\nprocess.on('unhandledRejection',()=>{});\nlet App;\n"
+              + _app.replace("const App=(()=>{", "App=(()=>{") + js_extra)
+        with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as _h:
+            _h.write(_g); _p = _h.name
+        _s = _sub.run(["node", _p], capture_output=True, text=True)
+        os.unlink(_p)
+        return json.loads(_s.stdout) if _s.returncode == 0 and _s.stdout else None
+
+    _frio = _correr("""
+loc.pathname='/partido/olimpia-vs-vasco-4798160';
+App.init();
+const entera=[...doc.body.classList._s].includes('pantalla-partido');
+App.closeModal();
+console.log(JSON.stringify({entera, alCerrar:loc.pathname,
+  quedoLimpio:[...doc.body.classList._s]}));
+""")
+    chequear("entrando por el link, el partido ocupa la página",
+             _frio and _frio["entera"], _frio)
+    chequear("y cerrarlo lleva a la portada, no fuera del sitio",
+             _frio and _frio["alCerrar"] == "/" and not _frio["quedoLimpio"],
+             _frio)
+
+    _tibio = _correr("""
+loc.pathname='/liga-profesional';
+App.init();
+App.S.games=[{id:'a', liveId:4798160, home:{name:'Olimpia'}, away:{name:'Vasco'},
+          status:'FIN', gh:1, ga:4}];
+App.openMatch('a');
+console.log(JSON.stringify({ruta:loc.pathname,
+  entera:[...doc.body.classList._s].includes('pantalla-partido')}));
+""")
+    chequear("y desde adentro el mismo partido es un pop-up, no la página",
+             _tibio and _tibio["ruta"] == "/partido/olimpia-vs-vasco-4798160"
+             and not _tibio["entera"], _tibio)
+else:
+    print("  · sin node: el enrutador de la página no se probó")
 
 
 print("\n" + ("Todo bien." if not fallas

@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-21 · los goles de la lista ya no se congelan a mitad del partido"
+VERSION_APP = "2026-08-22 · cada torneo, partido y jugador tiene su dirección propia"
 
 
 def reparar_recorridos():
@@ -5870,11 +5870,39 @@ def goleadores_propios(liga, escudos=None):
     return filas
 
 
+def _nombre_de_slug(slug, lid):
+    """
+    De 'enzo-fernandez' al nombre como se escribe: 'Enzo Fernández'.
+
+    Hace falta porque una dirección web no lleva acentos, y poner "enzo
+    fernandez" como título de la ficha se ve mal. Se busca contra los
+    jugadores que fuimos juntando partido a partido. Si no aparece, se
+    devuelve el slug con espacios: alcanza igual para encontrarlo, porque
+    todas las comparaciones de acá pasan por `norm`, que también saca los
+    acentos. Lo único que se pierde es la tilde en el título.
+    """
+    try:
+        for v in agregado_jugadores(lid).values():
+            if _slug(v.get("nombre") or "") == slug:
+                return v["nombre"]
+    except Exception:
+        pass
+    return slug.replace("-", " ")
+
+
 def api_atleta(q):
-    """Ficha de un jugador. /api/atleta?id=8167&name=...&liga=lpf"""
+    """
+    Ficha de un jugador. /api/atleta?id=8167&name=...&liga=lpf
+
+    También acepta `slug`, que es lo que viene en la dirección cuando
+    alguien abre /jugador/enzo-fernandez directo, sin pasar por la página.
+    """
     aid = _int((q.get("id") or [""])[0], None)
     nombre = (q.get("name") or [""])[0].strip()
     lid = (q.get("liga") or ["lpf"])[0]
+    slug = (q.get("slug") or [""])[0].strip()
+    if not nombre and slug:
+        nombre = _nombre_de_slug(slug, lid)
     if not aid and not nombre:
         return {"error": "falta el parámetro id o name"}
 
@@ -7389,6 +7417,110 @@ def _rutas_de_club():
 RUTAS_CLUB = _rutas_de_club()
 
 
+# ── Las direcciones de la página ─────────────────────────────────────────
+#
+# Hasta acá la página era una sola dirección: entrabas a hayvar.com.ar y
+# todo lo que pasaba después —abrir un torneo, una fecha, un partido— no
+# quedaba escrito en ningún lado. No se podía compartir el link de un
+# partido, el botón de atrás del navegador te sacaba del sitio, y para
+# Google todo el sitio era una página vacía.
+#
+# Ahora cada cosa tiene su dirección. La página sigue siendo un solo
+# archivo: el servidor devuelve el mismo index.html para todas y adentro se
+# decide qué mostrar. Lo único que cambia acá es el título y la
+# descripción, que son los que se ven en la solapa del navegador, en el
+# resultado de Google y en la vista previa cuando alguien pega el link.
+#
+# Ojo: esta lista está repetida en index.html, porque la página tiene que
+# saber leer la dirección antes de hablar con el servidor. Hay una prueba
+# que compara las dos y falla si alguien toca una sola.
+RUTAS_LIGA = {
+    "liga-profesional": "lpf",
+    "primera-nacional": "nacional",
+    "primera-b-metro": "pbm",
+    "federal-a": "fa",
+    "copa-argentina": "ca",
+    "libertadores": "lib",
+    "sudamericana": "sud",
+    "champions-league": "champions",
+    "europa-league": "europa",
+    "laliga": "laliga",
+    "premier-league": "premier",
+    "serie-a": "seriea",
+    "bundesliga": "bundesliga",
+    "futbol-femenino": "fem",
+}
+
+TITULO_BASE = "HAYVAR"
+LEMA = "Resultados en vivo, tablas y estadísticas del fútbol argentino y del mundo."
+
+
+def escapar(t):
+    """
+    Texto listo para meter adentro de un atributo HTML.
+
+    Lo que entra acá sale de la dirección que pidió el visitante, así que
+    hay que tratarlo como lo que es: algo que escribió un desconocido. Sin
+    esto, alguien podría armar una dirección que cierre el atributo y meta
+    su propio código en la página de cualquiera que abra el link.
+    """
+    return (str(t).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _titulo_de_ruta(path):
+    """
+    Qué dice la solapa del navegador —y Google— en cada dirección.
+
+    Devuelve (título, descripción) o None si la dirección no es nuestra.
+    Es a propósito que sea texto fijo y no consulte nada: esto corre en
+    cada visita y antes que cualquier otra cosa, así que no puede depender
+    de que 365scores conteste.
+    """
+    partes = [p for p in path.strip("/").split("/") if p]
+    if not partes:
+        return ("%s — Fútbol en vivo" % TITULO_BASE, LEMA)
+
+    def lindo(s):
+        """De 'olimpia-vs-vasco-da-gama-4798160' a 'Olimpia vs Vasco Da Gama'."""
+        s = re.sub(r"-\d+$", "", s).replace("-", " ").strip().title()
+        return re.sub(r"\bVs\b", "vs", s)
+
+    # el número del final es el id del partido: sin eso no hay nada que
+    # abrir, así que tampoco es una dirección nuestra
+    if partes[0] == "partido" and len(partes) == 2 and partes[1][-1:].isdigit():
+        return ("%s — %s" % (lindo(partes[1]), TITULO_BASE),
+                "Resultado, goles, formaciones y estadísticas del partido.")
+
+    if partes[0] == "jugador" and len(partes) == 2:
+        return ("%s — %s" % (lindo(partes[1]), TITULO_BASE),
+                "Ficha del jugador: goles, partidos y por dónde pasó.")
+
+    if partes[0] in RUTAS_LIGA:
+        cfg = LIGAS.get(RUTAS_LIGA[partes[0]]) or {}
+        nombre = cfg.get("nombre") or partes[0]
+        torneo = cfg.get("torneo") or ""
+        if len(partes) == 2 and partes[1].startswith("fecha-"):
+            fecha = partes[1][6:]
+            return ("%s fecha %s — %s" % (nombre, fecha, TITULO_BASE),
+                    "Resultados y posiciones de la fecha %s de %s." % (fecha, nombre))
+        if len(partes) == 3 and partes[1] == "llave":
+            return ("%s — %s" % (nombre, TITULO_BASE),
+                    "La llave, partido por partido, de %s." % nombre)
+        if len(partes) == 1:
+            return ("%s %s — %s" % (nombre, torneo, TITULO_BASE),
+                    "Resultados en vivo, tabla de posiciones y goleadores "
+                    "de %s." % nombre)
+        return None
+
+    if len(partes) == 1 and partes[0] in RUTAS_CLUB:
+        club = RUTAS_CLUB[partes[0]]
+        return ("%s — %s" % (club, TITULO_BASE),
+                "%s: próximo partido, plantel, historial y cómo juega." % club)
+
+    return None
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=HERE, **kw)
@@ -7440,6 +7572,63 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
         except self.SE_FUE:
             self.close_connection = True
+
+    def _texto(self, cuerpo, ctype, minutos=60):
+        """Una respuesta de texto armada acá, sin archivo detrás."""
+        body, enc = self._comprimir(cuerpo.encode("utf-8"))
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "public, max-age=%d" % (minutos * 60))
+        if enc:
+            self.send_header("Content-Encoding", enc)
+            self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _pagina(self, path):
+        """
+        index.html con el título y la descripción de esta dirección.
+
+        Es lo único que el servidor cambia: adentro la página es la misma
+        para todas las direcciones. Pero este pedacito importa más de lo
+        que parece, porque es lo que ve el que no ejecuta el javascript —
+        Google, y la vista previa de WhatsApp cuando alguien pega el link—.
+        """
+        try:
+            with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
+                html = f.read()
+        except OSError:
+            self.send_error(404)
+            return
+        cual = _titulo_de_ruta(path)
+        if cual:
+            titulo, desc = cual
+            host = self.headers.get("Host") or "hayvar.com.ar"
+            url = "https://%s%s" % (host, path)
+            cabeza = "\n".join([
+                "<title>%s</title>" % escapar(titulo),
+                '<meta name="description" content="%s">' % escapar(desc),
+                '<meta property="og:title" content="%s">' % escapar(titulo),
+                '<meta property="og:description" content="%s">' % escapar(desc),
+                '<meta property="og:type" content="website">',
+                '<meta property="og:site_name" content="HAYVAR">',
+                '<meta property="og:url" content="%s">' % escapar(url),
+                '<link rel="canonical" href="%s">' % escapar(url),
+            ])
+            html = re.sub(r"<!--CABEZA-->.*?<!--/CABEZA-->",
+                          lambda _: "<!--CABEZA-->\n%s\n<!--/CABEZA-->" % cabeza,
+                          html, count=1, flags=re.S)
+        body, enc = self._comprimir(html.encode("utf-8"))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        if enc:
+            self.send_header("Content-Encoding", enc)
+            self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _archivo(self, ruta, ctype):
         """
@@ -7510,13 +7699,35 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 500)
 
-        # La página, comprimida. Las direcciones de club —/belgrano— también
-        # devuelven el index: la página es una sola y adentro decide qué
-        # mostrar mirando la dirección. Así el enlace se puede compartir y
-        # Google lo puede indexar.
-        if path in ("/", "/index.html") or path.strip("/") in RUTAS_CLUB:
-            return self._archivo(os.path.join(HERE, "index.html"),
-                                 "text/html; charset=utf-8")
+        # El mapa del sitio: la lista de direcciones para que Google las
+        # encuentre sin tener que adivinar. Van los torneos y los clubes,
+        # que son pocos y no cambian. Los partidos y los jugadores no: son
+        # miles y se renuevan cada fecha, y Google llega igual siguiendo
+        # los enlaces desde acá, que ahora son enlaces de verdad.
+        if path in ("/sitemap.xml", "/robots.txt"):
+            host = self.headers.get("Host") or "hayvar.com.ar"
+            raiz = "https://%s" % host
+            if path == "/robots.txt":
+                cuerpo = ("User-agent: *\nAllow: /\n"
+                          "Sitemap: %s/sitemap.xml\n" % raiz)
+                return self._texto(cuerpo, "text/plain; charset=utf-8")
+            rutas = ["/"] + ["/" + s for s in RUTAS_LIGA] \
+                          + ["/" + s for s in sorted(RUTAS_CLUB)]
+            cuerpo = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                      + "".join("  <url><loc>%s%s</loc></url>\n"
+                                % (raiz, escapar(r)) for r in rutas)
+                      + "</urlset>\n")
+            return self._texto(cuerpo, "application/xml; charset=utf-8")
+
+        # La página, comprimida. Todas las direcciones nuestras —un club, un
+        # torneo, una fecha, un partido, un jugador— devuelven el mismo
+        # index: la página es una sola y adentro decide qué mostrar mirando
+        # la dirección. Lo único que cambia es el título, que lo pone
+        # `_pagina`. Así el enlace se puede compartir, se puede abrir en una
+        # pestaña nueva y Google lo puede indexar.
+        if path in ("/", "/index.html") or _titulo_de_ruta(path):
+            return self._pagina("/" if path == "/index.html" else path)
         return super().do_GET()
 
 

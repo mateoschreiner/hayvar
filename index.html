@@ -3,7 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HAYVAR — Liga Profesional Argentina</title>
+<!-- El título y la descripción los reemplaza el servidor según la dirección
+     que se pidió: /belgrano dice "Belgrano", /partido/... dice quiénes
+     juegan. Lo de acá abajo es lo que se ve en la portada y también lo que
+     queda si algún día se sirve el archivo suelto, sin servidor. Los
+     comentarios CABEZA marcan dónde empieza y dónde termina el bloque: el
+     servidor lo cambia entero, no busca etiqueta por etiqueta. -->
+<!--CABEZA-->
+<title>HAYVAR — Fútbol en vivo</title>
+<meta name="description" content="Resultados en vivo, tablas y estadísticas del fútbol argentino y del mundo.">
+<meta property="og:title" content="HAYVAR — Fútbol en vivo">
+<meta property="og:description" content="Resultados en vivo, tablas y estadísticas del fútbol argentino y del mundo.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HAYVAR">
+<!--/CABEZA-->
 
 <!-- El favicon va en cuatro formatos a propósito. El SVG es el mejor —se ve
      nítido en cualquier pantalla— pero varios navegadores siguen pidiendo
@@ -414,6 +427,12 @@ html[data-theme="dark"] .fila-afuera{background:rgba(224,90,90,.18)}
 .serie-p .ver{margin-top:7px;font-size:10.5px;color:var(--acc);font-weight:700}
 
 .match{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+/* Las filas de partido, las llaves del cuadro y las de una serie ahora son
+   enlaces de verdad, para que se puedan abrir en una pestaña nueva. Un
+   enlace trae subrayado y color azul de fábrica: acá se sacan, porque la
+   fila ya se ve clickeable por su cuenta y un renglón azul subrayado en
+   medio de la tabla sería peor. */
+a.match,a.brk,a.serie-p{display:block;color:inherit;text-decoration:none}
 .m-fila{display:grid;grid-template-columns:56px 1fr 50px 1fr;align-items:center;gap:8px}
 .m-extra:empty{display:none}
 /* los goles quedan bajo el nombre de cada equipo: los del local arrancan
@@ -545,6 +564,24 @@ td.l{text-align:left;padding-left:8px}
 .modal{width:100%;max-width:640px;background:var(--card);border-radius:12px;
   overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35);
   display:flex;flex-direction:column;max-height:calc(100vh - 52px)}
+/* El partido abierto desde adentro de la página es un pop-up: atrás queda
+   la fecha que estabas mirando y cerrarlo te devuelve ahí. Pero el que
+   entra por el link —lo pegaron en un grupo, lo abrió en una pestaña
+   nueva— no tiene nada atrás: mostrarle una ventanita flotando sobre un
+   fondo oscuro y vacío sería raro. Para ése el mismo pop-up se estira y
+   ocupa la página entera. Es el mismo dibujo, sólo cambia el marco. */
+/* Arranca abajo del encabezado a propósito: el que llega por el link tiene
+   que ver dónde cayó, poder buscar y poder entrar a lo demás. Un partido
+   solo, sin nada alrededor, es una página muerta. */
+.pantalla-partido .ov{background:var(--bg);backdrop-filter:none;
+  inset:var(--enc,56px) 0 0 0;padding:0;overflow-y:auto}
+.pantalla-partido .modal{max-width:720px;max-height:none;border-radius:0;
+  min-height:100%;box-shadow:none}
+.pantalla-partido .mbody{overflow:visible}
+@media(min-width:760px){
+  .pantalla-partido .ov{padding:22px 14px}
+  .pantalla-partido .modal{min-height:0;border-radius:12px}
+}
 .mhead{background:var(--nav);color:#fff;padding:16px;flex:none}
 .modal>.tabs{flex:none;background:var(--card)}
 .mhead .top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:rgba(255,255,255,.65);margin-bottom:12px;gap:8px}
@@ -1015,9 +1052,245 @@ window.Gol=Gol;
 const App=(()=>{
   const S={round:null,rounds:[],games:[],tab:'A',onlyLive:false,liga:'home',emblemas:{},current:null,
            homeDate:new Date(),weekStart:null,home:null,club:null,
-           standings:null,annual:null,promedios:null,scorers:null,otra:null,pila:[],
+           standings:null,annual:null,promedios:null,scorers:null,otra:null,
+           fondo:null,modal:null,pasos:0,fechaPedida:null,
            scores:{},detalles:{},detallesDe:null,detTimer:null,series:{},
            timer:null,vivoTimer:null,failures:0};
+
+  /* ── Las direcciones ──────────────────────────────────────────────────
+     Hasta acá la página vivía en una sola dirección. Todo lo que pasaba
+     después —abrir un torneo, cambiar de fecha, mirar un partido— no
+     quedaba escrito en ningún lado, y eso se pagaba de tres formas: no se
+     podía mandar el link de un partido, el botón de atrás del navegador te
+     sacaba del sitio, y Google veía una página vacía.
+
+     Ahora la dirección ES el estado. Una función la lee y arma la
+     pantalla; otra la escribe cuando tocás algo. El botón de atrás sale
+     gratis: el navegador vuelve a una dirección anterior y nosotros la
+     leemos igual que la primera vez.
+
+     La lista de abajo está repetida en server.py, porque la página tiene
+     que saber leer la dirección antes de hablar con el servidor. Hay una
+     prueba que compara las dos y falla si alguien toca una sola.          */
+  const LIGA_RUTA={lpf:'liga-profesional', nacional:'primera-nacional',
+                   pbm:'primera-b-metro', fa:'federal-a', ca:'copa-argentina',
+                   lib:'libertadores', sud:'sudamericana',
+                   champions:'champions-league', europa:'europa-league',
+                   laliga:'laliga', premier:'premier-league', seriea:'serie-a',
+                   bundesliga:'bundesliga', fem:'futbol-femenino'};
+  const RUTA_LIGA={};
+  for(const k in LIGA_RUTA) RUTA_LIGA[LIGA_RUTA[k]]=k;
+
+  /* Cualquier texto convertido en pedazo de dirección. Es la misma regla
+     que usa el servidor: sin acentos, sin apóstrofes y con guiones.
+     "Estudiantes (LP)" queda estudiantes-lp, que se puede pegar en un
+     mensaje sin que se rompa; "Newell's" queda newells y no newell-s. */
+  const slugTexto=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().replace(/['´`]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+
+  const Rutas={
+    /* de una pantalla a su dirección */
+    url(d){
+      if(!d) return '/';
+      if(d.t==='club')     return '/'+d.slug;
+      // un torneo sin dirección conocida cae a la portada en vez de armar
+      // una dirección con "undefined" adentro
+      if(d.t==='liga')     return LIGA_RUTA[d.id]
+                                  ? '/'+LIGA_RUTA[d.id]
+                                    +(d.fecha!=null&&d.fecha!==''?'/fecha-'+slugTexto(String(d.fecha)):'')
+                                  : '/';
+      if(d.t==='llave')    return LIGA_RUTA[d.liga]
+                                  ? '/'+LIGA_RUTA[d.liga]+'/llave/'+d.slug : '/';
+      if(d.t==='partido')  return '/partido/'+(d.slug?d.slug+'-':'')+d.id;
+      if(d.t==='jugador')  return '/jugador/'+d.slug+(d.atleta?'-'+d.atleta:'');
+      return '/';
+    },
+    /* y al revés. Devuelve null si la dirección no es nuestra, para no
+       tragarse una que en realidad era un archivo del sitio. */
+    leer(ruta){
+      const p=(ruta||location.pathname).split('/').filter(Boolean)
+        .map(x=>{ try{ return decodeURIComponent(x); }catch(e){ return x; } });
+      if(!p.length) return {t:'home'};
+      if(p[0]==='partido'&&p.length===2){
+        const m=/(\d+)$/.exec(p[1]);
+        return m ? {t:'partido', id:m[1], slug:p[1].slice(0,m.index).replace(/-+$/,'')} : null;
+      }
+      if(p[0]==='jugador'&&p.length===2){
+        const m=/-(\d+)$/.exec(p[1]);
+        return {t:'jugador', slug:m?p[1].slice(0,m.index):p[1], atleta:m?m[1]:null};
+      }
+      if(RUTA_LIGA[p[0]]){
+        const id=RUTA_LIGA[p[0]];
+        if(p.length===1) return {t:'liga', id, fecha:null};
+        if(p.length===2&&p[1].indexOf('fecha-')===0)
+          return {t:'liga', id, fecha:p[1].slice(6)};
+        if(p.length===3&&p[1]==='llave') return {t:'llave', liga:id, slug:p[2]};
+        return null;
+      }
+      if(p.length===1&&p[0]!=='index.html') return {t:'club', slug:p[0]};
+      return null;
+    },
+    // las tres pantallas que se abren encima de lo que estabas mirando
+    esCapa:d=>!!d&&(d.t==='partido'||d.t==='jugador'||d.t==='llave'),
+    /* Ir a una pantalla. `pasos` cuenta las entradas de historial que
+       pusimos nosotros: sirve para saber si el botón de volver tiene a
+       dónde volver o si el visitante entró directo por el link, en cuyo
+       caso ir para atrás lo sacaría del sitio. */
+    ir(d){
+      const u=Rutas.url(d);
+      if(u!==location.pathname) history.pushState({pasos:++S.pasos},'',u);
+      return aplicar(d);
+    },
+    // lo mismo pero sin agregar un paso: para corregir la dirección cuando
+    // la pantalla no cambió, por ejemplo al resolver a qué fecha entrar
+    corregir(d){
+      const u=Rutas.url(d);
+      if(u!==location.pathname) history.replaceState({pasos:S.pasos},'',u);
+    }
+  };
+
+  /* La única puerta de entrada a una pantalla. La llaman las tres cosas
+     que pueden cambiarla: un clic, el botón de atrás del navegador y la
+     carga inicial. Que sea una sola es lo que hace que las tres se
+     comporten igual. */
+  function aplicar(d){
+    d=d||{t:'home'};
+    if(Rutas.esCapa(d)){
+      // lo de encima no toca el fondo: cerrar el partido te devuelve a la
+      // fecha que estabas mirando, sin volver a bajarla
+      // Salvo que no haya fondo, porque se entró directo por el link: ahí
+      // se arma al menos el armazón, para que el menú del costado exista
+      // y se pueda seguir a otra cosa desde ahí.
+      if(!S.fondo){ shell(); drawSide(); }
+      S.modal=d;
+      if(d.t==='partido') return openMatch(d);
+      if(d.t==='jugador') return openPlayer(d);
+      return drawSerie(d);
+    }
+    cerrarCapa();
+    const antes=S.fondo;
+    S.fondo=d; S.modal=null;
+    if(d.t==='club'){
+      if(antes&&antes.t==='club'&&antes.slug===d.slug) return;
+      S.liga='club';
+      return loadClub(d.nombre||d.slug.replace(/-/g,' '));
+    }
+    const id=d.t==='home'?'home':d.id;
+    if(S.liga!==id){
+      medir.seccion(id);
+      S.liga=id; S.round=null; S.tab=id==='lpf'?'A':'z0'; S.otra=null;
+      S.scores={}; S.etapas=null;
+      clearTimeout(S.timer); clearTimeout(S.vivoTimer);
+      drawSide(); api.menu(false);
+      if(id==='lpf') pestanasLpf();
+      S.fechaPedida=(d.fecha!=null?d.fecha:null);
+      return loadAll(false);
+    }
+    // el mismo torneo: lo único que pudo cambiar es la fecha
+    if(id==='home') return;
+    const r=fechaDeSlug(d.fecha);
+    if(r==null||r===S.round) return;
+    S.round=r; drawRounds();
+    medir.evento('cambiar_fecha',{liga:S.liga, fecha:String(r)});
+    if(S.liga!=='lpf') return pintarFecha();
+    return loadRound().then(()=>{
+      const live=S.games.filter(m=>m.status==='LIVE').length; schedule(live>0);
+    });
+  }
+
+  /* Qué fecha pide la dirección. Devuelve null si no pide ninguna o si la
+     que pide no existe en este torneo —pasa cuando alguien edita el número
+     a mano, o cuando el link es de un torneo que ya cambió de fase—; en
+     ese caso se entra a la que corresponda y la dirección se corrige. */
+  function fechaDeSlug(slug){
+    if(slug==null||slug==='') return null;
+    const n=parseInt(String(slug),10);
+    if(isNaN(n)) return null;
+    return S.rounds.some(r=>r.round===n) ? n : null;
+  }
+
+  // Lo que la dirección pedía al entrar a un torneo, aplicado ya con el
+  // calendario en la mano. Si no pedía nada, o pedía una fecha que no
+  // existe, manda la que el torneo diga.
+  function aplicarFechaPedida(porDefecto){
+    const pedida=fechaDeSlug(S.fechaPedida);
+    S.fechaPedida=null;
+    S.round=pedida!=null?pedida:porDefecto;
+    return S.round;
+  }
+
+  /* Al entrar a un torneo la dirección puede venir sin fecha —/laliga— y
+     recién al bajar el calendario sabemos cuál es la que está en curso.
+     Se escribe ahí, pisando la entrada de historial en vez de agregar una:
+     así la barra de direcciones dice qué estás mirando y el botón de atrás
+     sigue llevando a donde estabas antes, no a la misma pantalla. */
+  function fijarFechaEnLaDireccion(){
+    if(S.modal||S.liga==='home'||S.liga==='club'||S.round==null) return;
+    S.fondo={t:'liga', id:S.liga, fecha:S.round};
+    Rutas.corregir(S.fondo);
+  }
+
+  function cerrarCapa(){
+    const ov=$('#ov'); if(!ov) return;
+    ov.classList.remove('show');
+    document.body.style.overflow='';
+    document.body.classList.remove('pantalla-partido');
+  }
+
+  function pestanasLpf(){
+    $('.tag').textContent='Liga Profesional · Clausura 2026';
+    $('#tabs').innerHTML=[['A','Zona A'],['B','Zona B'],['anual','Anual'],
+                          ['prom','Promedios'],['gol','Goles']]
+      .map(([k,n],i)=>`<button data-t="${k}" class="${i===0?'on':''}" onclick="App.tab('${k}')">${n}</button>`).join('');
+  }
+
+  /* ── Enlaces de verdad ────────────────────────────────────────────────
+     Todo lo que lleva a otra pantalla se dibuja como un enlace con su
+     dirección adentro, no como un `onclick`. La diferencia se nota en
+     cosas chicas que la gente usa todo el tiempo: ctrl+clic y el botón del
+     medio abren en una pestaña nueva, el botón derecho ofrece "abrir en
+     pestaña nueva" y "copiar dirección", y al pasar el mouse el navegador
+     muestra abajo a dónde va. Nada de eso se puede imitar con javascript,
+     y no hace falta: alcanza con usar la etiqueta que corresponde.
+
+     El clic común lo atajamos nosotros para que la página no se recargue.
+     Un solo escuchador para toda la página: los partidos se redibujan cada
+     veinte segundos y ponerle uno a cada fila sería ponerlos de nuevo cada
+     vez.                                                                 */
+  const enlace=(d,texto,attrs)=>
+    `<a href="${esc(Rutas.url(d))}" data-ir${attrs?' '+attrs:''}>${texto}</a>`;
+
+  /* La dirección de un jugador: /jugador/enzo-fernandez-8167. El número es
+     el id de 365scores y va cuando lo tenemos, que es lo que permite
+     distinguir dos jugadores que se llaman igual. Cuando no lo tenemos
+     —los que salen de nuestras propias tablas— va sólo el nombre, y el
+     servidor lo resuelve contra los jugadores que fuimos juntando. */
+  const rutaJugador=(nombre,atletaId,equipo)=>
+    ({t:'jugador', slug:slugTexto(nombre), atleta:atletaId||null,
+      nombre, equipo:equipo||''});
+  const enlaceJugador=(nombre,atletaId,equipo,clase,estilo)=>
+    `<a href="${esc(Rutas.url(rutaJugador(nombre,atletaId,equipo)))}" data-ir`
+    + (clase?` class="${clase}"`:'') + (estilo?` style="${estilo}"`:'') + '>';
+
+  document.addEventListener('click',e=>{
+    // con ctrl, con command, con shift o con el botón del medio, el
+    // navegador ya sabe qué hacer: abrir aparte. No lo tocamos.
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey) return;
+    const a=e.target.closest&&e.target.closest('a[data-ir]');
+    if(!a||a.target==='_blank') return;
+    const d=Rutas.leer(new URL(a.href,location.origin).pathname);
+    if(!d) return;
+    e.preventDefault();
+    if(a.closest('#qres')) api.cerrarBuscador();
+    api.menu(false);
+    Rutas.ir(d);
+  });
+
+  window.addEventListener('popstate',e=>{
+    S.pasos=(e.state&&e.state.pasos)||0;
+    aplicar(Rutas.leer());
+  });
 
   /* ── entrar al club desde cualquier lado ──────────────────────────────
      Los clubes que tienen página propia se guardan acá al arrancar. El
@@ -1149,7 +1422,9 @@ const App=(()=>{
     el.innerHTML=LIGAS.map(([grupo,items])=>
       (grupo?`<h4>${esc(grupo)}</h4>`:'')+items.map(([id,nombre,activa])=>
         activa
-          ? `<a class="${S.liga===id?'on':''} lg-${id}" onclick="App.liga('${id}')">${id==='home'?'<span class="lgimg">◎</span>':emb(id)}<span class="nm">${esc(nombre)}</span></a>`
+          ? `<a class="${S.liga===id?'on':''} lg-${id}"
+               href="${esc(Rutas.url(id==='home'?{t:'home'}:{t:'liga',id}))}" data-ir
+               >${id==='home'?'<span class="lgimg">◎</span>':emb(id)}<span class="nm">${esc(nombre)}</span></a>`
           : `<a class="off" title="Todavía no disponible"><span class="nm">${esc(nombre)}</span><span class="pill">pronto</span></a>`
       ).join('')+'<div class="sep"></div>').join('');
   }
@@ -1176,14 +1451,19 @@ const App=(()=>{
     qHits=clubes.concat(jugadores);
     if(qSel>=qHits.length||qSel<0) qSel=qHits.length?0:-1;
     let html='';
+    // Cada resultado lleva su dirección: se puede abrir en pestaña nueva
+    // desde el mismo buscador. El clic común lo atiende el escuchador
+    // general, que además cierra la lista.
     if(clubes.length) html+=`<b>Clubes</b>`+clubes.map((c,i)=>
-      `<a class="${i===qSel?'sel':''}" onmousedown="event.preventDefault();App.elegirBusqueda(${i})">
+      `<a class="${i===qSel?'sel':''}" data-ir
+          href="${esc(Rutas.url({t:'club', slug:slugTexto(c.name), nombre:c.name}))}">
          ${c.logo?`<img src="${esc(c.logo)}" alt="" onerror="this.remove()">`
                  :`<span class="crest" style="width:20px;height:20px"></span>`}
          <span>${esc(c.name)}</span></a>`).join('');
     if(jugadores.length) html+=`<b>Jugadores</b>`+jugadores.map((j,k)=>{
       const i=clubes.length+k;
-      return `<a class="${i===qSel?'sel':''}" onmousedown="event.preventDefault();App.elegirBusqueda(${i})">
+      return `<a class="${i===qSel?'sel':''}" data-ir
+          href="${esc(Rutas.url(rutaJugador(j.name,null,j.club)))}">
          <span class="crest" style="width:20px;height:20px"></span>
          <span>${esc(j.name)}<span style="color:var(--txt3);font-size:11.5px">
            ${[j.club,j.puesto].filter(Boolean).map(esc).join(' · ')}</span></span></a>`;}).join('');
@@ -2226,11 +2506,12 @@ const App=(()=>{
     (d.plantel||[]).forEach(j=>{
       const pu=j.puesto||'Sin puesto';
       if(pu!==ultimo){ plantel+=`<div class="cl-puesto">${esc(pu)}</div>`; ultimo=pu; }
-      plantel+=`<div class="cl-jug" onclick="App.jugador('${js(j.nombre)}',${j.id||'null'})">
+      plantel+=`<a class="cl-jug"
+        href="${esc(Rutas.url(rutaJugador(j.nombre,j.id)))}" data-ir>
         <span class="num">${j.n??'–'}</span><span class="nm">${esc(j.nombre)}</span>
         <span class="pais">${j.bandera
           ? `<img src="${esc(j.bandera)}" alt="${esc(j.pais||'')}"
-               title="${esc(j.pais||'')}" loading="lazy">` : ''}</span></div>`;
+               title="${esc(j.pais||'')}" loading="lazy">` : ''}</span></a>`;
     });
 
     const kits=i.camisetas||{};
@@ -2317,7 +2598,7 @@ const App=(()=>{
       ? h.bloques.map(b=>`<div class="lgrow">
             <span class="badge">${esc((b.nombre.match(/\b\w/g)||[]).join('').slice(0,3).toUpperCase())}</span>
             <span class="nm">${esc(b.nombre)}</span>
-            <span class="go" onclick="App.liga('${b.liga}')">ver torneo →</span></div>`
+            <a class="go" href="${esc(Rutas.url({t:'liga',id:b.liga}))}" data-ir>ver torneo →</a></div>`
           + b.games.map(matchRow).join('')).join('')
       : `<div class="empty"><span class="big">◎</span>No hay partidos programados para este día.</div>`;
     $('#liveCnt').textContent=h.live;
@@ -2352,7 +2633,8 @@ const App=(()=>{
         :`${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth()+1} · ${hhmm(m.start)}`;
       const marcador=m.gh!=null?`<b style="font-size:14px">${m.gh}-${m.ga}</b>`
         :'<span style="color:var(--txt2);font-size:12px">vs</span>';
-      return `<div class="partidazo" style="padding:6px 0" onclick="App.openMatch('${js(m.id)}')">
+      return `<a class="partidazo" style="padding:6px 0"
+        href="${esc(Rutas.url(rutaPartido(m)||{t:'home'}))}" data-ir>
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--txt2);margin-bottom:3px">${rotulo}</div>
         <div style="display:flex;align-items:center;gap:7px">
           ${crest(m.home,18)}<span class="tn" style="font-size:12.5px;flex:1;min-width:0">${esc(m.home.canon||m.home.name)}</span>
@@ -2361,7 +2643,7 @@ const App=(()=>{
         </div>
         <div style="font-size:10.5px;color:var(--txt2);margin-top:2px">
           ${m.ligaNombre?esc(m.ligaNombre)+' · ':''}${cuando}</div>
-      </div>`;
+      </a>`;
     };
     return `<div style="padding:12px 14px;border-bottom:1px solid var(--line)">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
@@ -2404,7 +2686,7 @@ const App=(()=>{
       </div>`}
       ${golazo?`<div class="globo" style="padding:11px 14px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:7px">Partidazo del día</div>
-        <div class="partidazo" onclick="App.openMatch('${js(golazo.id)}')">
+        <a class="partidazo" href="${esc(Rutas.url(rutaPartido(golazo)||{t:'home'}))}" data-ir>
           <div class="pz-eq">${crest(golazo.home,20)}<span class="tn">${esc(golazo.home.canon||golazo.home.name)}</span>
             <b>${golazo.gh??''}</b></div>
           <div class="pz-eq">${crest(golazo.away,20)}<span class="tn">${esc(golazo.away.canon||golazo.away.name)}</span>
@@ -2412,15 +2694,16 @@ const App=(()=>{
           <div style="font-size:10px;color:var(--txt2);padding:2px 0 0">
             ${golazo.interzonal?'Interzonal · ':''}${golazo.status==='LIVE'?(golazo.minute??'')+"' en vivo"
               :golazo.status==='FIN'?'Finalizado':hhmm(golazo.start)}</div>
-        </div></div>`:''}
+        </a></div>`:''}
       ${proximos.length?`<div class="globo"><div style="padding:11px 14px 4px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:5px">Lo que viene</div></div>
-        ${proximos.map(m=>`<div class="match" style="grid-template-columns:46px 1fr" onclick="App.openMatch('${js(m.id)}')">
+        ${proximos.map(m=>`<a class="match" style="grid-template-columns:46px 1fr"
+            href="${esc(Rutas.url(rutaPartido(m)||{t:'home'}))}" data-ir>
           <div class="m-time">${hhmm(m.start)}</div>
           <div style="min-width:0">
             <div class="tcell" style="gap:6px">${crest(m.home,17)}<span class="tn" style="font-size:12.5px">${esc(m.home.canon||m.home.name)}</span></div>
             <div class="tcell" style="gap:6px;margin-top:3px">${crest(m.away,17)}<span class="tn" style="font-size:12.5px">${esc(m.away.canon||m.away.name)}</span></div>
-          </div></div>`).join('')}</div>`:''}
+          </div></a>`).join('')}</div>`:''}
       <div class="note" style="padding:0 2px">Elegí un torneo en el menú de la izquierda para ver sus tablas.</div>`;
   }
 
@@ -2689,11 +2972,23 @@ const App=(()=>{
     </div>`;
   }
 
+  /* Cada fila de partido es un enlace de verdad. Antes era un div con
+     `onclick`: se abría igual, pero no se podía abrir en una pestaña
+     nueva, ni copiar la dirección, ni ver a dónde llevaba al pasar el
+     mouse. El clic común lo seguimos atajando nosotros para que la página
+     no se recargue; el resto lo hace el navegador.
+
+     Los partidos que 365scores no tiene no llevan enlace: no hay nada del
+     otro lado. Ésos siguen siendo un div, y se nota en que el cursor no
+     cambia a "mano con link". Es honesto: no todos llevan al mismo lado. */
   function matchRow(m){
     const changed=S.scores[m.id]!==undefined && S.scores[m.id]!==`${m.gh}-${m.ga}` && m.gh!=null;
     S.scores[m.id]=`${m.gh}-${m.ga}`;
+    const r=rutaPartido(m);
     // el id es texto (viene del fixture de AFA): tiene que ir entre comillas
-    return `<div class="match ${changed?'flash':''}" data-id="${esc(m.id)}" onclick="App.openMatch('${js(m.id)}')">
+    const abre=r ? ` href="${esc(Rutas.url(r))}" data-ir`
+                 : ` onclick="App.openMatch('${js(m.id)}')"`;
+    return `<${r?'a':'div'} class="match ${changed?'flash':''}" data-id="${esc(m.id)}"${abre}>
       <div class="m-fila">
         ${htmlTiempo(m)}
         <div class="${claseLado(m,true)}">${crest(m.home)}<span class="tn">${esc(m.home.canon||m.home.name)}</span></div>
@@ -2701,7 +2996,7 @@ const App=(()=>{
         <div class="${claseLado(m,false)}">${crest(m.away)}<span class="tn">${esc(m.away.canon||m.away.name)}</span></div>
       </div>
       ${htmlExtras(m)}
-    </div>`;
+    </${r?'a':'div'}>`;
   }
 
   // Los goleadores y la TV se piden aparte, después de dibujar la fecha:
@@ -2883,7 +3178,8 @@ const App=(()=>{
       `<tr style="cursor:pointer;${estiloClub(r.team.name)}" onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
         <td class="pos">${r.rank}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">
-          <b style="font-weight:600">${esc(r.name)}</b>
+          ${enlaceJugador(r.name,r.athleteId,r.team.name,'','color:inherit;text-decoration:none')
+            }<b style="font-weight:600">${esc(r.name)}</b></a>
           <span style="color:var(--txt2);font-size:11px;display:block;line-height:1.1">${esc(r.team.name)}</span>
         </span></div></td>
         <td class="pts">${r.goals}</td>
@@ -2894,19 +3190,29 @@ const App=(()=>{
   }
 
   /* ── ficha del jugador ── */
-  async function openPlayer(nombre,equipo,atletaId){
-    medir.evento('ver_jugador',{liga:S.liga, jugador:nombre, equipo:equipo||''});
-    $('#ov').classList.add('show'); document.body.style.overflow='hidden';
+  // `d` es lo que dice la dirección: {slug, atleta, nombre?, equipo?}. El
+  // nombre y el equipo vienen cuando se entró desde adentro de la página;
+  // si se abrió el link directo no están, y el servidor los resuelve solo
+  // a partir del slug.
+  async function openPlayer(d){
+    const nombre=d.nombre||d.slug.replace(/-/g,' '), equipo=d.equipo||'';
+    const atletaId=d.atleta;
+    medir.evento('ver_jugador',{liga:S.liga, jugador:nombre, equipo:equipo});
+    abrirCapa();
     $('#modalBox').innerHTML=`<div class="mhead" style="padding:16px">
       <div class="top"><span>Jugador</span>${botonesModal()}</div>
       <b style="font-size:17px">${esc(nombre)}</b></div>
       <div class="mbody"><div class="skel"></div><div class="skel"></div></div>`;
     let p;
-    try{ p=atletaId
-      ? await get(`/api/atleta?id=${atletaId}&name=${encodeURIComponent(nombre)}&liga=${S.liga}`)
-      : await get(`/api/atleta?name=${encodeURIComponent(nombre)}&liga=${S.liga}`); }
+    const quien=d.nombre
+      ? 'name='+encodeURIComponent(d.nombre)
+      : 'slug='+encodeURIComponent(d.slug);
+    try{ p=await get(`/api/atleta?${atletaId?'id='+atletaId+'&':''}${quien}&liga=${S.liga}`); }
     catch(e){ p={name:nombre,team:equipo,error:e.message,
       transfermarkt:'https://www.transfermarkt.es/schnellsuche/ergebnis/schnellsuche?query='+encodeURIComponent(nombre)}; }
+    // si la capa se cerró o se pasó a otra pantalla mientras se pedía, no
+    // se pisa lo que el visitante está mirando ahora
+    if(!S.modal||S.modal.t!=='jugador'||S.modal.slug!==d.slug) return;
 
     const tipos=[['De jugada',p.jugada],['De cabeza',p.cabeza],['De tiro libre',p.tiroLibre],['De penal',p.pens]];
     const total=p.goals||0;
@@ -2979,51 +3285,85 @@ const App=(()=>{
 
   /* ── el pop-up, y cómo se vuelve ──────────────────────────────────────
      De un partido se entra a un jugador, de una serie a un partido, y de un
-     jugador a la lista de una estadística. Hasta acá el único camino para
-     retroceder un paso era cerrar todo y empezar de nuevo.
+     jugador a la lista de una estadística.
 
-     Se lleva una pila de por dónde se pasó. Sólo apilan los botones que el
-     usuario toca —los de `api`—; los redibujados internos, como cuando la
-     serie recibe los goles y se vuelve a pintar, usan la función directa y
-     no ensucian la pila. */
-  const PANTALLAS={match:(...a)=>openMatch(...a),
-                   player:(...a)=>openPlayer(...a),
-                   serie:(...a)=>drawSerie(...a)};
-  function pintarPila(){
-    const p=S.pila[S.pila.length-1];
-    return p ? PANTALLAS[p.t](...p.a) : undefined;
-  }
-  function navegar(t,...a){ S.pila.push({t,a}); return pintarPila(); }
-  // El botón de volver aparece sólo si hay a dónde volver.
-  const botonesModal=()=>`${S.pila.length>1
+     Antes esto llevaba su propia pila de por dónde se pasó, con su propio
+     botón de volver. Ya no hace falta: cada una de esas pantallas tiene su
+     dirección, así que la pila es el historial del navegador. El botón "‹"
+     y la flecha de atrás del navegador hacen literalmente lo mismo, que es
+     lo que uno espera y lo que antes no pasaba.
+
+     `pasos` cuenta cuántas entradas de historial pusimos nosotros. Si es
+     cero, el visitante entró directo por el link y volver para atrás lo
+     sacaría del sitio: en ese caso el "‹" no se muestra y la cruz lleva a
+     la portada.                                                          */
+  const botonesModal=()=>`${S.pasos>0
       ? `<button class="volver" onclick="App.volverModal()"
            title="Volver" aria-label="Volver">‹</button>` : ''}
-    <button class="x" onclick="App.closeModal()" title="Cerrar" aria-label="Cerrar">×</button>`;
+    <button class="x" onclick="App.closeModal()"
+      title="${S.pasos>0?'Cerrar':'Ir a la portada'}"
+      aria-label="${S.pasos>0?'Cerrar':'Ir a la portada'}">×</button>`;
+
+  // `entero` es el caso del que llegó por el link: no hay nada atrás, así
+  // que el pop-up se despliega y ocupa la página.
+  function abrirCapa(entero){
+    document.body.classList.toggle('pantalla-partido',!!entero);
+    $('#ov').classList.add('show');
+    document.body.style.overflow=entero?'':'hidden';
+  }
 
   /* ── modal de partido ── */
   let mTab='res', mData=null, mBase=null;
-  async function openMatch(id){
+  // `d` es {t:'partido', id, slug}. `id` es el de 365scores, que es el que
+  // sirve para pedir el detalle aunque no tengamos la lista cargada.
+  async function openMatch(d){
+    const id=d.id;
     mTab='res'; mData=null;
     // el último y el próximo del club no están entre los partidos de hoy,
     // así que también se los busca ahí
     const cg=S.clubGames||{};
-    mBase=S.games.find(m=>String(m.id)===String(id))
-      || [cg.envivo,cg.ultimo,cg.proximo].find(m=>m&&String(m.id)===String(id));
-    if(!mBase) return;
-    medir.evento('abrir_partido',{
-      liga:S.liga,
-      partido:`${mBase.home.canon||mBase.home.name} - ${mBase.away.canon||mBase.away.name}`,
-      fecha:String(mBase.round??''),
-      estado:mBase.status||''
-    });
-    $('#ov').classList.add('show'); document.body.style.overflow='hidden';
-    drawModal(mBase,!!mBase.liveId);
-    // el detalle sale de 365scores; sólo existe para los partidos de su ventana
-    if(!mBase.liveId){ mData={sinDetalle:true}; return drawModal(mBase,false); }
-    try{ mData=await get('/api/match?id='+mBase.liveId); }catch(e){ mData={error:e.message}; }
+    const igual=m=>m&&(String(m.liveId)===String(id)||String(m.id)===String(id));
+    mBase=S.games.find(igual)||[cg.envivo,cg.ultimo,cg.proximo].find(igual)||null;
+    const frio=!mBase;     // se entró por el link, sin la lista atrás
+    abrirCapa(frio);
+    if(mBase){
+      medir.evento('abrir_partido',{
+        liga:S.liga,
+        partido:`${mBase.home.canon||mBase.home.name} - ${mBase.away.canon||mBase.away.name}`,
+        fecha:String(mBase.round??''),
+        estado:mBase.status||''
+      });
+      drawModal(mBase,!!mBase.liveId);
+      // el detalle sale de 365scores; sólo existe para los de su ventana
+      if(!mBase.liveId){ mData={sinDetalle:true}; return drawModal(mBase,false); }
+    } else {
+      $('#modalBox').innerHTML=`<div class="mhead" style="padding:16px">
+        <div class="top"><span>Partido</span>${botonesModal()}</div></div>
+        <div class="mbody"><div class="skel"></div><div class="skel"></div>
+        <div class="skel" style="width:60%"></div></div>`;
+    }
+    let dato;
+    try{ dato=await get('/api/match?id='+encodeURIComponent(id)); }
+    catch(e){ dato={error:e.message}; }
+    // si mientras tanto se cerró o se pasó a otra pantalla, no se pisa
+    if(!S.modal||S.modal.t!=='partido'||String(S.modal.id)!==String(id)) return;
+    mData=dato;
+    if(!mBase) mBase=(dato&&dato.id)?dato:{home:{},away:{}};
     drawModal(current(),false);
   }
   const current=()=>(mData&&mData.id)?Object.assign({},mBase,mData):mBase;
+
+  /* La dirección de un partido: /partido/aldosivi-vs-union-4728056.
+     El número del final es el que importa —es con el que se pide el
+     detalle—; los nombres van adelante para que el link diga algo cuando
+     alguien lo pega en un mensaje o lo ve en Google. */
+  const rutaPartido=m=>{
+    const id=m&&m.liveId;
+    if(!id) return null;      // sin detalle no hay nada que abrir aparte
+    const n=e=>slugTexto((e&&(e.canon||e.name))||'');
+    return {t:'partido', id:String(id),
+            slug:[n(m.home),'vs',n(m.away)].filter(Boolean).join('-')};
+  };
 
   /* ── Gráfico de las estadísticas que definen un partido ─────────────── */
   // Elegí estas cinco: posesión y remates dicen quién manejó el partido,
@@ -3344,8 +3684,8 @@ const App=(()=>{
       // cada columna, con la sigla DT en lugar del número.
       const esDT=p=>String(p.n)==='-1'||/entrenador|director t/i.test(p.puesto||p.pos||'');
       const lista=(arr,dt)=>arr.map(p=>
-        `<li onclick="event.stopPropagation();App.jugador('${js(p.name)}',${p.id||'null'})"
-             style="cursor:pointer"><b>${dt?'DT':(p.n??'')}</b><span${dt?' style="font-weight:700"':''}>${esc(p.name)}</span>${iconos(p.name)}</li>`).join('');
+        `<li>${enlaceJugador(p.name,p.id,'','','display:flex;gap:8px;align-items:baseline;color:inherit;text-decoration:none')
+          }<b>${dt?'DT':(p.n??'')}</b><span${dt?' style="font-weight:700"':''}>${esc(p.name)}</span>${iconos(p.name)}</a></li>`).join('');
 
       // ── La cancha ──
       // Cada jugador trae x (0 izquierda, 100 derecha) e y (0 línea propia,
@@ -3386,11 +3726,11 @@ const App=(()=>{
         const lado = visitante ? 100-p.x : p.x;
         const y = 10 + lado*0.80;
         const ap=p.name.split(' ').slice(-1)[0];
-        return `<div class="jug ${visitante?'vis':'loc'}" style="left:${prof}%;top:${y}%"
-          onclick="event.stopPropagation();App.jugador('${js(p.name)}',${p.id||'null'})"
+        return `<a class="jug ${visitante?'vis':'loc'}" style="left:${prof}%;top:${y}%"
+          href="${esc(Rutas.url(rutaJugador(p.name,p.id)))}" data-ir
           title="${esc(p.name)}${p.puesto?' · '+esc(p.puesto):''}">
           <span class="dorsal" style="${visitante?colVis:colLoc}">${p.n??''}</span>
-          <span class="ape">${esc(ap)}${iconos(p.name)}</span></div>`;
+          <span class="ape">${esc(ap)}${iconos(p.name)}</span></a>`;
       };
       const hayCancha=[...lu.home,...lu.away].some(p=>p.x!=null);
       const cancha=hayCancha?`<div class="cancha">
@@ -3583,8 +3923,9 @@ const App=(()=>{
     S.grupoAbierto=null; S.cuadroDesde=null;
     S.fasesLiga=(g.fasesLiga&&g.fasesLiga.length)?g.fasesLiga:null;
     if(S.fasesLiga&&!S.fasesLiga.some(f=>f.num===S.fase)) S.fase=null;
-    if(S.round==null||!g.rounds.includes(S.round))
-      S.round=g.current??g.rounds[g.rounds.length-1]??null;
+    if(S.fechaPedida!=null||S.round==null||!g.rounds.includes(S.round))
+      aplicarFechaPedida(g.current??g.rounds[g.rounds.length-1]??null);
+    fijarFechaEnLaDireccion();
     $('.tag').textContent=`${d.nombre} · ${d.torneo}`;
     drawRounds();
     pintarFecha();
@@ -3659,9 +4000,26 @@ const App=(()=>{
      arriba, la ida y la vuelta con sus goles como en la portada, y cada
      una se puede abrir para verla en detalle.                          */
   const serieId=k=>k.equipos.map(e=>e.team?sinTildes(e.team.canon||e.team.name):'?').join('|');
+  /* La misma llave, pero como pedazo de dirección: river-vs-boca. Se
+     guarda al dibujar el cuadro, así que para volver desde la dirección
+     alcanza con buscarla acá. */
+  const serieSlug=k=>slugTexto(k.equipos.map(e=>e.team?(e.team.canon||e.team.name):'x')
+                                        .join(' vs '));
+  const rutaSerie=k=>({t:'llave', liga:S.liga, slug:serieSlug(k)});
 
-  function drawSerie(id){
-    const k=S.series[id]; if(!k) return;
+  function drawSerie(d){
+    const slug=typeof d==='string'?d:d.slug;
+    const id=Object.keys(S.series).find(k=>serieSlug(S.series[k])===slug)||slug;
+    const k=S.series[id];
+    if(!k){
+      // llegó por el link a una llave de un torneo que todavía no está
+      // cargado: se carga el torneo y el cuadro la vuelve a registrar
+      if(typeof d==='object'&&d.liga&&S.liga!==d.liga){
+        S.modal=null;
+        return Rutas.ir({t:'liga', id:d.liga});
+      }
+      return;
+    }
     const [a,v]=k.equipos;
     const nom=e=>e.team?esc(e.team.canon||e.team.name):'Por definir';
     const pen=i=>k.penales?` <i style="font-size:11px;color:rgba(255,255,255,.65)">(${k.penales[i]})</i>`:'';
@@ -3678,7 +4036,10 @@ const App=(()=>{
           : `${quien(g)}${g.min}${g.added?'+'+g.added:''}'`}</span>`).join(''));
       // el local de ESTE partido, no el de la llave: en la vuelta se invierten
       const loc=p.home||{}, vis=p.away||{};
-      return `<div class="serie-p" onclick="App.openMatch('${js(p.id)}')">
+      const r=rutaPartido(p);
+      return `<${r?'a':'div'} class="serie-p"${r
+          ? ` href="${esc(Rutas.url(r))}" data-ir`
+          : ` onclick="App.openMatch('${js(p.id)}')"`}>
         <div class="cab"><b>${esc(p.tramo||'Partido')}</b>
           <span>${d?`${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`:''}${p.gh==null?'':' · Finalizado'}</span></div>
         <div class="m-fila">
@@ -3688,10 +4049,10 @@ const App=(()=>{
           <div class="side away"><span class="tn">${esc(vis.canon||vis.name||'')}</span>${crest(vis,18)}</div>
         </div>
         <div class="m-goles"><span>${lado('h')}</span><span>${lado('a')}</span></div>
-        <div class="ver">Ver el partido en detalle →</div></div>`;
+        <div class="ver">Ver el partido en detalle →</div></${r?'a':'div'}>`;
     }).join('');
 
-    $('#ov').classList.add('show'); document.body.style.overflow='hidden';
+    abrirCapa(false);
     $('#modalBox').innerHTML=`
       <div class="mhead">
         <div class="top"><span>La serie</span>
@@ -3715,7 +4076,11 @@ const App=(()=>{
           goles:(r.events||[]).filter(e=>e.type==='gol').map(e=>({
             player:e.player,min:e.min,added:e.added,side:e.side,
             anulado:!!e.anulado,penales:!!e.penales}))};
-      }).catch(()=>{}))).then(()=>{ if(S.series[id]) drawSerie(id); });
+      }).catch(()=>{}))).then(()=>{
+        // sólo si seguís mirando esta llave: si te fuiste, no se pisa nada
+        if(S.series[id]&&S.modal&&S.modal.t==='llave'&&S.modal.slug===slug)
+          drawSerie(slug);
+      });
   }
 
   /* El cuadro. Recibe qué llaves dibujar —las del torneo o las de la
@@ -4089,10 +4454,13 @@ const App=(()=>{
                otra vez para llegar al que uno quería. Ahí se va derecho. */
             const solo=k.partidos.length===1?k.partidos[0]:null;
             S.series[serieId(k)]=k;
-            cajas+=`<div class="brk" title="${esc(cuando)}" onclick="${solo
-                ? `App.openMatch('${js(String(solo.id))}')`
-                : `App.serie('${js(serieId(k))}')`}"
-              style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
+            const r=solo?rutaPartido(solo):rutaSerie(k);
+            cajas+=r
+              ? `<a class="brk" title="${esc(cuando)}" href="${esc(Rutas.url(r))}"
+                   data-ir style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</a>`
+              : `<div class="brk" title="${esc(cuando)}"
+                   onclick="App.openMatch('${js(String(solo&&solo.id))}')"
+                   style="${pos}">${lado(a,v,0)}${lado(v,a,1)}</div>`;
           }
         }
         // la línea hacia el cruce siguiente: sale, dobla y entra
@@ -4135,15 +4503,15 @@ const App=(()=>{
       </div></div>`;
     return `<div style="padding:0 14px 12px">
       <div class="cuadro-et">Goleadores</div>
-      ${rows.slice(0,10).map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;
+      ${rows.slice(0,10).map((r,i)=>`<a href="${esc(Rutas.url(rutaJugador(r.name,r.athleteId,r.team.name)))}"
+          data-ir style="display:flex;align-items:center;gap:8px;color:inherit;text-decoration:none;
           padding:5px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px;
-          ${estiloClub(r.team.canon||r.team.name)}"
-          onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
+          ${estiloClub(r.team.canon||r.team.name)}">
         <span style="color:var(--txt3);width:14px;font-size:11px">${i+1}</span>
         ${crest(r.team,18)}
         <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
           ${esc(r.name)}</span>
-        <b style="font-weight:800">${r.goals}</b></div>`).join('')}</div>`;
+        <b style="font-weight:800">${r.goals}</b></a>`).join('')}</div>`;
   }
 
   /* Las zonas llegan con el nombre de su fase adelante: "Segunda Fase -
@@ -4274,7 +4642,9 @@ const App=(()=>{
         ${det?'<th>Jug</th><th>Cab</th><th>TL</th><th>Pen</th>':''}</tr></thead><tbody>${
         d.goleadores.slice(0,30).map(r=>`<tr style="cursor:pointer" onclick="App.player('${js(r.name)}','${js(r.team.name)}')">
           <td class="pos">${r.rank}</td>
-          <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn"><b style="font-weight:600">${esc(r.name)}</b>
+          <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${
+            enlaceJugador(r.name,r.athleteId,r.team.name,'','color:inherit;text-decoration:none')
+            }<b style="font-weight:600">${esc(r.name)}</b></a>
             <span style="color:var(--txt2);font-size:11px;display:block;line-height:1.1">${esc(r.team.name)}</span>
           </span></div></td><td class="pts">${r.goals}</td>
           ${det?`<td style="color:var(--txt2)">${r.jugada??0}</td><td style="color:var(--txt2)">${r.cabeza??0}</td>
@@ -4292,7 +4662,8 @@ const App=(()=>{
     try{
       const rd=await get('/api/rounds');
       S.rounds=rd.rounds; S.current=rd.current; S.totalFechas=null;
-      if(S.round==null) S.round=rd.current;
+      if(S.fechaPedida!=null||S.round==null) aplicarFechaPedida(rd.current);
+      fijarFechaEnLaDireccion();
       S.failures=0;
       shell();
       drawSide();
@@ -4532,30 +4903,25 @@ const App=(()=>{
       document.documentElement.dataset.theme=localStorage.getItem('hayvar.theme')||'light';
       pintarSonido();
       medir.arrancar();
-      // si entraron por la dirección de un club (/belgrano), va directo ahí
-      const ruta=location.pathname.replace(/^\/|\/$/g,'');
-      if(ruta && ruta!=='index.html'){
-        S.liga='club';
-        loadClub(ruta.replace(/-/g,' '));
-      } else loadAll(true);
+      // La dirección manda: /belgrano abre el club, /liga-profesional el
+      // torneo, /partido/... el partido. Si no es ninguna de las nuestras
+      // —alguien escribió cualquier cosa— se entra por la portada.
+      history.replaceState({pasos:0},'',location.pathname+location.search);
+      const d=Rutas.leer();
+      if(!d){ history.replaceState({pasos:0},'','/'); return void aplicar({t:'home'}); }
+      // en frío la portada es la única que necesita el aviso de "primera
+      // carga", que es el que muestra la pantalla de sin conexión
+      if(d.t==='home'||(d.t==='liga'&&d.id==='lpf')){
+        S.fondo=d; S.liga=d.t==='home'?'home':d.id;
+        if(S.liga==='lpf'){ pestanasLpf(); S.fechaPedida=d.fecha||null; }
+        drawSide(); loadAll(true);
+      } else aplicar(d);
       cargarEmblemas();
       cargarClubes();
       // el club elegido se recuerda entre sesiones
       try{ const c=localStorage.getItem('hayvar.club'); if(c) setTimeout(()=>aplicarClub(JSON.parse(c)),50); }catch(e){}
     },
-    liga(id){
-      if(id===S.liga) return;
-      medir.seccion(id);
-      S.liga=id; S.round=null; S.tab=id==='lpf'?'A':'z0'; S.otra=null; S.scores={};
-      S.etapas=null;   // si venías de una copa, los rótulos eran etapas
-      clearTimeout(S.timer); clearTimeout(S.vivoTimer); drawSide(); api.menu(false);
-      if(id==='lpf'){
-        $('.tag').textContent='Liga Profesional · Clausura 2026';
-        $('#tabs').innerHTML=[['A','Zona A'],['B','Zona B'],['anual','Anual'],['prom','Promedios'],['gol','Goles']]
-          .map(([k,n],i)=>`<button data-t="${k}" class="${i===0?'on':''}" onclick="App.tab('${k}')">${n}</button>`).join('');
-      }
-      loadAll(false);
-    },
+    liga(id){ Rutas.ir(id==='home'?{t:'home'}:{t:'liga', id}); },
     homeDay(s){ S.homeDate=s?new Date(s+'T12:00:00'):new Date();
       if(!s){ const w=new Date(S.homeDate); w.setDate(w.getDate()-((w.getDay()+6)%7)); S.weekStart=w; }
       drawCal(); loadHome(); },
@@ -4598,7 +4964,7 @@ const App=(()=>{
       } else if(ev.key==='Escape'){ api.cerrarBuscador(); }
     },
     irClub(nombre){ api.cerrarBuscador(); api.club(nombre); },
-    irJugador(nombre){ api.cerrarBuscador(); openPlayer(nombre,'',null); },
+    irJugador(nombre){ api.cerrarBuscador(); api.player(nombre,'',null); },
     /* La lista completa de una estadística, desplegada abajo del eje.
        Se muestra el podio y, si el jugador está más abajo, su vecindario:
        ver los diez primeros no dice nada de alguien que salió 42°. */
@@ -4655,23 +5021,17 @@ const App=(()=>{
     grupo(z){ S.grupoAbierto=(S.grupoAbierto===z)?'__ninguno__':z; pintarFecha(); },
     // cambiar de fase en los torneos que la tienen (Federal A)
     fase(n){ S.fase=n; S.round=null; drawRounds(); pintarFecha(); },
-    serie(id){ navegar('serie',id); },
+    serie(id){ const k=S.series[id]; if(k) Rutas.ir(rutaSerie(k)); },
     girarKit(i){
       const p=document.getElementById('kit'+i); if(!p) return;
       const dado=p.dataset.girada==='1';
       p.dataset.girada=dado?'0':'1';
       p.style.transform='rotateY('+(dado?0:180)+'deg)';
     },
-    club(nombre){ S.liga='club'; location.hash=''; history.pushState({},'', '/'+
-      /* misma regla que el servidor: sin acentos, sin paréntesis y con
-         guiones. "Estudiantes (LP)" -> estudiantes-lp, que se puede pegar
-         en un mensaje sin que se rompa. */
-      nombre.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()
-        .replace(/['´`]/g,'')          // Newell's -> newells, sin cortar
-        .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''));
-      // si se entró desde el escudo dentro de un partido, el modal sobra
-      api.closeModal();
-      loadClub(nombre); },
+    // `nombre` viene con acentos y paréntesis; la dirección va sin. Se
+    // manda también el nombre entero para no tener que adivinarlo de
+    // vuelta a partir del slug.
+    club(nombre){ Rutas.ir({t:'club', slug:slugTexto(nombre), nombre}); },
     // correr el cuadro una ronda: hacia atrás entra el doble de llaves, así
     // que se redibuja más chico
     correrCuadro(d){
@@ -4682,15 +5042,18 @@ const App=(()=>{
     setClub(c){ aplicarClub(c); api.closeModal();
       medir.evento('modo_club',{club:c?c.name:'(ninguno)'});
       if(S.liga==='home') loadHome(); else if(S.liga==='lpf') drawRight(); },
-    pick(r){ S.round=r; drawRounds();
-      medir.evento('cambiar_fecha',{liga:S.liga, fecha:String(r)});
-      if(S.liga!=='lpf'){ pintarFecha(); return; }
-      loadRound().then(()=>{ const live=S.games.filter(m=>m.status==='LIVE').length; schedule(live>0); }); },
-    player(nombre,equipo,atletaId){ navegar('player',nombre,equipo,atletaId); },
-    jugador(nombre,atletaId){ navegar('player',nombre,'',atletaId); },
+    pick(r){ Rutas.ir({t:'liga', id:S.liga, fecha:r}); },
+    player(nombre,equipo,atletaId){
+      Rutas.ir({t:'jugador', slug:slugTexto(nombre), atleta:atletaId||null,
+                nombre, equipo:equipo||''}); },
+    jugador(nombre,atletaId){ api.player(nombre,'',atletaId); },
+    /* El "‹" del pop-up y la flecha de atrás del navegador son lo mismo.
+       Si no pusimos ninguna entrada de historial —se entró directo por el
+       link— ir para atrás sacaría al visitante del sitio, así que en ese
+       caso se lo lleva a la pantalla de abajo. */
     volverModal(){
-      if(S.pila.length>1){ S.pila.pop(); pintarPila(); }
-      else api.closeModal();
+      if(S.pasos>0) history.back();
+      else Rutas.ir(S.fondo||{t:'home'});
     },
     tab(t){
       // el cuadro del torneo y el de la previa tienen distinta cantidad de
@@ -4701,9 +5064,33 @@ const App=(()=>{
       S.liga==='lpf'?drawRight():drawOtra(); },
     onlyLive(){ S.onlyLive=!S.onlyLive; drawMatches(); },
     mtab(t){ mTab=t; drawModal(current(),false); },
-    openMatch(id){ navegar('match',id); },
-    closeModal(){ S.pila=[]; $('#ov').classList.remove('show');
-      document.body.style.overflow=''; },
+    // Los partidos que 365scores no tiene no se pueden abrir aparte: no
+    // hay nada que mostrar del otro lado del link. Ésos siguen siendo un
+    // pop-up sin dirección propia, y por eso no tocan el historial.
+    openMatch(id){
+      const cg=S.clubGames||{};
+      const igual=m=>m&&String(m.id)===String(id);
+      const m=S.games.find(igual)||[cg.envivo,cg.ultimo,cg.proximo].find(igual);
+      const r=m&&rutaPartido(m);
+      if(r) return Rutas.ir(r);
+      if(!m) return;
+      S.modal=null; mTab='res'; mData={sinDetalle:true}; mBase=m;
+      abrirCapa(false); drawModal(m,false);
+    },
+    /* Cerrar. Si el pop-up tiene dirección propia, cerrarlo es volver:
+       así la barra de direcciones no queda diciendo que estás en un
+       partido que ya cerraste. Los que no la tienen —el elegí-tu-club, un
+       partido sin detalle— se cierran y ya. */
+    closeModal(){
+      if(S.modal) return api.volverModal();
+      cerrarCapa();
+    },
+    /* Todo lo que la página sabe en este momento, para poder mirarlo desde
+       la consola del navegador: App.S.games, App.S.fondo, App.S.modal. No
+       lo usa nada de acá adentro. Sirve para dos cosas: entender qué está
+       pasando cuando algo se ve raro en el sitio publicado, y poder probar
+       la navegación de verdad en vez de leer el código y suponer. */
+    S,
     reload(){ clearTimeout(S.timer); loadAll(false); },
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';
       document.documentElement.dataset.theme=t; try{localStorage.setItem('hayvar.theme',t);}catch(e){} }

@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-22 · cada torneo, partido y jugador tiene su dirección propia"
+VERSION_APP = "2026-08-22 · la página no se vuelve a bajar en cada visita; medidor en /api/tiempos"
 
 
 def reparar_recorridos():
@@ -7377,6 +7377,9 @@ ROUTES = {
     "/api/promedios": api_promedios,
     "/api/scorers": api_scorers,
     "/api/match": api_match,
+    # se resuelve al llamarla porque se define más abajo, junto al resto de
+    # lo que tiene que ver con servir la página
+    "/api/tiempos": lambda q: api_tiempos(q),
 }
 
 
@@ -7453,6 +7456,71 @@ RUTAS_LIGA = {
 
 TITULO_BASE = "HAYVAR"
 LEMA = "Resultados en vivo, tablas y estadísticas del fútbol argentino y del mundo."
+
+# La página ya armada para cada dirección, con y sin comprimir. Ver _pagina.
+_PAGINAS = {}
+
+
+# ── Cuánto tarda cada cosa ───────────────────────────────────────────────
+#
+# "La página está lenta" no se arregla adivinando. Acá se anota cuánto tardó
+# cada ruta, cuántas veces se pidió y cuál fue la peor. Ocupa nada —una
+# entrada por ruta, cuatro números— y se mira en /api/tiempos.
+#
+# Se mide el tiempo del servidor solamente: desde que llega el pedido hasta
+# que se contesta. Lo que tarde el celular en dibujar no se ve desde acá,
+# pero si el servidor contesta en 40 ms y la página igual tarda tres
+# segundos, ya sabemos que el problema no está de este lado. Que es
+# justamente lo que hay que saber antes de tocar nada.
+_TIEMPOS = {}
+_tiempos_lock = threading.Lock()
+
+
+def anotar_tiempo(ruta, ms, bytes_=0):
+    with _tiempos_lock:
+        t = _TIEMPOS.get(ruta)
+        if t is None:
+            t = _TIEMPOS[ruta] = {"n": 0, "total": 0.0, "peor": 0.0,
+                                  "ultima": 0.0, "bytes": 0}
+        t["n"] += 1
+        t["total"] += ms
+        t["peor"] = max(t["peor"], ms)
+        t["ultima"] = ms
+        t["bytes"] = max(t["bytes"], bytes_)
+
+
+def api_tiempos(q):
+    """
+    Dónde se van los segundos. /api/tiempos
+
+    Ordenado por lo que más tiempo consumió en total, que no es lo mismo que
+    lo más lento: una ruta de 20 ms que se pide mil veces pesa más que una
+    de dos segundos que se pide una vez.
+    """
+    with _tiempos_lock:
+        filas = [{"ruta": r, "veces": t["n"],
+                  "promedio_ms": round(t["total"] / t["n"]),
+                  "peor_ms": round(t["peor"]),
+                  "ultima_ms": round(t["ultima"]),
+                  "kb": round(t["bytes"] / 1024, 1),
+                  "total_s": round(t["total"] / 1000, 1)}
+                 for r, t in _TIEMPOS.items() if t["n"]]
+    filas.sort(key=lambda x: -x["total_s"])
+    return {"rutas": filas,
+            "fondo": dict(_ESTADO_FONDO),
+            "memoria": {"respuestas": len(_cache),
+                        "megas": round(_cache_bytes / 1048576, 1)},
+            "arriba_hace_s": round(time.time() - _ARRANCO),
+            "como": ("promedio_ms es lo que tarda el servidor en armar la "
+                     "respuesta. Si es chico y la página igual tarda, el "
+                     "tiempo se va en la red o en el navegador.")}
+
+
+_ARRANCO = time.time()
+# Qué está haciendo el recolector de fondo ahora mismo. Sirve para saber si
+# la lentitud es porque está bajando medio calendario mientras alguien mira.
+_ESTADO_FONDO = {"vuelta": 0, "haciendo": "sin arrancar", "desde": None,
+                 "historia_al_dia": False, "recorriendo": False}
 
 
 def escapar(t):
@@ -7569,6 +7637,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
+            self._ultimo_tamano = len(body)
             self.wfile.write(body)
         except self.SE_FUE:
             self.close_connection = True
@@ -7584,6 +7653,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        self._ultimo_tamano = len(body)
         self.wfile.write(body)
 
     def _pagina(self, path):
@@ -7594,9 +7664,22 @@ class Handler(SimpleHTTPRequestHandler):
         para todas las direcciones. Pero este pedacito importa más de lo
         que parece, porque es lo que ve el que no ejecuta el javascript —
         Google, y la vista previa de WhatsApp cuando alguien pega el link—.
+
+        Cada respuesta se guarda ya armada y comprimida. Sin eso, cada
+        visita leía 250 KB del disco, corría una expresión regular sobre
+        todo el archivo y lo volvía a comprimir —y el resultado depende
+        sólo de la dirección, así que era todo trabajo repetido—. Se
+        rearma cuando index.html cambia de fecha, así que publicar una
+        versión nueva se sigue viendo al recargar.
         """
+        gz = self._acepta_gzip()
         try:
-            with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
+            archivo = os.path.join(HERE, "index.html")
+            marca = os.path.getmtime(archivo)
+            hecha = _PAGINAS.get((path, gz))
+            if hecha and hecha[0] == marca:
+                return self._enviar_pagina(hecha[1], hecha[2], marca)
+            with open(archivo, encoding="utf-8") as f:
                 html = f.read()
         except OSError:
             self.send_error(404)
@@ -7620,40 +7703,72 @@ class Handler(SimpleHTTPRequestHandler):
                           lambda _: "<!--CABEZA-->\n%s\n<!--/CABEZA-->" % cabeza,
                           html, count=1, flags=re.S)
         body, enc = self._comprimir(html.encode("utf-8"))
+        # Son 48 direcciones y dos variantes (con y sin comprimir): no hay
+        # nada que vaciar, pero por si algún día aparece una dirección por
+        # partido se le pone tope y se empieza de nuevo.
+        if len(_PAGINAS) > 300:
+            _PAGINAS.clear()
+        _PAGINAS[(path, gz)] = (marca, body, enc)
+        return self._enviar_pagina(body, enc, marca)
+
+    def _enviar_pagina(self, body, enc, marca=0):
+        """
+        Manda la página, o dice "no cambió" si el visitante ya la tiene.
+
+        Esto es lo que más se nota de todo lo que hay acá. La página pesa
+        85 KB comprimida, y hasta ahora se mandaba entera en cada visita:
+        se pedía revalidar pero no se le daba al navegador con qué
+        compararla, así que la revalidación siempre terminaba en "tomá,
+        todo de nuevo". Con la etiqueta, el navegador pregunta "¿sigue
+        siendo ésta?" y la respuesta son doscientos bytes. Ochenta y cinco
+        kilos menos por visita, en la conexión de un celular.
+
+        Sigue revalidando en cada visita a propósito: si subís una versión
+        nueva, la etiqueta cambia y se ve al recargar. No se cambia por un
+        caché largo porque eso deja gente mirando una versión vieja
+        durante horas, que es peor que un viaje de ida y vuelta corto.
+        """
+        etiqueta = '"%s-%x"' % (int(marca), len(body))
+        if (self.headers.get("If-None-Match") or "").strip() == etiqueta:
+            self.send_response(304)
+            self.send_header("ETag", etiqueta)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self._ultimo_tamano = 0
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("ETag", etiqueta)
         if enc:
             self.send_header("Content-Encoding", enc)
             self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
-
-    def _archivo(self, ruta, ctype):
-        """
-        Sirve un archivo del proyecto comprimido. La página pesa 104 KB y
-        gzipeada baja a 31: es la diferencia más barata de conseguir.
-        """
-        try:
-            with open(ruta, "rb") as f:
-                body = f.read()
-        except OSError:
-            self.send_error(404)
-            return
-        body, enc = self._comprimir(body)
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        # se revalida siempre: si sube una versión nueva, se ve al recargar
-        self.send_header("Cache-Control", "no-cache")
-        if enc:
-            self.send_header("Content-Encoding", enc)
-            self.send_header("Vary", "Accept-Encoding")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
+        self._ultimo_tamano = len(body)
         self.wfile.write(body)
 
     def do_GET(self):
+        arranque = time.time()
+        try:
+            return self._responder()
+        finally:
+            # Se anota siempre, aunque la respuesta haya fallado: un error
+            # que tarda cuatro segundos es tan interesante como un acierto
+            # que tarda cuatro segundos.
+            ruta = urlparse(self.path).path.rstrip("/") or "/"
+            if ruta.startswith("/img/"):
+                ruta = "/img/…"            # son cientos, se cuentan juntos
+            elif ruta.startswith("/partido/"):
+                ruta = "/partido/…"
+            elif ruta.startswith("/jugador/"):
+                ruta = "/jugador/…"
+            elif not ruta.startswith("/api/") and ruta != "/":
+                ruta = "(la página)"
+            anotar_tiempo(ruta, (time.time() - arranque) * 1000,
+                          getattr(self, "_ultimo_tamano", 0))
+
+    def _responder(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         q = parse_qs(parsed.query)
@@ -7678,6 +7793,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=604800")
             self.send_header("Content-Length", str(len(datos)))
             self.end_headers()
+            self._ultimo_tamano = len(datos)
             self.wfile.write(datos)
             return
 
@@ -7897,17 +8013,30 @@ def rescatar_todo():
     # hasta que alguien los abriera a mano, que es peor: significa que la
     # base se llena sólo si hay visitas—. Una fecha entera son quince
     # partidos y entran en una sola pasada.
+    #
+    # Ojo con una cosa que ya me mordió: acá se juntan dos trabajos muy
+    # distintos. Recorrer los calendarios es carísimo —cada página del
+    # fixture de una copa son varios megas de JSON— y buscar los autores de
+    # los goles es barato. Estaban atados al mismo semáforo: si quedaban
+    # goles por buscar, el programa entendía que "falta historia" y se
+    # ponía a recorrer todos los calendarios cada sesenta segundos. En una
+    # máquina de medio procesador eso es todo el procesador, y la página se
+    # arrastra para el que está mirándola. Ahora cada uno tiene su ritmo.
     VUELTAS_SEGUIDAS = 12
-    vuelta, al_dia = 0, False
+    vuelta, historia_al_dia = 0, False
     while True:
         vuelta += 1
         pendientes, goles_pendientes = 0, 0
-        # Recorrer el calendario entero es lo caro: cada página del fixture
-        # de una copa son varios megas. Mientras falte historia se hace en
-        # cada vuelta, pero una vez al día basta con mirarlo de vez en
-        # cuando —lo que se juega nuevo lo levantan igual los dos
-        # recolectores de abajo, que piden el fixture ya resumido—.
-        recorrer = (not al_dia) or vuelta % 8 == 0
+        # Mientras falte historia se recorre en cada vuelta; una vez
+        # completa, basta con mirarlo de vez en cuando —lo que se juega
+        # nuevo lo levantan igual los dos recolectores de abajo, que piden
+        # el fixture ya resumido—.
+        recorrer = (not historia_al_dia) or vuelta % 8 == 0
+        _ESTADO_FONDO.update(vuelta=vuelta, recorriendo=recorrer,
+                             historia_al_dia=historia_al_dia,
+                             haciendo="recorriendo calendarios" if recorrer
+                                      else "buscando goles",
+                             desde=time.strftime("%H:%M:%S"))
         for lid, cfg in (LIGAS.items() if recorrer else ()):
           # las previas de la Champions son otra competencia: se recorren igual
           for comp in comps_de(cfg):
@@ -7974,20 +8103,30 @@ def rescatar_todo():
                       % ("Liga Profesional", n), flush=True)
         except Exception:
             pass
-        # Cuando no queda historia por traer ni goles por buscar, baja el
-        # ritmo pero no se va: lo que se juegue de acá en más entra solo.
+        # Lo de los calendarios se decide sólo con los calendarios. Es la
+        # línea que faltaba: antes un gol pendiente bastaba para que se
+        # volvieran a recorrer todos, cada minuto, para siempre.
+        if recorrer:
+            if not pendientes and not historia_al_dia:
+                print("  Historia completa: de acá en más miro los "
+                      "calendarios cada tanto\n", flush=True)
+            historia_al_dia = not pendientes
+        _ESTADO_FONDO.update(historia_al_dia=historia_al_dia,
+                             haciendo="esperando")
+
+        # Y el ritmo: rápido sólo mientras falte historia, que es lo que
+        # conviene apurar. Buscar goles es barato pero no urgente, y
+        # hacerlo cada minuto le come el procesador al que está mirando la
+        # página. Cada cinco alcanza.
         if not pendientes and not goles_pendientes:
-            if not al_dia:
-                print("  Historia completa: de acá en más miro cada 15 "
-                      "minutos si se jugó algo nuevo\n", flush=True)
-                al_dia = True
             time.sleep(900)
-            continue
-        al_dia = False
-        if vuelta == VUELTAS_SEGUIDAS:
-            print("  Quedan %d recorridos sin terminar: sigo cada 15 minutos\n"
-                  % pendientes, flush=True)
-        time.sleep(60 if vuelta < VUELTAS_SEGUIDAS else 900)
+        elif not pendientes:
+            time.sleep(300)             # sólo quedan goles por buscar
+        else:
+            if vuelta == VUELTAS_SEGUIDAS:
+                print("  Quedan %d recorridos sin terminar: sigo cada 15 "
+                      "minutos\n" % pendientes, flush=True)
+            time.sleep(60 if vuelta < VUELTAS_SEGUIDAS else 900)
 
 
 def main():

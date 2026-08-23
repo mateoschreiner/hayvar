@@ -1566,7 +1566,7 @@ server._cache.clear(); server._cache_bytes = 0
 # Recorrer el calendario entero es lo caro. Una vez al día, alcanza con
 # mirarlo de vez en cuando.
 chequear("el rescate deja de recorrer el calendario cuando está al día",
-         "recorrer = (not al_dia) or vuelta % 8 == 0" in _SRV)
+         "recorrer = (not historia_al_dia) or vuelta % 8 == 0" in _SRV)
 
 
 print("\n── las estadísticas se juntan solas ──")
@@ -1589,8 +1589,8 @@ chequear("va a buscar los partidos terminados que no tienen estadísticas",
 chequear("y no vuelve a pedir los que ya están", _hechos == 1, _hechos)
 chequear("el rescate no se va cuando se pone al día",
          "Historia completa: no queda nada por traer" not in _SRV
-         and re.search(r"al_dia = True\n\s+time\.sleep\(900\)\n\s+continue", _SRV)
-         is not None)
+         and re.search(r"if not pendientes and not goles_pendientes:\n"
+                       r"\s+time\.sleep\(900\)", _SRV) is not None)
 
 
 print("\n── la bandera del plantel ──")
@@ -1983,6 +1983,39 @@ console.log(JSON.stringify({ruta:loc.pathname,
              and not _tibio["entera"], _tibio)
 else:
     print("  · sin node: el enrutador de la página no se probó")
+
+
+print("\n── que no tarde ──")
+# "La página está lenta" no se arregla adivinando. Estas tres son las que
+# cambian de verdad cuánto se espera.
+server._TIEMPOS.clear()
+server.anotar_tiempo("/api/x", 120.0, 4096)
+server.anotar_tiempo("/api/x", 80.0, 2048)
+_t = server.api_tiempos({})["rutas"][0]
+chequear("se anota cuánto tarda cada ruta",
+         _t["veces"] == 2 and _t["promedio_ms"] == 100 and _t["peor_ms"] == 120,
+         _t)
+chequear("y se puede ver qué está haciendo el recolector de fondo",
+         "fondo" in server.api_tiempos({}))
+server._TIEMPOS.clear()
+
+# Lo que más se nota: la página pesa 85 KB comprimida y se mandaba entera en
+# cada visita, porque se pedía revalidar sin dar con qué comparar.
+chequear("la página lleva etiqueta, para que el navegador no la baje dos veces",
+         'etiqueta = \'"%s-%x"\' % (int(marca), len(body))' in _SRV
+         and 'If-None-Match' in _SRV and "self.send_response(304)" in _SRV)
+chequear("y se guarda ya armada en vez de releerla y recomprimirla",
+         "_PAGINAS[(path, gz)] = (marca, body, enc)" in _SRV
+         and "if hecha and hecha[0] == marca:" in _SRV)
+
+# El error que casi seguro estaba frenando el sitio: un gol pendiente hacía
+# que el recolector creyera que faltaba historia, y se ponía a bajar todos
+# los calendarios cada sesenta segundos.
+chequear("los goles pendientes ya no despiertan al recorredor de calendarios",
+         "historia_al_dia = not pendientes" in _SRV
+         and "recorrer = (not historia_al_dia) or vuelta % 8 == 0" in _SRV)
+chequear("y buscar goles solo va cada cinco minutos, no cada uno",
+         "elif not pendientes:" in _SRV and "time.sleep(300)" in _SRV)
 
 
 print("\n" + ("Todo bien." if not fallas

@@ -2018,6 +2018,52 @@ chequear("y buscar goles solo va cada cinco minutos, no cada uno",
          "elif not pendientes:" in _SRV and "time.sleep(300)" in _SRV)
 
 
+print("\n── el marcador y los goles cuentan lo mismo ──")
+# El marcador sale de la lista de partidos y los goles del detalle de cada
+# uno, y no se piden al mismo tiempo. Cuando entra un gol, el detalle se
+# entera primero: la fila de Newell's decía 0-0 con "Cóccaro 51'" escrito
+# abajo. Los dos datos eran ciertos; mostrarlos juntos era el error.
+if _sh.which("node"):
+    # se saca la función tal cual está en la página y se la corre con un S
+    # de mentira: prueba la cuenta de verdad, no el texto del código
+    _d = HTML.index("  function marcadorVivo(m){")
+    _h = HTML.index("  const claseLado=(m,local)=>{")
+    _js = ("const S={detalles:{}};\n" + HTML[_d:_h] + """
+const gol=(side,anulado)=>({side, min:51, player:'Cóccaro', anulado,
+                            penales:false});
+const vivo={id:'x', status:'LIVE', gh:0, ga:0};
+S.detalles={x:{goles:[gol('h',false)]}};
+const conGol=marcadorVivo(vivo);
+S.detalles={x:{goles:[gol('h',true)]}};       // el VAR lo anula
+const anulado=marcadorVivo(vivo);
+S.detalles={x:{goles:[{side:'h',min:10,player:'',anulado:false,penales:false}]}};
+const terminado=marcadorVivo({id:'x', status:'FIN', gh:2, ga:3});
+console.log(JSON.stringify({conGol, anulado, terminado,
+  pinta:htmlMarcador(vivo).indexOf('0-0')}));
+""")
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_js); _rr = _f.name
+    _s = _sub.run(["node", _rr], capture_output=True, text=True)
+    os.unlink(_rr)
+    _marc = json.loads(_s.stdout) if _s.returncode == 0 else None
+    chequear("la cuenta del marcador corre", _marc is not None,
+             _s.stderr.strip().splitlines()[:2])
+    if _marc:
+        chequear("un gol que todavía no llegó al marcador igual se cuenta",
+                 _marc["conGol"] == {"gh": 1, "ga": 0}, _marc["conGol"])
+        chequear("y si lo anulan, vuelve a mandar el marcador oficial",
+                 _marc["anulado"] == {"gh": 0, "ga": 0}, _marc["anulado"])
+        chequear("terminado el partido manda siempre el oficial",
+                 _marc["terminado"] == {"gh": 2, "ga": 3}, _marc["terminado"])
+        chequear("y la fila ya no puede decir 0-0 con un gol escrito abajo",
+                 _marc["pinta"] == -1, _marc["pinta"])
+chequear("el marcador nunca va para atrás",
+         "Math.max(m.gh??0, cuantos('h'))" in HTML)
+chequear("y al llegar los goles se repinta la fila, no sólo el pie",
+         "if(m.status==='LIVE') actualizarFila(fila,m);" in HTML)
+
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

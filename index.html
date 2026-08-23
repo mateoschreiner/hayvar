@@ -2922,14 +2922,39 @@ const App=(()=>{
     const d=new Date(m.start);
     return `<div class="m-time">${hhmm(m.start)}<span class="st">${DOW[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}</span></div>`;
   }
+  /* El marcador de un partido en curso.
+
+     Hay dos fotos que no se sacan al mismo tiempo: el marcador viene de la
+     lista de partidos y los goles del detalle de cada uno. Cuando entra un
+     gol, el detalle se entera primero, y durante unos segundos la fila
+     decía "0-0" con el gol escrito justo abajo —pasó con Newell's, con el
+     gol de Cóccaro a los 51' y el partido marcando 49'—. Ninguna de las
+     dos estaba equivocada; el problema era mostrarlas juntas.
+
+     Se muestra el mayor de los dos: el marcador oficial y la cuenta de los
+     goles que estamos mostrando. Así la fila nunca se contradice a sí
+     misma. Y sólo puede ir hacia arriba: si el VAR anula uno, el gol queda
+     marcado como anulado, deja de contar, y vuelve a mandar el oficial.
+
+     Sólo para los partidos en curso. Terminado un partido, el marcador
+     oficial manda siempre, aunque nos falte el autor de algún gol. */
+  function marcadorVivo(m){
+    if(m.status!=='LIVE') return {gh:m.gh, ga:m.ga};
+    const d=S.detalles[m.id];
+    if(!d||!d.goles) return {gh:m.gh, ga:m.ga};
+    const cuantos=s=>d.goles.filter(g=>g.side===s&&!g.anulado&&!g.penales).length;
+    return {gh:Math.max(m.gh??0, cuantos('h')), ga:Math.max(m.ga??0, cuantos('a'))};
+  }
   function htmlMarcador(m){
-    return m.gh==null ? `<div class="m-score pend">vs</div>`
-                      : `<div class="m-score ${m.status==='LIVE'?'live':''}">${m.gh}-${m.ga}</div>`;
+    if(m.gh==null) return `<div class="m-score pend">vs</div>`;
+    const {gh,ga}=marcadorVivo(m);
+    return `<div class="m-score ${m.status==='LIVE'?'live':''}">${gh}-${ga}</div>`;
   }
   const claseLado=(m,local)=>{
     const decidido=m.status==='FIN'||m.status==='LIVE';
-    const gana=decidido&&(local ? m.gh>m.ga : m.ga>m.gh);
-    const pierde=decidido&&(local ? m.gh<m.ga : m.ga<m.gh);
+    const {gh,ga}=marcadorVivo(m);
+    const gana=decidido&&(local ? gh>ga : ga>gh);
+    const pierde=decidido&&(local ? gh<ga : ga<gh);
     return `side ${local?'':'away '}${gana?'win':''}${pierde?'lose':''}`.replace(/\s+/g,' ').trim();
   };
 
@@ -3030,6 +3055,10 @@ const App=(()=>{
       if(!m) return;
       const viejo=fila.querySelector('.m-extra');
       if(viejo) reemplazar(viejo,htmlExtras(m));
+      // Si el gol que acaba de aparecer todavía no está en el marcador, hay
+      // que repintarlo también: si no, la fila queda diciendo 0-0 con el
+      // gol escrito abajo hasta la próxima actualización general.
+      if(m.status==='LIVE') actualizarFila(fila,m);
     });
   }
 

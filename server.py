@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-22 · la página no se vuelve a bajar en cada visita; medidor en /api/tiempos"
+VERSION_APP = "2026-08-22 · la página no se rebaja en cada visita, y el marcador no se contradice con los goles"
 
 
 def reparar_recorridos():

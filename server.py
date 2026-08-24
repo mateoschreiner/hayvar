@@ -34,6 +34,7 @@ Sólo biblioteca estándar.
 import base64
 import datetime as dt
 import gzip
+import hmac
 import json
 import os
 import re
@@ -95,6 +96,69 @@ def _leer_clave():
 
 
 APIFOOTBALL_KEY = _leer_clave()
+
+
+# ── Las puertas de servicio ──────────────────────────────────────────────
+#
+# Hay rutas que no son para los visitantes. Una de ellas, /api/recorrido
+# con reconstruir=todo, borra los partidos de los dieciséis torneos y los
+# vuelve a bajar de cero: meses de datos. Y encima se autodocumenta, así
+# que cualquiera que la abriera de curioso leía en la respuesta cómo
+# hacerlo. Otra, /api/raw, es un pasamanos a 365scores usando este
+# servidor: si alguien la golpea, el que queda bloqueado sos vos.
+#
+# Ahora piden una llave. Vive en la variable HAYVAR_LLAVE del hosting o en
+# un archivo llave.txt al lado del código; nunca adentro del código, igual
+# que la clave de API-Football.
+#
+# Dos decisiones que valen la pena explicar:
+#
+#   · En la compu de uno quedan abiertas. Ahí no hay a quién esconderle
+#     nada, y tener que pegar una llave para mirar /api/tiempos mientras
+#     uno trabaja es la clase de fricción que termina en "lo dejo abierto".
+#     Se distingue por el puerto: los hostings lo pasan en PORT, la compu
+#     de uno no.
+#
+#   · Si no hay llave puesta y estamos publicados, quedan CERRADAS, no
+#     abiertas. Olvidarse de configurarla tiene que romper algo tuyo, no
+#     dejar la puerta abierta sin que nadie se entere.
+def _leer_llave():
+    k = os.environ.get("HAYVAR_LLAVE", "").strip()
+    if k:
+        return k
+    try:
+        with open(os.path.join(HERE, "llave.txt"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+LLAVE = _leer_llave()
+EN_CASA = not os.environ.get("PORT")
+
+# Lo que borra, lo que gasta plata o cupo, y lo que cuenta cómo estamos
+# hechos por dentro.
+PRIVADAS = {
+    "/api/recorrido",     # borra y vuelve a bajar torneos enteros
+    "/api/raw",           # pasamanos a 365scores con nuestro servidor
+    "/api/contenido",     # qué hay adentro de la base
+    "/api/diagnostico",   # estado de la clave y del plan
+    "/api/tiempos",       # cuánto tarda cada cosa y cuánto tráfico hay
+}
+
+
+def con_llave(q, headers=None):
+    """¿Este pedido tiene permiso para las puertas de servicio?"""
+    if EN_CASA:
+        return True
+    if not LLAVE:
+        return False
+    dada = (q.get("llave") or [""])[0]
+    if not dada and headers is not None:
+        dada = headers.get("X-Llave") or ""
+    # comparación de tiempo constante: comparar con == deja medir, por lo
+    # que tarda en fallar, cuántos caracteres del principio acertaste
+    return hmac.compare_digest(dada.strip(), LLAVE)
 
 # ─────────────────────────────────────────────────────────────────────────
 # Zonas del Clausura 2026 (sorteo AFA, fijas todo el torneo)
@@ -3350,7 +3414,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · todo lo que se pide seguido contesta al toque, y el primer pedido sale antes de leer el programa"
+VERSION_APP = "2026-08-24 · las puertas de servicio piden llave: lo que borra o gasta ya no está abierto"
 
 
 def reparar_recorridos():
@@ -8047,6 +8111,19 @@ class Handler(SimpleHTTPRequestHandler):
             self._ultimo_tamano = len(datos)
             self.wfile.write(datos)
             return
+
+        # Las puertas de servicio, antes que nada. Va acá arriba a propósito:
+        # si el control estuviera más abajo, alcanzaría con que alguien
+        # agregue una ruta nueva en el lugar equivocado para saltearlo.
+        if path in PRIVADAS and not con_llave(q, self.headers):
+            return self._json(
+                {"error": "Esta dirección no es pública.",
+                 "porque": ("Borra datos, gasta cupo de las fuentes o cuenta "
+                            "cómo está hecho el servidor por dentro."),
+                 "comoEntrar": ("Agregá ?llave=… o mandá el encabezado "
+                                "X-Llave. La llave se pone en la variable "
+                                "HAYVAR_LLAVE del hosting."),
+                 "configurada": bool(LLAVE)}, 403)
 
         # passthrough crudo para inspeccionar la API: /api/raw?path=games/results
         if path == "/api/raw":

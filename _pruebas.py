@@ -1852,7 +1852,8 @@ chequear("y api_atleta acepta el slug de la dirección",
 # mismo, porque si no, entrar por un link y después tocar algo te cambiaría
 # la dirección sin motivo.
 import shutil as _sh, subprocess as _sub, tempfile as _tmp
-if _sh.which("node"):
+_DOMSITO = os.path.join(AQUI, "_domsito.js")
+if _sh.which("node") and os.path.exists(_DOMSITO):
     _i = HTML.index("  const LIGA_RUTA=")
     _j = HTML.index("  /* La única puerta de entrada")
     _casos = ["/", "/liga-profesional", "/liga-profesional/fecha-5",
@@ -1914,7 +1915,7 @@ App.player('Enzo Fernández','River',8167);  paso('abre un jugador');
 historial.back();                           paso('atrás');
 console.log(JSON.stringify(salida));
 """
-    _guion2 = (open(os.path.join(AQUI, "_domsito.js"), encoding="utf-8").read()
+    _guion2 = (open(_DOMSITO, encoding="utf-8").read()
                + "\nglobalThis.document=doc; globalThis.window=win;"
                  "\nglobalThis.location=loc; globalThis.history=historial;"
                  "\nglobalThis.localStorage=almacenLocal;"
@@ -1952,7 +1953,7 @@ console.log(JSON.stringify(salida));
     # tiene que ocupar la página, y cerrarlo tiene que llevarlo a la
     # portada en vez de sacarlo del sitio.
     def _correr(js_extra):
-        _g = (open(os.path.join(AQUI, "_domsito.js"), encoding="utf-8").read()
+        _g = (open(_DOMSITO, encoding="utf-8").read()
               + "\nglobalThis.document=doc; globalThis.window=win;"
                 "\nglobalThis.location=loc; globalThis.history=historial;"
                 "\nglobalThis.localStorage=almacenLocal;"
@@ -2166,6 +2167,56 @@ chequear("cada partido se copia antes de etiquetarlo",
          "return [dict(g) for g in games" in _SRV)
 chequear("un día que ya pasó no se rearma cada diez segundos",
          "if not hoy:\n            return 600" in _SRV)
+
+
+print("\n── las puertas de servicio están cerradas ──")
+# /api/recorrido?reconstruir=todo&confirmar=si borra los partidos de los
+# dieciséis torneos. Y se autodocumenta: el que la abría de curioso leía en
+# la respuesta cómo hacerlo. Antes de publicar la página hay que cerrarla.
+chequear("lo que borra o gasta está en la lista de privadas",
+         server.PRIVADAS == {"/api/recorrido", "/api/raw", "/api/contenido",
+                             "/api/diagnostico", "/api/tiempos"},
+         sorted(server.PRIVADAS))
+chequear("el control va antes de resolver la ruta, no después",
+         _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")
+         < _SRV.index('if path == "/api/raw":'))
+chequear("y la llave no está escrita en el código",
+         'os.environ.get("HAYVAR_LLAVE"' in _SRV
+         and "llave.txt" in open(os.path.join(AQUI, ".gitignore"),
+                                 encoding="utf-8").read())
+
+# En la compu de uno quedan abiertas; publicado, cerradas.
+_casa, _llave = server.EN_CASA, server.LLAVE
+server.EN_CASA = True
+chequear("en la compu de uno se puede entrar sin llave",
+         server.con_llave({}) is True)
+server.EN_CASA, server.LLAVE = False, "abracadabra"
+chequear("publicado, sin llave no se entra",
+         server.con_llave({}) is False)
+chequear("con la llave equivocada tampoco",
+         server.con_llave({"llave": ["abracadabr"]}) is False)
+chequear("con la llave correcta sí",
+         server.con_llave({"llave": ["abracadabra"]}) is True)
+chequear("y también sirve mandarla como encabezado",
+         server.con_llave({}, {"X-Llave": "abracadabra"}) is True)
+# Fallar cerrado: si nadie configuró la llave, no se abre igual.
+server.LLAVE = ""
+chequear("si se olvidaron de poner la llave, queda cerrado y no abierto",
+         server.con_llave({"llave": [""]}) is False
+         and server.con_llave({}) is False)
+server.EN_CASA, server.LLAVE = _casa, _llave
+
+# Y lo que sí es público tiene que seguir siéndolo, o la página se cae.
+chequear("las rutas que usa la página siguen abiertas",
+         not (server.PRIVADAS & {"/api/home", "/api/games", "/api/rounds",
+                                 "/api/standings", "/api/annual",
+                                 "/api/promedios", "/api/scorers",
+                                 "/api/liga", "/api/liga/games", "/api/match",
+                                 "/api/detalles", "/api/club", "/api/clubes",
+                                 "/api/club-info", "/api/atleta",
+                                 "/api/buscar", "/api/ligas"}))
+chequear("y el chequeo de salud de Render también",
+         "/api/ligas" not in server.PRIVADAS)
 
 
 print("\n── abrir de cero: los dos viajes se superponen ──")

@@ -12,3 +12,14 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      # La llave de las puertas de servicio: /api/recorrido, /api/raw,
+      # /api/contenido, /api/diagnostico y /api/tiempos. Sin ella, esas
+      # direcciones quedan cerradas para todos —incluido vos—, que es lo
+      # que corresponde: olvidarse de ponerla tiene que romper algo tuyo y
+      # no dejar la puerta abierta.
+      #
+      # generateValue le pide a Render que invente una al crear el
+      # servicio. Queda en el panel, en Environment, para copiarla cuando
+      # la necesites. Así no pasa por el repositorio ni por un chat.
+      - key: HAYVAR_LLAVE
+        generateValue: true

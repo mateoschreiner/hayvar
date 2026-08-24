@@ -2032,6 +2032,40 @@ chequear("y buscar goles solo va cada cinco minutos, no cada uno",
          "elif not pendientes:" in _SRV and "time.sleep(300)" in _SRV)
 
 
+print("\n── la ficha del jugador es la misma se entre por donde se entre ──")
+# El mismo jugador abierto desde la formación de un partido salía completo, y
+# abierto desde el plantel del club salía sin partidos, sin goles y sin
+# gráfico. La página manda el torneo que uno está mirando, y desde la ficha
+# de un club eso es "club", que no es un torneo: todas las búsquedas de
+# abajo se hacían contra una liga que no existe.
+server.almacen.guardar("pj:lpf:enzo perez", {"n": 7, "ids": ["1"] * 7})
+chequear("desde la ficha de un club se resuelve el torneo de verdad",
+         server.liga_del_jugador("Enzo Pérez", "club") == "lpf")
+chequear("y desde la portada también",
+         server.liga_del_jugador("Enzo Pérez", "home") == "lpf")
+chequear("si mandan un torneo de verdad, ese manda",
+         server.liga_del_jugador("Enzo Pérez", "nacional") == "nacional")
+chequear("y de un desconocido no se inventa nada raro",
+         server.liga_del_jugador("Nadie Conocido", "club") == "lpf")
+# el que jugó en dos: gana donde más jugó
+server.almacen.guardar("pj:lpf:juan viaja", {"n": 2, "ids": ["1", "2"]})
+server.almacen.guardar("pj:nacional:juan viaja", {"n": 9, "ids": ["1"] * 9})
+chequear("el que jugó en dos torneos se busca donde más jugó",
+         server.liga_del_jugador("Juan Viaja", "club") == "nacional")
+
+# Y la prueba que importa: las dos puertas tienen que dar lo mismo.
+_fetch_real2 = server.fetch
+server.fetch = lambda *a, **k: (_ for _ in ()).throw(OSError("sin fuente"))
+_desde_club = server.api_atleta({"name": ["Enzo Pérez"], "liga": ["club"]})
+_desde_part = server.api_atleta({"name": ["Enzo Pérez"], "liga": ["lpf"]})
+server.fetch = _fetch_real2
+chequear("los partidos jugados ya no dependen de por dónde entraste",
+         _desde_club.get("pj") == _desde_part.get("pj") == 7,
+         (_desde_club.get("pj"), _desde_part.get("pj")))
+chequear("y la ficha dice de qué torneo salieron los números",
+         _desde_club.get("liga") == "lpf", _desde_club.get("liga"))
+
+
 print("\n── la portada no hace esperar ──")
 # Medía 9,4 segundos de promedio y 40 el peor caso. La causa: cada visita
 # armaba todo de nuevo, once ligas una tras otra. Dos cambios: se piden a la

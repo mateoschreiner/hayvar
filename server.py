@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · la portada contesta al toque, y el canal de TV aparece cuando lo publican"
+VERSION_APP = "2026-08-24 · portada al toque, canal de TV cuando lo publican, y la ficha del jugador igual desde donde sea"
 
 
 def reparar_recorridos():
@@ -5912,6 +5912,36 @@ def _nombre_de_slug(slug, lid):
     return slug.replace("-", " ")
 
 
+def liga_del_jugador(nombre, pedida=None):
+    """
+    En qué torneo hay que buscar los datos de este jugador.
+
+    La página manda el torneo que uno está mirando, y eso está bien
+    mientras uno esté parado en un torneo. Pero desde la ficha de un club
+    manda "club", y desde la portada manda "home", y ninguno de los dos es
+    un torneo: los partidos jugados quedaban en cero, los goles no
+    aparecían y el gráfico de cómo juega no se dibujaba. El mismo jugador
+    abierto desde la formación de un partido salía completo y abierto
+    desde el plantel del club salía vacío, que es lo que no cerraba.
+
+    Si lo que mandaron es un torneo de verdad, se respeta —importa cuando
+    alguien jugó en dos—. Si no, se elige aquel donde tenemos más partidos
+    suyos, que es donde están sus datos.
+    """
+    if pedida in LIGAS:
+        return pedida
+    n = norm(nombre)
+    if not n:
+        return "lpf"
+    mejor, cuantos = None, 0
+    for lid in LIGAS:
+        dato, _ = almacen.leer("pj:%s:%s" % (lid, n))
+        pj = (dato or {}).get("n", 0)
+        if pj > cuantos:
+            mejor, cuantos = lid, pj
+    return mejor or "lpf"
+
+
 def api_atleta(q):
     """
     Ficha de un jugador. /api/atleta?id=8167&name=...&liga=lpf
@@ -5924,12 +5954,17 @@ def api_atleta(q):
     lid = (q.get("liga") or ["lpf"])[0]
     slug = (q.get("slug") or [""])[0].strip()
     if not nombre and slug:
-        nombre = _nombre_de_slug(slug, lid)
+        nombre = _nombre_de_slug(slug, liga_del_jugador(
+            slug.replace("-", " "), lid))
     if not aid and not nombre:
         return {"error": "falta el parámetro id o name"}
 
     p = perfil_atleta(aid) if aid else {}
     p["name"] = nombre or p.get("name") or ""
+    # Recién acá se sabe el nombre, y con el nombre se sabe de qué torneo
+    # sacar sus números. Todo lo de abajo depende de esto.
+    lid = liga_del_jugador(p["name"], lid)
+    p["liga"] = lid
     p["transfermarkt"] = _tm_link(p["name"])
 
     # altura, peso y fecha de nacimiento

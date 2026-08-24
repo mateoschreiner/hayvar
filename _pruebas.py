@@ -1984,6 +1984,33 @@ console.log(JSON.stringify({entera, alCerrar:loc.pathname,
              _frio and _frio["alCerrar"] == "/" and not _frio["quedoLimpio"],
              _frio)
 
+    # Lo que de verdad demuestra que el recorte no rompió nada: hacer
+    # navegar la versión aligerada y comprobar que da paso por paso lo
+    # mismo que la original. Sintaxis válida no alcanza —un texto mal
+    # cortado puede compilar y hacer otra cosa—.
+    _sin = re.sub(r"^App\.init\(\);$", "",
+                  server.aligerar(HTML).split("<script>")[-1]
+                  .split("</script>")[0], flags=re.M)
+    _guion3 = (open(_DOMSITO, encoding="utf-8").read()
+               + "\nglobalThis.document=doc; globalThis.window=win;"
+                 "\nglobalThis.location=loc; globalThis.history=historial;"
+                 "\nglobalThis.localStorage=almacenLocal;"
+                 "\nglobalThis.MutationObserver=MutationObserver;"
+                 "\nglobalThis.URL=URL2; globalThis.fetch=fetchFalso;"
+                 "\nglobalThis.requestAnimationFrame=f=>0;"
+                 "\nglobalThis.setTimeout=(f,t)=>0; globalThis.clearTimeout=()=>{};"
+                 "\nprocess.on('unhandledRejection',()=>{});\nlet App;\n"
+               + _sin.replace("const App=(()=>{", "App=(()=>{") + _paseo)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_guion3); _ruta3 = _f.name
+    _r3 = _sub.run(["node", _ruta3], capture_output=True, text=True)
+    os.unlink(_ruta3)
+    _sinpaso = json.loads(_r3.stdout) if _r3.returncode == 0 else None
+    chequear("la página sin comentarios navega igual que la original",
+             _sinpaso == _paso, (_r3.stderr.strip().splitlines()[:2]
+                                 if _sinpaso is None else _sinpaso))
+
     _tibio = _correr("""
 loc.pathname='/liga-profesional';
 App.init();
@@ -2167,6 +2194,48 @@ chequear("cada partido se copia antes de etiquetarlo",
          "return [dict(g) for g in games" in _SRV)
 chequear("un día que ya pasó no se rearma cada diez segundos",
          "if not hoy:\n            return 600" in _SRV)
+
+
+print("\n── la página viaja sin la receta ──")
+# index.html tiene casi 5.000 líneas de comentarios explicando cada
+# decisión. Eso vale más que el código y viajaba entero a cualquiera que
+# abriera la página. Se quedan en el archivo; lo que se aligera es la copia
+# que sale por el cable.
+_ALIG = server.aligerar(HTML)
+# Que nadie "ayude" borrándolos del archivo: ahí es donde tienen que estar.
+_UNA_FRASE = "oficial manda siempre, aunque nos falte el autor"
+chequear("los comentarios se quedan en el archivo",
+         HTML.count("/* ──") > 20 and _UNA_FRASE in HTML,
+         HTML.count("/* ──"))
+chequear("y no viajan",
+         len(_ALIG) < len(HTML) * 0.85 and _UNA_FRASE not in _ALIG,
+         "%.0f%% del original" % (100 * len(_ALIG) / len(HTML)))
+chequear("pero el bloque que reemplaza el servidor sobrevive al recorte",
+         "<title>" in _ALIG and "og:title" in _ALIG)
+
+# Lo delicado: una barra adentro de un texto o de una expresión regular no
+# es un comentario. Este archivo está lleno de https:// y de regex.
+_casos = [
+    ("var u='http://x//y'; // afuera", "var u='http://x//y'; "),
+    ('var r=/a\\/\\/b/; // afuera', 'var r=/a\\/\\/b/; '),
+    ("var t=`no // es comentario`; // sí", "var t=`no // es comentario`; "),
+    ("var t=`a${ `b${c}d` }e`; // anidada", "var t=`a${ `b${c}d` }e`; "),
+    ("return /x/.test(s); // regex después de return",
+     "return /x/.test(s); "),
+    ("var d=a/b; var e=c/d; // división, no regex", "var d=a/b; var e=c/d; "),
+    ("var s='no /* toques */ esto'; /* esto sí */",
+     "var s='no /* toques */ esto'; "),
+    ('var q="comilla \\" adentro"; // afuera', 'var q="comilla \\" adentro"; '),
+]
+_mal = [(a, server.sin_comentarios_js(a)) for a, b in _casos
+        if server.sin_comentarios_js(a) != b]
+chequear("una barra adentro de un texto o de una regex no es un comentario",
+         not _mal, _mal)
+
+# Y la red de seguridad: si el recorte sale raro, se manda el original.
+chequear("si el recorte se come el archivo, se manda el original",
+         server.aligerar("<script>var a='sin cerrar</script>")
+         == "<script>var a='sin cerrar</script>")
 
 
 print("\n── las puertas de servicio están cerradas ──")

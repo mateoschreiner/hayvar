@@ -3414,7 +3414,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · las puertas de servicio piden llave: lo que borra o gasta ya no está abierto"
+VERSION_APP = "2026-08-24 · llave en las puertas de servicio, y la página viaja sin comentarios (86 → 55 KB)"
 
 
 def reparar_recorridos():
@@ -7797,6 +7797,212 @@ def al_toque(clave, armar, frescura=15):
     return valor
 
 
+# ── Servir la página sin la receta ───────────────────────────────────────
+#
+# index.html tiene casi cinco mil líneas de comentarios que explican cada
+# decisión y cada error que costó encontrar. Eso es lo valioso del archivo,
+# más que el código, y viajaba entero a cualquiera que abriera la página.
+#
+# Se quedan donde están —en el archivo, que es el que se edita y el que
+# guarda git— y no se mandan. Nadie pierde nada: lo que se aligera es la
+# copia que sale por el cable.
+#
+# Ojo con la parte difícil: sacar comentarios con una búsqueda simple rompe
+# el javascript. Este archivo está lleno de "https://" adentro de textos,
+# de expresiones regulares con barras, y de plantillas anidadas unas dentro
+# de otras. Hay que leerlo distinguiendo código de texto, que es lo que
+# hace `sin_comentarios_js`. Si algo sale mal, se manda el original.
+
+# Después de estas palabras, una barra abre una expresión regular y no es
+# una división. Sin esto, `return /x/.test(s)` se leía como una división.
+_ANTES_DE_REGEX = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
+    "throw", "case", "do", "else", "yield", "await",
+}
+
+
+def sin_comentarios_js(js):
+    """
+    El mismo javascript, sin los comentarios. Nada más se toca.
+
+    Se recorre carácter por carácter llevando en una pila dónde estamos:
+    en código, adentro de una plantilla, o adentro de un ${...} de una
+    plantilla —que es código otra vez, y puede tener otra plantilla
+    adentro—. Los textos y las expresiones regulares se copian tal cual,
+    con lo que tengan adentro.
+
+    Los saltos de línea de los comentarios se conservan, para que si alguna
+    vez hay un error en el navegador el número de línea siga sirviendo.
+    """
+    salida = []
+    i, n = 0, len(js)
+    # cada nivel es ("codigo", llaves_abiertas) o ("plantilla",)
+    pila = [["codigo", 0]]
+    ultimo = ""            # último carácter significativo que emitimos
+    palabra = ""           # y la última palabra, para el caso del return
+
+    def emitir(t):
+        salida.append(t)
+
+    while i < n:
+        if pila[-1][0] == "plantilla":
+            # adentro del texto de una plantilla: se copia todo tal cual
+            # hasta el cierre o hasta un ${, que vuelve a ser código
+            j = i
+            while j < n:
+                c = js[j]
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == "`":
+                    emitir(js[i:j + 1]); i = j + 1; pila.pop()
+                    ultimo, palabra = "`", ""
+                    break
+                if c == "$" and js[j + 1:j + 2] == "{":
+                    emitir(js[i:j + 2]); i = j + 2
+                    pila.append(["codigo", 0])
+                    ultimo, palabra = "{", ""
+                    break
+                j += 1
+            else:
+                emitir(js[i:]); i = n
+            continue
+
+        c = js[i]
+        sig = js[i + 1] if i + 1 < n else ""
+
+        # ── comentario de una línea ──
+        if c == "/" and sig == "/":
+            j = js.find("\n", i)
+            i = n if j < 0 else j        # el salto se deja
+            continue
+
+        # ── comentario de varias líneas ──
+        if c == "/" and sig == "*":
+            j = js.find("*/", i + 2)
+            fin = n if j < 0 else j + 2
+            emitir("\n" * js.count("\n", i, fin))
+            i = fin
+            continue
+
+        # ── un texto entre comillas ──
+        if c in "'\"":
+            j = i + 1
+            while j < n:
+                if js[j] == "\\":
+                    j += 2
+                    continue
+                if js[j] == c:
+                    j += 1
+                    break
+                j += 1
+            emitir(js[i:j]); i = j
+            ultimo, palabra = c, ""
+            continue
+
+        # ── una plantilla ──
+        if c == "`":
+            emitir(c); i += 1
+            pila.append(["plantilla"])
+            continue
+
+        # ── una expresión regular, o una división ──
+        if c == "/":
+            division = (ultimo in ")]}" or ultimo.isalnum()
+                        or ultimo in "_$") and palabra not in _ANTES_DE_REGEX
+            if not division:
+                j, corchete = i + 1, False
+                while j < n:
+                    ch = js[j]
+                    if ch == "\\":
+                        j += 2
+                        continue
+                    if ch == "[":
+                        corchete = True
+                    elif ch == "]":
+                        corchete = False
+                    elif ch == "/" and not corchete:
+                        j += 1
+                        break
+                    elif ch == "\n":
+                        break        # no era una regex después de todo
+                    j += 1
+                emitir(js[i:j]); i = j
+                ultimo, palabra = "/", ""
+                continue
+
+        # ── código común ──
+        if c == "{":
+            pila[-1][1] += 1
+        elif c == "}":
+            if pila[-1][1] == 0 and len(pila) > 1:
+                # esta llave cierra el ${...} y vuelve a la plantilla
+                emitir(c); i += 1; pila.pop()
+                ultimo, palabra = "}", ""
+                continue
+            pila[-1][1] = max(0, pila[-1][1] - 1)
+
+        emitir(c); i += 1
+        if not c.isspace():
+            ultimo = c
+            palabra = (palabra + c) if (c.isalnum() or c in "_$") else ""
+    return "".join(salida)
+
+
+def _sin_comentarios_css(css):
+    """Los estilos no tienen comentarios de línea: sólo /* … */."""
+    fuera, i, n = [], 0, len(css)
+    while i < n:
+        c = css[i]
+        if c in "'\"":
+            j = i + 1
+            while j < n and css[j] != c:
+                j += 2 if css[j] == "\\" else 1
+            fuera.append(css[i:j + 1]); i = j + 1
+            continue
+        if c == "/" and css[i + 1:i + 2] == "*":
+            j = css.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        fuera.append(c); i += 1
+    return "".join(fuera)
+
+
+def aligerar(html):
+    """
+    La página lista para mandar: sin comentarios de HTML, de estilos ni de
+    javascript. Si algo no cierra como esperábamos, se devuelve el original
+    tal cual: preferimos mandar de más antes que mandar algo roto.
+    """
+    try:
+        def js_de(m):
+            return m.group(1) + sin_comentarios_js(m.group(2)) + m.group(3)
+
+        def css_de(m):
+            return m.group(1) + _sin_comentarios_css(m.group(2)) + m.group(3)
+
+        salida = re.sub(r"(<script(?![^>]*\bsrc=)[^>]*>)(.*?)(</script>)",
+                        js_de, html, flags=re.S)
+        salida = re.sub(r"(<style[^>]*>)(.*?)(</style>)", css_de,
+                        salida, flags=re.S)
+        salida = re.sub(r"<!--(?!\[if).*?-->", "", salida, flags=re.S)
+
+        # Red de seguridad. No prueba que el javascript sea válido —eso lo
+        # hace la regresión, que lo pasa por el intérprete de verdad— pero
+        # sí que no se haya comido medio archivo por un texto mal cerrado.
+        anclas = ("App.init();", "const Rutas=", "function aplicar(",
+                  "window.__ADELANTO__", "<div class=\"ov\" id=\"ov\"")
+        if any(a not in salida for a in anclas):
+            return html
+        if salida.count("<script") != html.count("<script"):
+            return html
+        if len(salida) < len(html) * 0.45:
+            return html
+        return salida
+    except Exception:
+        return html
+
+
 def clave_de_ruta(path, q):
     """
     Con qué nombre se guarda la respuesta de una ruta.
@@ -8017,6 +8223,11 @@ class Handler(SimpleHTTPRequestHandler):
             html = re.sub(r"<!--CABEZA-->.*?<!--/CABEZA-->",
                           lambda _: "<!--CABEZA-->\n%s\n<!--/CABEZA-->" % cabeza,
                           html, count=1, flags=re.S)
+        # Los comentarios se quedan en el archivo y no viajan. Se hace acá,
+        # una vez por dirección, y el resultado queda guardado: leer 274 KB
+        # carácter por carácter en cada visita sería cambiar un problema
+        # por otro.
+        html = aligerar(html)
         body, enc = self._comprimir(html.encode("utf-8"))
         # Son 48 direcciones y dos variantes (con y sin comprimir): no hay
         # nada que vaciar, pero por si algún día aparece una dirección por

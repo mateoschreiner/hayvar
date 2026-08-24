@@ -2131,10 +2131,65 @@ chequear("la ficha del club se arma una vez y se sirve muchas",
 chequear("los goleadores y canales de la fecha, igual",
          "return al_toque(\"det:%s:%s:%s\" % (fecha or \"\", lid, rnd or \"\")," in _SRV)
 server._VIVO.clear()
+
+# Cambiar de fecha tardaba 1,3 s y cambiar de torneo disparaba cuatro
+# cuentas de medio segundo cada una. Son todas iguales para todo el mundo.
+chequear("las tablas y el fixture también se sirven al toque",
+         set(server.AL_TOQUE) >= {"/api/games", "/api/rounds", "/api/standings",
+                                  "/api/annual", "/api/promedios",
+                                  "/api/scorers", "/api/liga",
+                                  "/api/liga/games"},
+         sorted(server.AL_TOQUE))
+chequear("y ninguna de esas se calcula dos veces por la misma pregunta",
+         "al_toque(clave_de_ruta(path, q)," in _SRV)
+# La clave es lo único que separa una fecha de otra. Si se pisan, cambiás
+# de fecha y ves los partidos de la anterior, que sería mucho peor que
+# tardar 1,3 segundos.
+_k = server.clave_de_ruta
+chequear("la fecha 5 y la fecha 6 no se pisan",
+         _k("/api/games", {"round": ["5"]}) != _k("/api/games", {"round": ["6"]}))
+chequear("ni dos torneos distintos",
+         _k("/api/liga", {"id": ["lib"]}) != _k("/api/liga", {"id": ["sud"]}))
+chequear("pero el mismo pedido escrito al revés sí es el mismo",
+         _k("/api/liga/games", {"id": ["lib"], "round": ["3"]})
+         == _k("/api/liga/games", {"round": ["3"], "id": ["lib"]}))
+chequear("y una ruta sin parámetros tiene su clave igual",
+         _k("/api/scorers", {}) == "/api/scorers|")
+# Lo que puede tener efectos —rehacer un recorrido, vaciar la base— no
+# puede entrar acá por descuido: se contestaría con una respuesta vieja.
+chequear("lo que cambia cosas no se sirve de lo guardado",
+         not ({"/api/recorrido", "/api/contenido", "/api/raw", "/api/diagnostico"}
+              & set(server.AL_TOQUE)))
+chequear("la clave lleva los parámetros, así la fecha 5 y la 6 son distintas",
+         "for k, v in sorted(q.items())" in _SRV)
 chequear("cada partido se copia antes de etiquetarlo",
          "return [dict(g) for g in games" in _SRV)
 chequear("un día que ya pasó no se rearma cada diez segundos",
          "if not hoy:\n            return 600" in _SRV)
+
+
+print("\n── abrir de cero: los dos viajes se superponen ──")
+# Abrir la página era: bajar el HTML, leer 220 KB de javascript, y RECIÉN
+# AHÍ pedir los partidos. Dos esperas en fila con la lectura en el medio.
+# Ahora el pedido sale en la primera línea del HTML, antes del programa.
+chequear("el pedido arranca antes de leer el programa",
+         "window.__ADELANTO__" in HTML
+         and HTML.index("window.__ADELANTO__") < HTML.index("<style>"))
+chequear("y sólo adivina las dos puertas por las que entra casi todo el mundo",
+         "'/api/home?date=' + d" in HTML and "'/api/rounds'" in HTML
+         and "return null;" in HTML)
+chequear("el que pide después usa esa respuesta en vez de pedirla de nuevo",
+         "if(a && a.url===path && a.promesa){" in HTML
+         and "a.promesa=null;" in HTML)
+chequear("y si algo falla, se pide como siempre",
+         "}catch(e){ return null; }" in HTML)
+# La dirección que arma el adelanto tiene que ser idéntica a la que después
+# pide la página; si no, se hacen dos pedidos en vez de uno.
+_m = re.search(r"const ymd=d=>`([^`]+)`", HTML)
+chequear("la fecha del adelanto se escribe igual que la de la página",
+         _m and _m.group(1) == "${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}"
+         and "String(hoy.getMonth()+1).padStart(2,'0')" in HTML,
+         _m and _m.group(1))
 
 
 print("\n── el marcador y los goles cuentan lo mismo ──")

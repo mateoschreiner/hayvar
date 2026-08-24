@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · la portada, la ficha del club y los goleadores de la fecha contestan al toque"
+VERSION_APP = "2026-08-24 · todo lo que se pide seguido contesta al toque, y el primer pedido sale antes de leer el programa"
 
 
 def reparar_recorridos():
@@ -7503,6 +7503,36 @@ ROUTES = {
 }
 
 
+# ── Qué se contesta con lo último armado, y cada cuánto se renueva ───────
+#
+# Todas estas devuelven lo mismo para todos: la tabla de posiciones de la
+# fecha 6 es la misma para vos que para cualquiera. Antes cada visita la
+# calculaba de nuevo, y por eso cambiar de fecha tardaba 1,3 segundos y
+# cambiar de torneo disparaba cuatro cuentas de medio segundo cada una.
+#
+# El número es cuántos segundos vale lo armado antes de mandar a rearmarlo
+# por atrás. No es cuánto se espera: nadie espera. Es cada cuánto se hace
+# el trabajo. Lo que se mueve con los partidos en curso va corto; lo que
+# cambia una vez por fecha, largo.
+#
+# Las que no están acá se calculan en cada pedido, como siempre. Se suman a
+# esta lista a propósito y de a una: entrar por descuido algo que tenga que
+# ser fresco sí o sí es peor que una ruta lenta.
+AL_TOQUE = {
+    "/api/games": 8,          # los partidos de una fecha, con lo que va en vivo
+    "/api/rounds": 20,        # qué fechas hay
+    "/api/standings": 10,     # las tablas se mueven con los goles en curso
+    "/api/annual": 20,
+    "/api/promedios": 60,     # los promedios no se mueven en un partido
+    "/api/scorers": 60,
+    "/api/liga": 30,          # tabla y goleadores de otra liga
+    "/api/liga/games": 10,
+    "/api/club": 60,          # el último y el próximo de un club
+    "/api/clubes": 600,       # la lista de clubes no cambia nunca
+    "/api/ligas": 600,
+}
+
+
 # Las direcciones propias de cada club. Por ahora sólo la de prueba; se
 # suman solas a medida que se cargue CLUBES_INFO.
 def _slug(nombre):
@@ -7629,7 +7659,10 @@ def api_tiempos(q):
     return {"rutas": filas,
             "fondo": dict(_ESTADO_FONDO),
             "memoria": {"respuestas": len(_cache),
-                        "megas": round(_cache_bytes / 1048576, 1)},
+                        "megas": round(_cache_bytes / 1048576, 1),
+                        "armadas": len(_VIVO),
+                        "rearmando": sum(1 for v in _VIVO.values()
+                                         if v["armando"])},
             "arriba_hace_s": round(time.time() - _ARRANCO),
             "como": ("promedio_ms es lo que tarda el servidor en armar la "
                      "respuesta. Si es chico y la página igual tarda, el "
@@ -7700,6 +7733,18 @@ def al_toque(clave, armar, frescura=15):
     return valor
 
 
+def clave_de_ruta(path, q):
+    """
+    Con qué nombre se guarda la respuesta de una ruta.
+
+    Lleva los parámetros adentro, y ordenados. Es lo que hace que la fecha
+    5 y la fecha 6 sean dos respuestas distintas en vez de pisarse, y que
+    ?id=lib&round=3 y ?round=3&id=lib sean la misma.
+    """
+    return "%s|%s" % (path, "&".join(
+        "%s=%s" % (k, ",".join(v)) for k, v in sorted(q.items())))
+
+
 def _rearmar(clave, armar):
     try:
         valor = armar()
@@ -7716,9 +7761,12 @@ def _rearmar(clave, armar):
             e["valor"], e["cuando"] = valor, time.time()
 
 
-def _limpiar_vivo(tope=40):
-    """Se guarda un día por clave; si alguien pasea por el calendario, se
-    van juntando. Se tiran los más viejos."""
+def _limpiar_vivo(tope=120):
+    """
+    Cada fecha, cada torneo y cada club guardan su respuesta armada. Con
+    dieciséis torneos y sus fechas se juntan rápido, así que se pone tope y
+    se tiran las más viejas. Se puede mirar cuántas hay en /api/tiempos.
+    """
     if len(_VIVO) <= tope:
         return
     for k, _ in sorted(_VIVO.items(), key=lambda kv: kv[1]["cuando"])[:len(_VIVO) - tope]:
@@ -8012,7 +8060,14 @@ class Handler(SimpleHTTPRequestHandler):
         fn = ROUTES.get(path)
         if fn:
             try:
-                return self._json(fn(q))
+                # Las que están en la tabla se contestan con lo último
+                # armado y se renuevan por atrás. La clave lleva los
+                # parámetros: la fecha 5 y la 6 son dos respuestas.
+                seg = AL_TOQUE.get(path)
+                if seg is None:
+                    return self._json(fn(q))
+                return self._json(al_toque(clave_de_ruta(path, q),
+                                           lambda: fn(q), frescura=seg))
             except (HTTPError, URLError) as e:
                 return self._json({"error": "no se pudo llegar a 365scores: %s" % e}, 502)
             except Exception as e:

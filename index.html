@@ -29,6 +29,38 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#141b34">
 
+<!-- ── Pedir los datos antes de leer el programa ────────────────────────
+     Abrir la página de cero era: bajar el HTML, leer 220 KB de javascript,
+     y RECIÉN AHÍ pedirle los partidos al servidor y esperar la respuesta.
+     Dos viajes en fila, con la lectura del programa en el medio.
+
+     Estas líneas van acá arriba, antes de todo, y arrancan el pedido en el
+     primer instante. Mientras el navegador lee el programa, la respuesta ya
+     viene en camino: los dos tiempos se superponen en vez de sumarse.
+
+     Es a propósito que sea feo y esté suelto. Tiene que poder ejecutarse
+     sin nada cargado, y tiene que pesar nada. Si algo falla, no pasa nada:
+     `get()` mira si hay algo acá y, si no, pide como siempre. -->
+<script>
+window.__ADELANTO__ = (function(){
+  try{
+    var p = location.pathname.replace(/^\/|\/$/g, '');
+    var hoy = new Date();
+    var d = hoy.getFullYear() + '-'
+          + String(hoy.getMonth()+1).padStart(2,'0') + '-'
+          + String(hoy.getDate()).padStart(2,'0');
+    // sólo las dos puertas por las que entra casi todo el mundo: la
+    // portada y la Liga Profesional. Para el resto no vale la pena
+    // adivinar, y adivinar mal sería un pedido al pedo.
+    var url = (p === '' ) ? '/api/home?date=' + d
+            : (p === 'liga-profesional') ? '/api/rounds'
+            : null;
+    if(!url) return null;
+    return {url: url, promesa: fetch(url, {cache:'no-store'})};
+  }catch(e){ return null; }
+})();
+</script>
+
 <!-- Google Analytics (GA4). El ID de medición no es un secreto: viaja en el
      código de cualquier página que lo use. Si alguna vez hay que sacarlo,
      se borran estas cinco líneas y listo. -->
@@ -941,7 +973,17 @@ const diaLargo=iso=>{
 };
 
 async function get(path){
-  const r=await fetch(path,{cache:'no-store'});
+  // ¿es justo el pedido que se lanzó antes de leer el programa? Entonces la
+  // respuesta ya está viniendo: se usa esa en vez de pedirla de nuevo. Sólo
+  // vale una vez, porque después se recarga de verdad.
+  let r;
+  const a=window.__ADELANTO__;
+  if(a && a.url===path && a.promesa){
+    r=await a.promesa;
+    a.promesa=null;
+  } else {
+    r=await fetch(path,{cache:'no-store'});
+  }
   if(!r.ok) throw new Error('HTTP '+r.status);
   const j=await r.json();
   if(j.error) throw new Error(j.error);

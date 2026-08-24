@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HAYVAR · administración</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+<!-- La página de adentro. Junta en un solo lugar lo que hasta ahora estaba
+     desparramado en cinco direcciones de JSON crudo: el estado del
+     servidor, cuánto tarda cada cosa, qué hay guardado en la base, cuánto
+     lleva bajado cada torneo y si las fuentes contestan.
+
+     No es parte del sitio: no se enlaza desde ningún lado, pide la misma
+     llave que el resto de las puertas de servicio y le dice a los
+     buscadores que no la indexen.
+
+     La idea es que se pueda mirar de un vistazo y que las cosas que
+     necesitan atención salten solas, sin tener que leer números. Por eso
+     cada tarjeta se pinta según cómo está: verde bien, amarillo mirar,
+     rojo actuar. -->
+<style>
+:root{
+  --nav:#141b34; --nav2:#1c2547; --bg:#eceef2; --card:#fff; --line:#e2e5ec;
+  --txt:#1a1f2e; --txt2:#6b7285; --txt3:#9aa1b3;
+  --ok:#12b76a; --mirar:#f0b429; --mal:#e5484d; --acc:#2f6fed;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{background:var(--nav);color:#fff;padding:14px 20px;display:flex;
+  align-items:center;gap:14px;flex-wrap:wrap}
+header b{font-size:17px;letter-spacing:-.3px}
+header .et{font-size:10px;background:rgba(255,255,255,.16);padding:3px 8px;
+  border-radius:99px;text-transform:uppercase;letter-spacing:.8px}
+header .der{margin-left:auto;display:flex;gap:8px;align-items:center;
+  font-size:12px;color:rgba(255,255,255,.7)}
+header button{background:rgba(255,255,255,.14);color:#fff;border:0;
+  border-radius:7px;padding:7px 13px;font:inherit;font-size:12.5px;
+  cursor:pointer}
+header button:hover{background:rgba(255,255,255,.26)}
+main{padding:18px;max-width:1180px;margin:0 auto}
+.grilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:14px;margin-bottom:18px}
+.caja{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;position:relative;overflow:hidden}
+.caja::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:var(--línea,transparent)}
+.caja.ok::before{background:var(--ok)}
+.caja.mirar::before{background:var(--mirar)}
+.caja.mal::before{background:var(--mal)}
+.rot{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--txt2);margin-bottom:6px}
+.dato{font-size:25px;font-weight:800;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.pie{font-size:12px;color:var(--txt2);margin-top:5px}
+.aviso{font-size:12.5px;margin-top:8px;padding:8px 10px;border-radius:8px;
+  background:rgba(240,180,41,.14);color:#7a5a00}
+.caja.mal .aviso{background:rgba(229,72,77,.12);color:#a1272b}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;
+  color:var(--txt2);margin:22px 0 10px;font-weight:700}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--txt2);padding:9px 14px;
+  border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px 14px;border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+td.n{text-align:right}
+td.ruta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.barra{height:5px;border-radius:3px;background:var(--line);overflow:hidden;
+  margin-top:6px}
+.barra i{display:block;height:100%;background:var(--acc)}
+.lento{color:var(--mal);font-weight:700}
+.medio{color:var(--mirar);font-weight:600}
+.pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:99px;
+  background:var(--bg);color:var(--txt2)}
+.pill.ok{background:rgba(18,183,106,.14);color:#067647}
+.pill.mal{background:rgba(229,72,77,.12);color:#a1272b}
+.vacio{padding:26px;text-align:center;color:var(--txt2);font-size:13px}
+.puerta{max-width:420px;margin:14vh auto;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:22px}
+.puerta input{width:100%;padding:11px 12px;font:inherit;border-radius:8px;
+  border:1px solid var(--line);margin-top:10px}
+.puerta button{width:100%;margin-top:10px;padding:11px;font:inherit;
+  font-weight:600;background:var(--nav);color:#fff;border:0;border-radius:8px;
+  cursor:pointer}
+.err{color:var(--mal);font-size:12.5px;margin-top:10px}
+footer{max-width:1180px;margin:0 auto;padding:6px 18px 30px;
+  font-size:11.5px;color:var(--txt3)}
+</style>
+</head>
+<body>
+
+<div id="app"><div class="vacio" style="padding:60px">Cargando…</div></div>
+
+<script>
+/*! HAYVAR — página de administración. © 2026 Mateo Schreiner. */
+
+/* La llave sale de la dirección con la que entraste. No se guarda en el
+   navegador a propósito: si alguien se sienta en tu compu después, no la
+   encuentra. Si entrás sin llave, la página la pide y la usa sólo en
+   memoria, mientras la pestaña esté abierta. */
+let LLAVE = new URLSearchParams(location.search).get('llave') || '';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const megas = b => (b / 1048576).toFixed(1) + ' MB';
+const miles = n => (n ?? 0).toLocaleString('es-AR');
+
+function rato(s){
+  if(s == null) return '—';
+  if(s < 60) return Math.round(s) + ' s';
+  if(s < 3600) return Math.round(s / 60) + ' min';
+  if(s < 86400) return (s / 3600).toFixed(1) + ' h';
+  return (s / 86400).toFixed(1) + ' días';
+}
+
+async function pedir(ruta){
+  const u = ruta + (ruta.includes('?') ? '&' : '?') + 'llave=' +
+            encodeURIComponent(LLAVE);
+  const r = await fetch(u, {cache: 'no-store'});
+  if(r.status === 403) throw new Error('403');
+  if(!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function pedirLlave(motivo){
+  $('#app').innerHTML = `<div class="puerta">
+    <b style="font-size:16px">Administración de HAYVAR</b>
+    <div style="color:var(--txt2);font-size:13px;margin-top:6px">
+      Esta página no es pública. Pegá la llave para entrar.</div>
+    <input id="k" type="password" placeholder="la llave" autocomplete="off">
+    <button onclick="entrar()">Entrar</button>
+    ${motivo ? `<div class="err">${esc(motivo)}</div>` : ''}
+  </div>`;
+  $('#k').focus();
+  $('#k').onkeydown = e => { if(e.key === 'Enter') entrar(); };
+}
+function entrar(){ LLAVE = $('#k').value.trim(); if(LLAVE) cargar(); }
+
+/* ── las tarjetas de arriba ──────────────────────────────────────────── */
+function caja(estado, rotulo, dato, pie, aviso){
+  return `<div class="caja ${estado}">
+    <div class="rot">${esc(rotulo)}</div>
+    <div class="dato">${dato}</div>
+    ${pie ? `<div class="pie">${pie}</div>` : ''}
+    ${aviso ? `<div class="aviso">${aviso}</div>` : ''}
+  </div>`;
+}
+
+function salud(t, base, diag){
+  let c = '';
+
+  // ── el servidor ──
+  c += caja('ok', 'Arriba hace', rato(t.arriba_hace_s),
+            'Se reinicia en cada publicación');
+
+  // ── el disco: lo que más callado se llena ──
+  const usado = base.bytes || 0;
+  // el disco de Render es de 1 GB; si algún día cambia, cambiar acá
+  const TOPE = 1024 * 1024 * 1024;
+  const pc = Math.min(100, 100 * usado / TOPE);
+  let e = pc > 85 ? 'mal' : pc > 60 ? 'mirar' : 'ok';
+  c += caja(e, 'Base de datos', megas(usado),
+    `${miles(base.entradas)} entradas · ${pc.toFixed(0)}% del disco
+     <div class="barra"><i style="width:${pc}%;
+       background:${e === 'mal' ? 'var(--mal)' : e === 'mirar' ? 'var(--mirar)' : 'var(--acc)'}"></i></div>`,
+    base.sobrevive_al_deploy === false
+      ? 'La base vive en la carpeta del código: se borra en cada publicación.'
+      : pc > 60 ? 'Conviene empezar a podar lo viejo.' : '');
+
+  // ── la memoria, que es lo que hizo reiniciar el servicio una vez ──
+  const m = t.memoria || {};
+  const mp = 100 * (m.megas || 0) / 8;
+  c += caja(mp > 90 ? 'mirar' : 'ok', 'Memoria de respuestas',
+    (m.megas ?? 0) + ' MB',
+    `${miles(m.respuestas)} guardadas · tope 8 MB
+     <div class="barra"><i style="width:${Math.min(100, mp)}%"></i></div>`);
+
+  // ── el recolector de fondo ──
+  const f = t.fondo || {};
+  c += caja(f.historia_al_dia ? 'ok' : 'mirar', 'Recolector',
+    esc(f.haciendo || '—'),
+    `vuelta ${miles(f.vuelta)} · ${f.historia_al_dia
+       ? 'historia completa' : 'todavía bajando historia'}`);
+
+  // ── las fuentes ──
+  if(diag && !diag.error){
+    const af = diag.apifootball || {};
+    const anda = af.clave_configurada !== false && !af.error;
+    c += caja(anda ? 'ok' : 'mirar', 'API-Football',
+      anda ? 'responde' : 'sin clave',
+      anda ? '' : 'El sitio anda igual: sólo se pierden sus datos.');
+  }
+  return `<div class="grilla">${c}</div>`;
+}
+
+/* ── cuánto tarda cada cosa ──────────────────────────────────────────── */
+function tiempos(t){
+  const r = (t.rutas || []).filter(x => x.veces > 0);
+  if(!r.length) return '<div class="panel"><div class="vacio">Todavía no pasó nadie.</div></div>';
+  const clase = ms => ms > 1500 ? 'lento' : ms > 400 ? 'medio' : '';
+  return `<div class="panel"><table>
+    <tr><th>Dirección</th><th class="n">Veces</th><th class="n">Promedio</th>
+        <th class="n">La peor</th><th class="n">La última</th>
+        <th class="n">Total</th></tr>
+    ${r.map(x => `<tr>
+      <td class="ruta">${esc(x.ruta)}</td>
+      <td class="n">${miles(x.veces)}</td>
+      <td class="n ${clase(x.promedio_ms)}">${miles(x.promedio_ms)} ms</td>
+      <td class="n ${clase(x.peor_ms)}">${miles(x.peor_ms)} ms</td>
+      <td class="n">${miles(x.ultima_ms)} ms</td>
+      <td class="n">${x.total_s} s</td></tr>`).join('')}
+  </table></div>
+  <footer>En rojo lo que pasa de 1,5 segundos; en amarillo lo que pasa de
+  medio segundo. "Total" es el tiempo que esa dirección consumió en toda la
+  vida del servidor: una rápida que se pide mil veces pesa más que una lenta
+  que se pide una.</footer>`;
+}
+
+/* ── qué hay guardado ────────────────────────────────────────────────── */
+function contenido(c){
+  const g = (c.grupos || []).slice(0, 14);
+  const total = (c.grupos || []).reduce((a, x) => a + x.cantidad, 0) || 1;
+  return `<div class="panel"><table>
+    <tr><th>Tipo</th><th>Qué es</th><th class="n">Cuántos</th><th style="width:120px"></th></tr>
+    ${g.map(x => `<tr>
+      <td class="ruta">${esc(x.tipo)}</td>
+      <td style="color:var(--txt2)">${esc(x.que_es || '')}</td>
+      <td class="n">${miles(x.cantidad)}</td>
+      <td><div class="barra" style="margin:0"><i style="width:${100 * x.cantidad / total}%"></i></div></td>
+    </tr>`).join('')}
+  </table></div>`;
+}
+
+/* ── cuánto lleva bajado cada torneo ─────────────────────────────────── */
+function recorrido(r){
+  const ligas = r.ligas || [];
+  if(!ligas.length) return '';
+  const filas = [];
+  for(const l of ligas){
+    for(const c of (l.comps || [])){
+      const a = c.atras || {}, d = c.adelante || {};
+      const listo = a.listo && d.listo;
+      const v = c.loQueSeMuestra || l.loQueSeMuestra || {};
+      filas.push(`<tr>
+        <td>${esc(l.nombre)}</td>
+        <td class="n">${miles(c.guardados)}</td>
+        <td class="n">${miles(c.fechasQueTiene ?? '—')}</td>
+        <td><span class="pill ${listo ? 'ok' : ''}">${listo ? 'completo' : 'bajando'}</span></td>
+        <td style="color:var(--txt2);font-size:12px">${esc(
+          (v.sinResultado ? v.sinResultado + ' sin resultado · ' : '') +
+          (v.sinLiveId ? v.sinLiveId + ' sin detalle' : '')) || ''}</td>
+      </tr>`);
+    }
+  }
+  return `<div class="panel"><table>
+    <tr><th>Torneo</th><th class="n">Partidos</th><th class="n">Fechas</th>
+        <th>Recorrido</th><th>Faltantes</th></tr>
+    ${filas.join('')}</table></div>`;
+}
+
+/* ── quién entra ─────────────────────────────────────────────────────── */
+function visitasHoy(v){
+  const h = v.hoy || {};
+  const min = s => s >= 60 ? (s / 60).toFixed(1) + ' min' : Math.round(s) + ' s';
+  return `<div class="grilla">
+    ${caja('ok', 'Personas hoy', miles(h.gente),
+           'distintas, contadas sin guardar quién son')}
+    ${caja('ok', 'Páginas vistas', miles(h.vistas),
+           `${h.vistasPorPersona} por persona`)}
+    ${caja(h.porPersona < 20 ? 'mirar' : 'ok', 'Se quedan', min(h.porPersona),
+           'promedio por persona',
+           h.porPersona < 20 && h.gente > 5
+             ? 'Menos de veinte segundos: o no encuentran lo que buscaban, o entran, miran un resultado y se van. Las dos cosas son información.'
+             : '')}
+  </div>`;
+}
+
+function listado(titulo, items, vacio){
+  if(!items || !items.length)
+    return `<div class="panel"><div class="vacio">${esc(vacio || 'Todavía nada.')}</div></div>`;
+  const total = items.reduce((a, x) => a + x.cuantas, 0) || 1;
+  return `<div class="panel"><table>
+    ${items.map(x => `<tr>
+      <td>${esc(x.que || '—')}</td>
+      <td class="n" style="width:60px">${miles(x.cuantas)}</td>
+      <td style="width:110px"><div class="barra" style="margin:0">
+        <i style="width:${100 * x.cuantas / total}%"></i></div></td>
+    </tr>`).join('')}
+  </table></div>`;
+}
+
+function dias(v){
+  const d = v.porDia || [];
+  const tope = Math.max(1, ...d.map(x => x.vistas));
+  return `<div class="panel" style="padding:14px 16px">
+    <div style="display:flex;align-items:flex-end;gap:4px;height:90px">
+      ${d.map(x => `<div style="flex:1;text-align:center" title="${esc(x.dia)}: ${x.vistas} vistas, ${x.gente} personas">
+        <div style="height:${Math.max(2, 74 * x.vistas / tope)}px;
+          background:var(--acc);border-radius:3px 3px 0 0;opacity:${x.vistas ? 1 : .25}"></div>
+        <div style="font-size:9px;color:var(--txt3);margin-top:4px">${x.dia.slice(8)}</div>
+      </div>`).join('')}
+    </div></div>`;
+}
+
+function ultimas(v){
+  const u = v.ultimas || [];
+  if(!u.length) return '<div class="panel"><div class="vacio">Todavía no entró nadie.</div></div>';
+  const hora = t => new Date(t * 1000).toLocaleTimeString('es-AR',
+    {hour: '2-digit', minute: '2-digit'});
+  return `<div class="panel"><table>
+    <tr><th>Hora</th><th>Página</th><th>Vino de</th><th>Buscó</th>
+        <th>Dispositivo</th><th>Pantalla</th><th class="n">Se quedó</th></tr>
+    ${u.slice(0, 40).map(x => `<tr>
+      <td style="color:var(--txt2)">${hora(x.t)}</td>
+      <td class="ruta">${esc(x.ruta)}</td>
+      <td>${esc(x.fuente)}${x.region ? ` <span class="pill">${esc(x.region)}</span>` : ''}</td>
+      <td style="color:var(--txt2)">${esc(x.busco || '—')}</td>
+      <td style="color:var(--txt2)">${esc(x.disp)} · ${esc(x.so)}</td>
+      <td style="color:var(--txt2)">${esc(x.pantalla || '—')}</td>
+      <td class="n">${x.seg ? x.seg + ' s' : '—'}</td>
+    </tr>`).join('')}
+  </table></div>`;
+}
+
+/* ── armar todo ──────────────────────────────────────────────────────── */
+async function cargar(){
+  $('#app').innerHTML = '<div class="vacio" style="padding:60px">Cargando…</div>';
+  let t, base, cont, rec, diag, vis;
+  try{
+    // se piden todas juntas: es la misma idea que usamos en la portada
+    [t, base, cont, rec, diag, vis] = await Promise.all([
+      pedir('/api/tiempos'),
+      pedir('/api/base'),
+      pedir('/api/contenido'),
+      pedir('/api/recorrido').catch(() => ({})),
+      pedir('/api/diagnostico').catch(() => ({error: 'no contestó'})),
+      pedir('/api/visitas').catch(() => ({})),
+    ]);
+  }catch(e){
+    return pedirLlave(e.message === '403'
+      ? 'Esa llave no es. Fijate en Render, en Environment, la variable HAYVAR_LLAVE.'
+      : 'No se pudo cargar: ' + e.message);
+  }
+
+  $('#app').innerHTML = `
+    <header>
+      <b>HAYVAR</b><span class="et">administración</span>
+      <div class="der">
+        <span id="cuando"></span>
+        <button onclick="cargar()">Actualizar</button>
+      </div>
+    </header>
+    <main>
+      <h2>Quién está entrando hoy</h2>
+      ${visitasHoy(vis)}
+      <h2>Los últimos catorce días</h2>
+      ${dias(vis)}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+        <div><h2 style="margin-top:0">De dónde vienen</h2>${listado('', vis.fuentes)}</div>
+        <div><h2 style="margin-top:0">Qué páginas miran</h2>${listado('', vis.paginas)}</div>
+        <div><h2 style="margin-top:0">Desde qué país tienen el navegador</h2>${listado('', vis.regiones)}</div>
+        <div><h2 style="margin-top:0">Con qué entran</h2>${listado('', vis.dispositivos)}</div>
+        <div><h2 style="margin-top:0">Sistema</h2>${listado('', vis.sistemas)}</div>
+        <div><h2 style="margin-top:0">Resolución</h2>${listado('', vis.pantallas)}</div>
+        <div><h2 style="margin-top:0">Qué buscaron</h2>${listado('', vis.busquedas,
+          'Google borra los términos de búsqueda desde 2011. Acá sólo aparecen los buscadores que todavía los mandan. Los de Google están en Search Console.')}</div>
+        <div><h2 style="margin-top:0">Qué torneo venían a ver</h2>${listado('', vis.intenciones,
+          'Se deduce de la página en la que aterrizan. Es lo que puede ordenar la portada cuando lo enciendas.')}</div>
+      </div>
+      <h2>Las últimas visitas</h2>
+      ${ultimas(vis)}
+      <footer>${esc(vis.comoSeCuenta || '')}</footer>
+
+      <h2>El servidor</h2>
+      ${salud(t, base, diag)}
+      <h2>Cuánto tarda cada cosa</h2>
+      ${tiempos(t)}
+      <h2>Qué hay guardado</h2>
+      ${contenido(cont)}
+      <h2>Cuánto lleva bajado cada torneo</h2>
+      ${recorrido(rec)}
+      <footer>Base: ${esc(base.archivo || '—')}${
+        base.sobrevive_al_deploy ? ' · sobrevive a las publicaciones' : ''}</footer>
+    </main>`;
+  $('#cuando').textContent = 'al ' + new Date().toLocaleTimeString('es-AR');
+}
+
+if(LLAVE) cargar(); else pedirLlave('');
+</script>
+</body>
+</html>

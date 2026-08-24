@@ -38,3 +38,11 @@ const win={_oyentes:{}, addEventListener(t,f){ (this._oyentes[t]=this._oyentes[t
 class MutationObserver{ constructor(){} observe(){} }
 class URL2{ constructor(u,base){ const m=/^https?:\/\/[^/]+(\/.*)?$/.exec(u); this.pathname=m?(m[1]||'/'):u; } }
 async function fetchFalso(){ throw new Error('sin red en la prueba'); }
+/* Los relojes también son de mentira. Sin esto, el `setInterval` que la
+   página usa para avisar que la persona sigue leyendo mantiene vivo a node
+   para siempre y la prueba nunca termina — me pasó, y el síntoma era que
+   todo el conjunto se colgaba sin decir por qué. */
+function setInterval(){ return 0; }
+function clearInterval(){}
+function setTimeout(){ return 0; }
+function clearTimeout(){}

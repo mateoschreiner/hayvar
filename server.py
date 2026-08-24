@@ -49,6 +49,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 import almacen
+import visitas
 import apifootball
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -144,7 +145,13 @@ PRIVADAS = {
     "/api/contenido",     # qué hay adentro de la base
     "/api/diagnostico",   # estado de la clave y del plan
     "/api/tiempos",       # cuánto tarda cada cosa y cuánto tráfico hay
+    "/api/base",          # dónde vive la base, cuánto pesa y cuánto tiene
+    "/api/visitas",       # quién entró, de dónde y qué miró
+    "/admin",             # la página que junta todo lo de arriba
 }
+# Ojo: /api/visita —sin la ese— NO va acá. Es la que usa la página para
+# avisar el tamaño de la pantalla y que la persona sigue leyendo, así que
+# tiene que estar abierta. La que muestra los datos juntados es /api/visitas.
 
 
 def con_llave(q, headers=None):
@@ -3414,7 +3421,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · listo para publicar: llave en las puertas de servicio, página sin la receta y licencia a la vista"
+VERSION_APP = "2026-08-24 · el administrador cuenta quién entra, de dónde y qué mira, sin guardar quién es nadie"
 
 
 def reparar_recorridos():
@@ -7564,6 +7571,9 @@ ROUTES = {
     # se resuelve al llamarla porque se define más abajo, junto al resto de
     # lo que tiene que ver con servir la página
     "/api/tiempos": lambda q: api_tiempos(q),
+    "/api/visitas": lambda q: visitas.resumen(),
+    # /api/visita —sin la ese— se atiende aparte, en `_responder`: necesita
+    # los encabezados del pedido y acá sólo llegan los parámetros.
 }
 
 
@@ -8009,6 +8019,109 @@ def aligerar(html):
         return html
 
 
+# ── Anotar quién entra ───────────────────────────────────────────────────
+#
+# El servidor sabe casi todo por los encabezados del pedido: de dónde vino,
+# con qué navegador, en qué idioma. Lo único que no puede saber es el tamaño
+# de la pantalla y cuánto se queda la persona: eso sólo lo sabe el navegador
+# y lo avisa por /api/visita.
+#
+# Se anota la página, no las llamadas de la página: si se contara cada
+# /api/ que hace el javascript, una visita parecerían veinte.
+def que_venia_a_ver(ruta):
+    """
+    Qué torneo le interesa a quien aterrizó en esta página.
+
+    Es el dato que puede ordenar la portada, así que vale la pena
+    resolverlo bien y no sólo para las direcciones fáciles:
+
+      /laliga                          → laliga, obvio
+      /partido/barcelona-vs-madrid-99  → laliga, mirando de qué torneo es
+                                         ese partido en la base
+      /belgrano                        → lpf, porque es un club de Primera
+      /                                → nada: el que entra por la puerta
+                                         grande no dijo qué quiere
+
+    El del medio es el que más importa: Google manda a la gente a partidos
+    concretos, no a la portada. Cuesta unas pocas lecturas de la base, que
+    al lado de servir una página no es nada.
+    """
+    partes = [p for p in (ruta or "").strip("/").split("/") if p]
+    if not partes:
+        return ""
+    if partes[0] in RUTAS_LIGA:
+        return RUTAS_LIGA[partes[0]]
+
+    if partes[0] == "partido" and len(partes) == 2:
+        m = re.search(r"(\d+)$", partes[1])
+        if m:
+            gid = m.group(1)
+            for lid in LIGAS:
+                dato, _ = almacen.leer("goles:%s:%s" % (lid, gid))
+                if dato is not None:
+                    return lid
+                tv, _ = almacen.leer("tv:%s:%s" % (lid, gid))
+                if tv is not None:
+                    return lid
+        return ""
+
+    if len(partes) == 1 and partes[0] in RUTAS_CLUB:
+        # los treinta de Primera son los que tienen ficha con colores
+        return "lpf" if RUTAS_CLUB[partes[0]] in COLORES else ""
+    return ""
+
+
+def anotar_visita(handler, q):
+    """
+    Anota una visita juntando lo que sabe el servidor con lo que sabe el
+    navegador.
+
+    La anotación la dispara la página y no el pedido del HTML, por una
+    razón concreta: el HTML se sirve desde una copia ya armada, la misma
+    para todos, así que no hay dónde meterle un identificador propio a
+    cada visitante. Además el navegador tiene tres datos que el servidor
+    no puede ver —de dónde venía (`document.referrer`), el tamaño de la
+    pantalla, y cuánto se queda— así que es el que tiene la foto completa.
+
+    Lo que se paga: el que navega con javascript apagado o con un
+    bloqueador agresivo no se cuenta. Le pasa igual a Google Analytics.
+    Para tener la referencia, el total de páginas servidas está en
+    /api/tiempos, en el renglón "(la página)": comparando los dos números
+    se ve cuánto se está perdiendo.
+    """
+    ua = handler.headers.get("User-Agent") or ""
+    if visitas.es_robot(ua):
+        return {"ok": True, "robot": True}
+    # Detrás de un hosting la IP del visitante viene en un encabezado: la
+    # conexión de verdad es la del balanceador de Render.
+    ip = ((handler.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+          or handler.client_address[0])
+    ref = (q.get("ref") or [""])[0][:300]
+    ruta = (q.get("r") or ["/"])[0][:120]
+    fuente, dominio = visitas.de_donde(ref, handler.headers.get("Host") or "")
+    quiere = que_venia_a_ver(ruta)
+    datos = {
+        "huella": visitas.huella(ip, ua),
+        "ruta": ruta,
+        "fuente": fuente,
+        "dominio": dominio,
+        "busco": visitas.que_buscaba(ref),
+        "dispositivo": visitas.dispositivo(ua),
+        "sistema": visitas.sistema_de(ua),
+        "navegador": visitas.navegador_de(ua),
+        "region": visitas.region(handler.headers.get("Accept-Language")),
+        "pantalla": (q.get("p") or [""])[0][:12],
+        "intencion": quiere,
+    }
+    vid = visitas.anotar(datos)
+    # Lo que se le contesta a la página. Hoy no lo usa: es la semilla de la
+    # portada dinámica, y encenderla es una decisión que no me corresponde
+    # tomar a mí. Mientras tanto se puede ver en el administrador qué
+    # habría sugerido para cada visita.
+    return {"ok": True, "v": vid, "quiere": quiere,
+            "region": datos["region"], "fuente": fuente}
+
+
 def clave_de_ruta(path, q):
     """
     Con qué nombre se guarda la respuesta de una ruta.
@@ -8170,11 +8283,20 @@ class Handler(SimpleHTTPRequestHandler):
             self.close_connection = True
 
     def _texto(self, cuerpo, ctype, minutos=60):
-        """Una respuesta de texto armada acá, sin archivo detrás."""
+        """
+        Una respuesta de texto armada acá, sin archivo detrás.
+
+        Con `minutos=0` se pide que no se guarde en ningún lado. No es lo
+        mismo que guardarla cero segundos: la página de administración no
+        tiene que quedar en la caché de un intermediario ni en el disco del
+        navegador, aunque caduque enseguida.
+        """
         body, enc = self._comprimir(cuerpo.encode("utf-8"))
         self.send_response(200)
         self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "public, max-age=%d" % (minutos * 60))
+        self.send_header("Cache-Control",
+                         "private, no-store" if not minutos
+                         else "public, max-age=%d" % (minutos * 60))
         if enc:
             self.send_header("Content-Encoding", enc)
             self.send_header("Vary", "Accept-Encoding")
@@ -8341,6 +8463,36 @@ class Handler(SimpleHTTPRequestHandler):
                                 "X-Llave. La llave se pone en la variable "
                                 "HAYVAR_LLAVE del hosting."),
                  "configurada": bool(LLAVE)}, 403)
+
+        # La página de adentro. Va aparte de las direcciones de la página
+        # pública: no lleva título ni descripción para compartir —no se
+        # comparte— y no se le sacan los comentarios, que ahí adentro son
+        # para vos y no viajan a ningún desconocido.
+        if path == "/admin":
+            try:
+                with open(os.path.join(HERE, "admin.html"), encoding="utf-8") as f:
+                    return self._texto(f.read(), "text/html; charset=utf-8",
+                                       minutos=0)
+            except OSError:
+                return self._json({"error": "falta admin.html"}, 404)
+
+        # El aviso de la página: una visita nueva, o un latido diciendo que
+        # la persona sigue leyendo. Va acá y no en la tabla de rutas porque
+        # necesita los encabezados del pedido —de dónde viene, con qué
+        # navegador, en qué idioma—, que ahí no llegan.
+        #
+        # Nunca puede romper una visita: si algo falla, se contesta que sí
+        # y listo. Que no se anote alguien es un renglón menos en un
+        # informe; que se rompa la página es otra cosa.
+        if path == "/api/visita":
+            try:
+                v = (q.get("v") or [""])[0][:40]
+                if v:
+                    visitas.latir(v, (q.get("seg") or ["0"])[0])
+                    return self._json({"ok": True})
+                return self._json(anotar_visita(self, q))
+            except Exception:
+                return self._json({"ok": False})
 
         # passthrough crudo para inspeccionar la API: /api/raw?path=games/results
         if path == "/api/raw":

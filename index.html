@@ -5001,6 +5001,7 @@ const App=(()=>{
         if(S.liga==='lpf'){ pestanasLpf(); S.fechaPedida=d.fecha||null; }
         drawSide(); loadAll(true);
       } else aplicar(d);
+      api.avisar();
       cargarEmblemas();
       cargarClubes();
       // el club elegido se recuerda entre sesiones
@@ -5176,6 +5177,46 @@ const App=(()=>{
        pasando cuando algo se ve raro en el sitio publicado, y poder probar
        la navegación de verdad en vez de leer el código y suponer. */
     S,
+    /* ── Avisar que alguien entró ──────────────────────────────────────
+       El servidor sabe casi todo por el pedido: de dónde viene el
+       visitante, con qué navegador, en qué idioma. Le faltan tres cosas
+       que sólo tiene el navegador: de qué página venía, de qué tamaño es
+       la pantalla, y cuánto se queda.
+
+       Lo del tiempo va por latidos cada medio minuto y no por el evento
+       de cerrar la pestaña: ese evento el navegador se lo puede saltear
+       —y en el celular se lo saltea seguido— así que todas las visitas
+       medirían cero. Con latidos, lo peor que pasa es que se pierda el
+       último medio minuto.
+
+       Se para cuando la pestaña queda de fondo: nadie está leyendo un
+       partido que no está mirando, y contarlo sería mentirse.
+
+       Si algo de esto falla, no pasa nada. Es una estadística, no la
+       página: `catch` en todos lados y seguimos.                        */
+    avisar(){
+      let vid=null, desde=Date.now(), latido=null;
+      const contar=()=>Math.round((Date.now()-desde)/1000);
+      const url=(p)=>'/api/visita?'+p;
+      try{
+        fetch(url('r='+encodeURIComponent(location.pathname)
+                 +'&ref='+encodeURIComponent(document.referrer||'')
+                 +'&p='+screen.width+'x'+screen.height),
+              {cache:'no-store'})
+          .then(r=>r.json()).then(d=>{ if(d&&d.v){ vid=d.v; S.visita=d; } })
+          .catch(()=>{});
+      }catch(e){}
+      const latir=()=>{
+        if(!vid||document.hidden) return;
+        try{ fetch(url('v='+encodeURIComponent(vid)+'&seg='+contar()),
+                   {cache:'no-store'}).catch(()=>{}); }catch(e){}
+      };
+      latido=setInterval(latir, 30000);
+      document.addEventListener('visibilitychange',()=>{
+        if(document.hidden) latir();          // lo último antes de irse
+      });
+      return latido;
+    },
     reload(){ clearTimeout(S.timer); loadAll(false); },
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';
       document.documentElement.dataset.theme=t; try{localStorage.setItem('hayvar.theme',t);}catch(e){} }

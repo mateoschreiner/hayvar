@@ -1871,7 +1871,8 @@ console.log(JSON.stringify(salida));
     with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
                                  encoding="utf-8") as _f:
         _f.write(_guion); _ruta = _f.name
-    _r = _sub.run(["node", _ruta], capture_output=True, text=True)
+    _r = _sub.run(["node", _ruta], capture_output=True, text=True,
+                     timeout=60)
     os.unlink(_ruta)
     _out = json.loads(_r.stdout) if _r.returncode == 0 else None
     chequear("el enrutador de la página corre", _out is not None, _r.stderr[:200])
@@ -1923,12 +1924,14 @@ console.log(JSON.stringify(salida));
                  "\nglobalThis.URL=URL2; globalThis.fetch=fetchFalso;"
                  "\nglobalThis.requestAnimationFrame=f=>0;"
                  "\nglobalThis.setTimeout=(f,t)=>0; globalThis.clearTimeout=()=>{};"
+                 "\nglobalThis.setInterval=()=>0; globalThis.clearInterval=()=>{};"
                  "\nlet App;\n"
                + _app.replace("const App=(()=>{", "App=(()=>{") + _paseo)
     with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
                                  encoding="utf-8") as _f:
         _f.write(_guion2); _ruta2 = _f.name
-    _r2 = _sub.run(["node", _ruta2], capture_output=True, text=True)
+    _r2 = _sub.run(["node", _ruta2], capture_output=True, text=True,
+                     timeout=60)
     os.unlink(_ruta2)
     _paso = json.loads(_r2.stdout) if _r2.returncode == 0 else None
     chequear("la página entera arranca y se puede navegar",
@@ -1961,12 +1964,14 @@ console.log(JSON.stringify(salida));
                 "\nglobalThis.URL=URL2; globalThis.fetch=fetchFalso;"
                 "\nglobalThis.requestAnimationFrame=f=>0;"
                 "\nglobalThis.setTimeout=(f,t)=>0; globalThis.clearTimeout=()=>{};"
+                 "\nglobalThis.setInterval=()=>0; globalThis.clearInterval=()=>{};"
                 "\nprocess.on('unhandledRejection',()=>{});\nlet App;\n"
               + _app.replace("const App=(()=>{", "App=(()=>{") + js_extra)
         with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
                                      encoding="utf-8") as _h:
             _h.write(_g); _p = _h.name
-        _s = _sub.run(["node", _p], capture_output=True, text=True)
+        _s = _sub.run(["node", _p], capture_output=True, text=True,
+                     timeout=60)
         os.unlink(_p)
         return json.loads(_s.stdout) if _s.returncode == 0 and _s.stdout else None
 
@@ -1999,12 +2004,14 @@ console.log(JSON.stringify({entera, alCerrar:loc.pathname,
                  "\nglobalThis.URL=URL2; globalThis.fetch=fetchFalso;"
                  "\nglobalThis.requestAnimationFrame=f=>0;"
                  "\nglobalThis.setTimeout=(f,t)=>0; globalThis.clearTimeout=()=>{};"
+                 "\nglobalThis.setInterval=()=>0; globalThis.clearInterval=()=>{};"
                  "\nprocess.on('unhandledRejection',()=>{});\nlet App;\n"
                + _sin.replace("const App=(()=>{", "App=(()=>{") + _paseo)
     with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
                                  encoding="utf-8") as _f:
         _f.write(_guion3); _ruta3 = _f.name
-    _r3 = _sub.run(["node", _ruta3], capture_output=True, text=True)
+    _r3 = _sub.run(["node", _ruta3], capture_output=True, text=True,
+                     timeout=60)
     os.unlink(_ruta3)
     _sinpaso = json.loads(_r3.stdout) if _r3.returncode == 0 else None
     chequear("la página sin comentarios navega igual que la original",
@@ -2253,7 +2260,8 @@ print("\n── las puertas de servicio están cerradas ──")
 # la respuesta cómo hacerlo. Antes de publicar la página hay que cerrarla.
 chequear("lo que borra o gasta está en la lista de privadas",
          server.PRIVADAS == {"/api/recorrido", "/api/raw", "/api/contenido",
-                             "/api/diagnostico", "/api/tiempos"},
+                             "/api/diagnostico", "/api/tiempos",
+                             "/api/base", "/api/visitas", "/admin"},
          sorted(server.PRIVADAS))
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")
@@ -2295,6 +2303,161 @@ chequear("las rutas que usa la página siguen abiertas",
                                  "/api/buscar", "/api/ligas"}))
 chequear("y el chequeo de salud de Render también",
          "/api/ligas" not in server.PRIVADAS)
+# /api/base cuenta dónde vive el archivo de la base, cuánto pesa y cuántas
+# entradas tiene. Se me había quedado abierta.
+chequear("la base tampoco cuenta dónde vive a cualquiera",
+         "/api/base" in server.PRIVADAS)
+
+
+print("\n── quién entra, sin guardar quién es nadie ──")
+import visitas
+_IPH = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari")
+_WIN = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+_BOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+
+# Lo más importante de todo esto: contar personas sin poder identificarlas.
+_h1 = visitas.huella("200.1.2.3", _IPH)
+chequear("la huella no deja ver la IP",
+         "200.1.2.3" not in _h1 and len(_h1) == 16, _h1)
+chequear("la misma persona da la misma huella el mismo día",
+         visitas.huella("200.1.2.3", _IPH) == _h1)
+chequear("y dos personas distintas dan huellas distintas",
+         visitas.huella("200.1.2.4", _IPH) != _h1)
+chequear("mañana la misma persona ya no se puede reconocer",
+         visitas.huella("200.1.2.3", _IPH, dia="2030-01-01") != _h1)
+
+chequear("a los robots no se los cuenta como visitas",
+         visitas.es_robot(_BOT) and not visitas.es_robot(_IPH))
+chequear("se distingue el teléfono de la computadora",
+         visitas.dispositivo(_IPH) == "móvil"
+         and visitas.dispositivo(_WIN) == "escritorio")
+chequear("y el sistema y el navegador",
+         (visitas.sistema_de(_IPH), visitas.navegador_de(_IPH)) == ("iOS", "Safari")
+         and (visitas.sistema_de(_WIN), visitas.navegador_de(_WIN)) == ("Windows", "Chrome"),
+         (visitas.sistema_de(_WIN), visitas.navegador_de(_WIN)))
+
+# De dónde viene: del referente sólo el dominio, nunca la dirección entera,
+# que puede llevar cosas privadas de la otra página.
+_casos_fuente = [
+    ("https://www.google.com/search?q=secreto", "Google"),
+    ("https://l.instagram.com/?u=algo", "Instagram"),
+    ("https://t.co/abc", "X / Twitter"),
+    ("https://hayvar.com.ar/laliga", "interno"),
+    ("", "directo"),
+]
+_malf = [(r, visitas.de_donde(r, "hayvar.com.ar")[0]) for r, e in _casos_fuente
+         if visitas.de_donde(r, "hayvar.com.ar")[0] != e]
+chequear("se reconoce de dónde llegó cada visita", not _malf, _malf)
+chequear("y no se guarda la dirección completa del referente",
+         "secreto" not in json.dumps(
+             visitas.de_donde("https://www.google.com/search?q=secreto",
+                              "hayvar.com.ar")))
+chequear("los términos de búsqueda se guardan cuando el buscador los manda",
+         visitas.que_buscaba("https://duckduckgo.com/?q=aldosivi+union")
+         == "aldosivi union")
+chequear("y no se inventan cuando Google no los manda",
+         visitas.que_buscaba("https://www.google.com/") == "")
+chequear("el país sale del idioma del navegador",
+         visitas.region("es-AR,es;q=0.9") == "AR"
+         and visitas.region("en-US") == "US" and visitas.region("") == "")
+
+# Contar de verdad, con la base.
+server.almacen.borrar_prefijo("vis:")
+def _v(ip, ruta, ua=_IPH, ref=""):
+    f, d = visitas.de_donde(ref, "hayvar.com.ar")
+    return visitas.anotar({"huella": visitas.huella(ip, ua), "ruta": ruta,
+        "fuente": f, "dominio": d, "busco": visitas.que_buscaba(ref),
+        "dispositivo": visitas.dispositivo(ua), "sistema": visitas.sistema_de(ua),
+        "navegador": visitas.navegador_de(ua), "region": "AR",
+        "pantalla": "390x844", "intencion": ""})
+_a = _v("1.1.1.1", "/")
+_b = _v("2.2.2.2", "/laliga")
+_v("1.1.1.1", "/aldosivi")          # el mismo de antes, otra página
+_r = visitas.resumen()
+chequear("dos personas y tres páginas vistas",
+         (_r["hoy"]["gente"], _r["hoy"]["vistas"]) == (2, 3), _r["hoy"])
+
+# Los identificadores llevan azar: con la hora en milisegundos, dos
+# personas que entraran a la vez compartían identificador y el tiempo de
+# una se le sumaba a la otra.
+chequear("dos visitas simultáneas no comparten identificador", _a != _b)
+visitas.latir(_a, 45)
+visitas.latir(_a, 120)
+visitas.latir(_a, 90)               # llega tarde y desordenado
+visitas.latir(_b, 30)
+_r = visitas.resumen()
+chequear("el tiempo se suma bien y no va para atrás",
+         _r["hoy"]["segundos"] == 150, _r["hoy"]["segundos"])
+chequear("y cada tiempo queda en la visita que corresponde",
+         sorted(u["seg"] for u in _r["ultimas"]) == [0, 30, 120],
+         [u["seg"] for u in _r["ultimas"]])
+
+# Que no crezca sin freno: el disco es de 1 GB y ya hay 202 MB adentro.
+for _i in range(500):
+    _v("9.9.9.%d" % (_i % 120), "/partido/x-%d" % _i)
+_dia = server.almacen.leer("vis:dia:%s" % visitas.hoy())[0]
+chequear("las últimas visitas tienen tope",
+         len(server.almacen.leer("vis:ultimas")[0]) == visitas.ULTIMAS)
+chequear("y el resumen del día no crece con el tráfico",
+         len(_dia["paginas"]) <= 81 and len(json.dumps(_dia)) < 60000,
+         (len(_dia["paginas"]), len(json.dumps(_dia)) // 1024))
+chequear("en lo guardado no hay ninguna IP",
+         not re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
+                       json.dumps(_dia) + json.dumps(
+                           server.almacen.leer("vis:ultimas")[0])))
+server.almacen.borrar_prefijo("vis:")
+
+# Qué venía a ver: es el dato que después puede ordenar la portada.
+server.almacen.guardar("tv:lib:4798160", ["ESPN 2"])
+chequear("de un torneo se deduce el torneo",
+         server.que_venia_a_ver("/laliga") == "laliga")
+chequear("de un partido, mirando de cuál torneo es",
+         server.que_venia_a_ver("/partido/olimpia-vs-vasco-4798160") == "lib")
+chequear("de un club de Primera, la Liga Profesional",
+         server.que_venia_a_ver("/belgrano") == "lpf")
+chequear("y de la portada, nada: no dijo qué quiere",
+         server.que_venia_a_ver("/") == ""
+         and server.que_venia_a_ver("/partido/no-existe-999") == "")
+
+# La que anota tiene que estar abierta —la usa la propia página— y la que
+# muestra lo juntado, cerrada.
+chequear("la que anota está abierta y la que muestra está cerrada",
+         "/api/visita" not in server.PRIVADAS
+         and "/api/visitas" in server.PRIVADAS)
+chequear("anotar nunca puede romper una visita",
+         'return self._json({"ok": False})' in _SRV)
+chequear("la página avisa el tamaño de pantalla y de dónde venía",
+         "screen.width+'x'+screen.height" in HTML
+         and "document.referrer" in HTML)
+chequear("y el tiempo va por latidos, no por el evento de cerrar",
+         "setInterval(latir, 30000)" in HTML
+         and "if(document.hidden) latir();" in HTML)
+
+
+print("\n── la página de administración ──")
+_ADM = open(os.path.join(AQUI, "admin.html"), encoding="utf-8").read()
+chequear("no es pública", "/admin" in server.PRIVADAS)
+chequear("y no se guarda en la caché de nadie",
+         'minutos=0' in _SRV and '"private, no-store" if not minutos' in _SRV)
+chequear("no se enlaza desde el sitio ni se deja indexar",
+         'content="noindex, nofollow"' in _ADM
+         and "/admin" not in HTML)
+chequear("junta las cinco direcciones en un solo pedido paralelo",
+         all(("pedir('%s')" % r) in _ADM for r in
+             ("/api/tiempos", "/api/base", "/api/contenido",
+              "/api/recorrido", "/api/diagnostico")))
+chequear("la llave no queda guardada en el navegador",
+         "localStorage" not in _ADM and "sessionStorage" not in _ADM)
+chequear("y si la llave está mal, lo dice en criollo",
+         "Esa llave no es" in _ADM)
+# Lo que tiene que saltar solo, sin leer números: el disco llenándose es
+# la falla que rompe feo y de madrugada.
+chequear("el disco llenándose se pinta antes de ser un problema",
+         "pc > 85 ? 'mal' : pc > 60 ? 'mirar' : 'ok'" in _ADM)
+chequear("y una base que no sobrevive a las publicaciones también",
+         "sobrevive_al_deploy === false" in _ADM)
 
 
 print("\n── abrir de cero: los dos viajes se superponen ──")
@@ -2347,7 +2510,8 @@ console.log(JSON.stringify({conGol, anulado, terminado,
     with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
                                  encoding="utf-8") as _f:
         _f.write(_js); _rr = _f.name
-    _s = _sub.run(["node", _rr], capture_output=True, text=True)
+    _s = _sub.run(["node", _rr], capture_output=True, text=True,
+                     timeout=60)
     os.unlink(_rr)
     _marc = json.loads(_s.stdout) if _s.returncode == 0 else None
     chequear("la cuenta del marcador corre", _marc is not None,

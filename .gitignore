@@ -1,19 +1,19 @@
-
 __pycache__/
 *.pyc
 .DS_Store
 *.command
 clave.txt
- 
+llave.txt
+
 # borradores míos: no son parte de la página
-# (_pruebas.py sí va: es la regresión del proyecto)
+# (_pruebas.py y su DOM de mentira sí van: son la regresión del proyecto)
 _*.py
 _*.js
 !_pruebas.py
- 
+!_domsito.js
+
 # la base de datos es de cada maquina: en el servidor se crea sola
 *.db
 *.db-wal
 *.db-shm
 _*.html
- 

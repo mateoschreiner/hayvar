@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-22 · la página no se rebaja en cada visita, y el marcador no se contradice con los goles"
+VERSION_APP = "2026-08-24 · la portada contesta al toque, y el canal de TV aparece cuando lo publican"
 
 
 def reparar_recorridos():
@@ -3572,7 +3572,7 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
 
     Ahora son cinco minutos. No cuesta casi nada porque el detalle de un
     partido terminado ya no se vuelve a pedir: queda guardado aparte, y de
-    eso se ocupa `goles_al_dia`.
+    eso se ocupa `detalle_al_dia`.
     """
     ttl = 30 if en_juego else 300
     data = fetch("game", {"gameId": game_id}, ttl=ttl)
@@ -3721,14 +3721,13 @@ def api_detalles(q):
     #
     # Pero "guardado" no es lo mismo que "listo": un partido leído mientras
     # se jugaba deja los goles que iban hasta ese momento. Eso lo decide
-    # `goles_al_dia`, que además compara la cantidad con el resultado.
+    # `detalle_al_dia`, que además compara la cantidad con el resultado.
     pendientes = []
     for x, g in con_id:
-        guardado, listo = goles_al_dia(x, g)
+        guardado, tv, listo = detalle_al_dia(x, g)
         if not listo:
             pendientes.append((x, g))
             continue
-        tv, _ = almacen.leer("tv:%s:%s" % (x, g["liveId"]))
         pen, _ = almacen.leer("pen:%s:%s" % (x, g["liveId"]))
         salida[str(g["id"])] = {
             "tv": tv or [],
@@ -5755,38 +5754,61 @@ def leer_goles(liga, game_id):
     return dato, False
 
 
-def goles_al_dia(liga, g):
+def falta_mucho(g, horas=30):
+    """¿El partido es tan lejano que todavía no vale la pena mirarlo?"""
+    cuando = g.get("start")
+    if not cuando:
+        return False
+    try:
+        t = dt.datetime.fromisoformat(cuando)
+    except (ValueError, TypeError):
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return (t - dt.datetime.now(dt.timezone.utc)).total_seconds() > horas * 3600
+
+
+def detalle_al_dia(liga, g):
     """
-    ¿Lo guardado de este partido ya se puede mostrar sin volver a pedirlo?
+    ¿Lo guardado de este partido alcanza, o hay que volver a leerlo?
 
-    Antes alcanzaba con que hubiera *algo* guardado, y ese era el error: un
-    partido leído antes de empezar dejaba una lista vacía que se servía para
-    siempre. Ahora:
+    Devuelve (goles, canales, listo). Mira las dos cosas que guardamos de
+    cada partido —quién hizo los goles y por dónde se ve—, porque cada una
+    se completa en un momento distinto y antes bastaba con que *alguna*
+    estuviera para no volver a mirar nunca más.
 
-      · en juego → nunca, hay que ir a buscarlo
-      · terminado → si lo guardamos ya terminado, o si la cantidad de goles
-        coincide con el resultado (esto último es para lo guardado antes de
-        que anotáramos la primera cosa)
-      · todavía no empezó → alcanza con haberlo leído una vez; lo único que
-        puede haber es el canal de TV
+      · en juego → nunca alcanza, hay que ir a buscarlo
+      · terminado → alcanza si lo guardamos ya terminado, o si la cantidad
+        de goles coincide con el resultado (esto último es para lo que se
+        guardó antes de que anotáramos si el partido había terminado)
+      · todavía no empezó → alcanza si ya tenemos el canal
+
+    Esa última línea es la que faltaba. El canal se publica horas después
+    de que el partido aparece en el calendario, así que lo leíamos vacío y
+    quedaba vacío para siempre: los tres partidos de la Liga Profesional
+    del lunes se mostraron todo el día sin canal. Ahora se sigue
+    preguntando mientras el partido esté cerca; si falta más de un día, no
+    se molesta a la fuente, porque a esa altura todavía no lo publicaron.
 
     El caso "terminado pero incompleto" se vuelve a pedir una sola vez: al
     releerlo queda marcado como definitivo aunque la fuente siga sin decir
     quién hizo un gol. Si no, esos partidos se pedirían para siempre y le
     robarían el lugar a los que sí faltan.
     """
-    lista, fin = leer_goles(liga, g.get("liveId"))
+    gid = g.get("liveId")
+    lista, fin = leer_goles(liga, gid)
+    tv, _ = almacen.leer("tv:%s:%s" % (liga, gid))
     if lista is None:
-        return None, False
+        return None, tv, False
     estado = g.get("status")
     if estado == "LIVE":
-        return lista, False
+        return lista, tv, False
     if estado != "FIN":
-        return lista, True
+        return lista, tv, bool(tv) or falta_mucho(g)
     if fin:
-        return lista, True
+        return lista, tv, True
     total = (g.get("gh") or 0) + (g.get("ga") or 0)
-    return lista, len(lista) >= total
+    return lista, tv, len(lista) >= total
 
 
 def anotar_goles(liga, game_id, goles, fin=False):
@@ -5954,46 +5976,74 @@ HOME_LIGAS = ("lpf", "nacional", "ca", "lib", "sud", "champions", "europa",
               "laliga", "premier", "seriea", "bundesliga")
 
 
+def armar_home(date):
+    """
+    Los partidos de un día, liga por liga.
+
+    Las once ligas se piden a la vez y no una tras otra. Eran once esperas
+    en fila —cada una con su ida y vuelta a AFA o a 365scores— y por eso la
+    portada tardaba nueve segundos y medio de promedio. En paralelo, tarda
+    lo que la más lenta.
+
+    Cada partido se copia antes de etiquetarlo con su liga: los originales
+    son los del calendario guardado, compartidos con todo lo demás, y
+    escribirles encima ensuciaba la tabla de posiciones y el fixture.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def dia(games):
+        return [dict(g) for g in games if (g.get("start") or "")[:10] == date]
+
+    def de(lid):
+        try:
+            return lid, dia(all_games() if lid == "lpf"
+                            else api_liga_games({"id": [lid]}).get("games", []))
+        except Exception:
+            return lid, []
+
+    cuales = [k for k in HOME_LIGAS if k in LIGAS]
+    with ThreadPoolExecutor(max_workers=min(8, len(cuales))) as pool:
+        traido = dict(pool.map(de, cuales))
+
+    bloques, vivos = [], 0
+    for lid in cuales:                    # el orden lo manda HOME_LIGAS
+        ms = traido.get(lid) or []
+        if not ms:
+            continue
+        for m in ms:
+            m["liga"], m["ligaNombre"] = lid, LIGAS[lid]["nombre"]
+        ms.sort(key=lambda x: (x.get("start") or ""))
+        bloques.append({"liga": lid, "nombre": LIGAS[lid]["nombre"],
+                        "torneo": LIGAS[lid]["torneo"], "games": ms})
+        vivos += sum(1 for m in ms if m.get("status") == "LIVE")
+
+    total = sum(len(b["games"]) for b in bloques)
+    return {"date": date, "bloques": bloques, "total": total, "live": vivos,
+            "partidazo": partidazo_del_dia(bloques)}
+
+
 def api_home(q):
     """
     Portada: los partidos de un día, de las ligas de HOME_LIGAS.
     Uso: /api/home?date=YYYY-MM-DD (si no, hoy).
+
+    Es la pantalla que ve todo el que entra, así que no puede hacer
+    esperar: se sirve lo último que se armó y, si ya está viejo, se rearma
+    por atrás para el próximo. Ver `al_toque`.
     """
     date = (q.get("date") or [dt.date.today().isoformat()])[0]
-    bloques, vivos = [], 0
+    hoy = date == dt.date.today().isoformat()
 
-    def dia(games):
-        return [g for g in games if (g["start"] or "")[:10] == date]
+    def cada_cuanto(ultimo):
+        # Un día que ya pasó no cambia más. El de hoy sólo cambia rápido
+        # mientras haya algo en juego; si no hay nada rodando, rearmar cada
+        # diez segundos es gastar por gastar.
+        if not hoy:
+            return 600
+        return 10 if (ultimo or {}).get("live") else 60
 
-    try:
-        ms = dia(all_games())
-        if ms:
-            for m in ms:
-                m["liga"], m["ligaNombre"] = "lpf", LIGAS["lpf"]["nombre"]
-            bloques.append({"liga": "lpf", "nombre": LIGAS["lpf"]["nombre"],
-                            "torneo": LIGAS["lpf"]["torneo"], "games": ms})
-            vivos += sum(1 for m in ms if m["status"] == "LIVE")
-    except Exception:
-        pass
-
-    for lid in [k for k in HOME_LIGAS if k != "lpf" and k in LIGAS]:
-        try:
-            ms = dia(api_liga_games({"id": [lid]}).get("games", []))
-            if not ms:
-                continue
-            for m in ms:
-                m["liga"], m["ligaNombre"] = lid, LIGAS[lid]["nombre"]
-            bloques.append({"liga": lid, "nombre": LIGAS[lid]["nombre"],
-                            "torneo": LIGAS[lid]["torneo"], "games": ms})
-            vivos += sum(1 for m in ms if m["status"] == "LIVE")
-        except Exception:
-            continue
-
-    for b in bloques:
-        b["games"].sort(key=lambda x: (x["start"] or ""))
-    total = sum(len(b["games"]) for b in bloques)
-    return {"date": date, "bloques": bloques, "total": total, "live": vivos,
-            "partidazo": partidazo_del_dia(bloques)}
+    return al_toque("home:%s" % date, lambda: armar_home(date),
+                    frescura=cada_cuanto)
 
 
 # Los clásicos del fútbol argentino. Un interzonal no es cualquier partido
@@ -7523,6 +7573,89 @@ _ESTADO_FONDO = {"vuelta": 0, "haciendo": "sin arrancar", "desde": None,
                  "historia_al_dia": False, "recorriendo": False}
 
 
+# ── Contestar sin hacer esperar ──────────────────────────────────────────
+#
+# La portada tardaba 9,4 segundos de promedio. No porque hubiera mucha
+# gente —eran 175 visitas en 41 horas— sino porque cada visita armaba todo
+# de nuevo: once ligas, una tras otra, cada una con su viaje a AFA o a
+# 365scores.
+#
+# La caché normal no alcanzaba, porque cuando se vence alguien tiene que
+# pagar el rearmado completo, y ese alguien es una persona esperando.
+#
+# Acá se separa una cosa de la otra: se contesta SIEMPRE con lo último que
+# se armó —al instante, sin mirar la hora— y si eso ya está viejo, se manda
+# a rearmar en otro hilo para el que venga después. El único que espera de
+# verdad es el primero de todos, cuando todavía no hay nada guardado.
+#
+# El precio es que se puede estar mostrando algo de unos segundos atrás.
+# Para una portada que además se refresca sola cada veinte segundos, es un
+# precio que no se nota. Para una tabla de posiciones tampoco. No se usaría
+# para algo donde el dato viejo confunde.
+_VIVO = {}
+_vivo_lock = threading.Lock()
+
+
+def al_toque(clave, armar, frescura=15):
+    """
+    Lo último armado, ya. Y si está viejo, se renueva por atrás.
+
+    `frescura` puede ser un número de segundos o una función que mire lo
+    último armado y decida. Eso último sirve para no rearmar cada diez
+    segundos un día sin partidos en curso, donde no cambia nada.
+    """
+    with _vivo_lock:
+        e = _VIVO.get(clave)
+        ahora = time.time()
+        if e and e["valor"] is not None:
+            cuanto = frescura(e["valor"]) if callable(frescura) else frescura
+            viejo = ahora - e["cuando"] > cuanto
+            if viejo and not e["armando"]:
+                e["armando"] = True
+                threading.Thread(target=_rearmar, args=(clave, armar),
+                                 daemon=True).start()
+            return e["valor"]
+        _VIVO[clave] = {"valor": None, "cuando": 0, "armando": True}
+
+    # El primero arma sincrónico: no hay nada que mostrarle todavía.
+    try:
+        valor = armar()
+    except Exception:
+        with _vivo_lock:
+            _VIVO.pop(clave, None)
+        raise
+    with _vivo_lock:
+        _VIVO[clave] = {"valor": valor, "cuando": time.time(), "armando": False}
+        _limpiar_vivo()
+    return valor
+
+
+def _rearmar(clave, armar):
+    try:
+        valor = armar()
+    except Exception:
+        valor = None
+    with _vivo_lock:
+        e = _VIVO.get(clave)
+        if e is None:
+            return
+        e["armando"] = False
+        if valor is not None:
+            # si falló, se deja lo viejo: es mejor que una pantalla vacía,
+            # y en la próxima vuelta se intenta de nuevo
+            e["valor"], e["cuando"] = valor, time.time()
+
+
+def _limpiar_vivo(tope=40):
+    """Se guarda un día por clave; si alguien pasea por el calendario, se
+    van juntando. Se tiran los más viejos."""
+    if len(_VIVO) <= tope:
+        return
+    for k, _ in sorted(_VIVO.items(), key=lambda kv: kv[1]["cuando"])[:len(_VIVO) - tope]:
+        if not _VIVO[k]["armando"]:
+            _VIVO.pop(k, None)
+
+
 def escapar(t):
     """
     Texto listo para meter adentro de un atributo HTML.
@@ -7925,7 +8058,7 @@ def juntar_goles(lid, limite=25):
     for g in juegos:
         if g.get("status") != "FIN" or not g.get("liveId"):
             continue
-        _, listo = goles_al_dia(lid, g)
+        _, _, listo = detalle_al_dia(lid, g)
         if not listo:
             faltan.append(g)
 

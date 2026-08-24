@@ -1637,12 +1637,12 @@ _p_por_jugar = {"liveId": 8103, "status": "SOON", "gh": None, "ga": None}
 
 server.anotar_goles("cp", 8101, [{"player": "Uno", "min": 20, "side": "h"}], False)
 chequear("un partido en juego se vuelve a pedir siempre",
-         server.goles_al_dia("cp", _p_vivo)[1] is False)
+         server.detalle_al_dia("cp", _p_vivo)[2] is False)
 
 # leído antes de empezar: cero goles y el partido termina 1-4
 server.anotar_goles("cp", 8102, [], False)
 chequear("lo leído antes del pitazo inicial no se da por bueno",
-         server.goles_al_dia("cp", _p_fin)[1] is False)
+         server.detalle_al_dia("cp", _p_fin)[2] is False)
 
 # ahora sí, ya terminado
 server.anotar_goles("cp", 8102, [
@@ -1653,7 +1653,7 @@ server.anotar_goles("cp", 8102, [
     {"player": "Spinelli", "min": 84, "side": "a"},
     {"player": "Sandoval", "min": 79, "side": "h", "anulado": True},
 ], True)
-_lista, _listo = server.goles_al_dia("cp", _p_fin)
+_lista, _tv, _listo = server.detalle_al_dia("cp", _p_fin)
 chequear("una vez terminado queda como definitivo", _listo is True)
 chequear("y están los cinco goles, sin el anulado",
          len(_lista) == 5, len(_lista))
@@ -1663,8 +1663,8 @@ chequear("y están los cinco goles, sin el anulado",
 # más y queda marcado, aunque la cuenta no cierre.
 server.anotar_goles("cp", 8104, [{"player": "", "min": 30, "side": "h"}], True)
 chequear("un partido incompleto pero ya releído no se pide de nuevo",
-         server.goles_al_dia("cp", {"liveId": 8104, "status": "FIN",
-                                    "gh": 2, "ga": 0})[1] is True)
+         server.detalle_al_dia("cp", {"liveId": 8104, "status": "FIN",
+                                     "gh": 2, "ga": 0})[2] is True)
 chequear("el gol sin autor se guarda igual, con el minuto",
          server.leer_goles("cp", 8104)[0] == [{"j": "", "e": "", "m": 30,
                                                "s": "h"}],
@@ -1675,14 +1675,28 @@ server.almacen.guardar("goles:cp:8105", [{"j": "Viejo", "m": 10, "s": "h"}])
 chequear("lo guardado antes se sigue leyendo",
          server.leer_goles("cp", 8105)[0][0]["j"] == "Viejo")
 chequear("y si la cantidad coincide con el resultado se da por bueno",
-         server.goles_al_dia("cp", {"liveId": 8105, "status": "FIN",
-                                    "gh": 1, "ga": 0})[1] is True)
+         server.detalle_al_dia("cp", {"liveId": 8105, "status": "FIN",
+                                     "gh": 1, "ga": 0})[2] is True)
 chequear("pero si faltan goles se vuelve a pedir",
-         server.goles_al_dia("cp", {"liveId": 8105, "status": "FIN",
-                                    "gh": 3, "ga": 1})[1] is False)
-chequear("un partido que todavía no empezó no hace falta releerlo",
-         server.goles_al_dia("cp", _p_por_jugar)[1] is False
-         or server.leer_goles("cp", 8103)[0] is None)
+         server.detalle_al_dia("cp", {"liveId": 8105, "status": "FIN",
+                                     "gh": 3, "ga": 1})[2] is False)
+# El que todavía no empezó: mientras no tengamos el canal se sigue
+# mirando, y una vez que lo tenemos se deja en paz. Éste es el error que
+# dejó a los tres partidos del lunes sin canal en pantalla.
+_p_por_jugar["start"] = (_dtu.datetime.now(_dtu.timezone.utc)
+                         + _dtu.timedelta(hours=3)).isoformat()
+server.anotar_goles("cp", 8103, [], False)
+chequear("sin canal, un partido que ya viene se sigue mirando",
+         server.detalle_al_dia("cp", _p_por_jugar)[2] is False)
+server.almacen.guardar("tv:cp:8103", ["TNT Sports"])
+chequear("y con el canal ya guardado se deja de preguntar",
+         server.detalle_al_dia("cp", _p_por_jugar)[2] is True)
+_lejos = dict(_p_por_jugar, liveId=8107,
+              start=(_dtu.datetime.now(_dtu.timezone.utc)
+                     + _dtu.timedelta(days=5)).isoformat())
+server.anotar_goles("cp", 8107, [], False)
+chequear("pero si falta una semana no se molesta a la fuente todavía",
+         server.detalle_al_dia("cp", _lejos)[2] is True)
 
 # La tabla de goleadores propia no puede contar los goles sin autor.
 server.almacen.guardar("golesidx:cp", ["8102", "8104"])
@@ -1712,7 +1726,7 @@ chequear("el rescate sólo va a buscar lo que falta",
 chequear("el detalle del partido ya no se cachea doce horas",
          "ttl = 30 if en_juego else 300" in _SRV)
 chequear("y la lista mira si lo guardado está al día, no si existe",
-         "guardado, listo = goles_al_dia(x, g)" in _SRV
+         "guardado, tv, listo = detalle_al_dia(x, g)" in _SRV
          and 'guardado, _ = almacen.leer("goles:%s:%s"' not in _SRV)
 # Y la prueba de verdad: la lista de partidos, entera. Es la que reproduce
 # lo que se vio en pantalla el jueves.
@@ -2016,6 +2030,54 @@ chequear("los goles pendientes ya no despiertan al recorredor de calendarios",
          and "recorrer = (not historia_al_dia) or vuelta % 8 == 0" in _SRV)
 chequear("y buscar goles solo va cada cinco minutos, no cada uno",
          "elif not pendientes:" in _SRV and "time.sleep(300)" in _SRV)
+
+
+print("\n── la portada no hace esperar ──")
+# Medía 9,4 segundos de promedio y 40 el peor caso. La causa: cada visita
+# armaba todo de nuevo, once ligas una tras otra. Dos cambios: se piden a la
+# vez, y se contesta con lo último armado mientras se rearma por atrás.
+import threading as _th
+server._VIVO.clear()
+# Ojo: acá arriba las pruebas anularon time.sleep para no tardar, así que
+# no se puede medir con el reloj. Se usa una señal, que además es la forma
+# correcta de esperar a otro hilo.
+_armados, _rearmado = [0], _th.Event()
+def _contar():
+    _armados[0] += 1
+    if _armados[0] > 1:
+        _rearmado.set()
+    return {"n": _armados[0], "live": 0}
+
+_v1 = server.al_toque("prueba", _contar, frescura=0)
+chequear("el primero de todos lo arma y se lo lleva",
+         _v1 == {"n": 1, "live": 0}, _v1)
+
+_v2 = server.al_toque("prueba", _contar, frescura=0)
+chequear("el que viene después se lleva lo que ya estaba, sin esperar",
+         _v2["n"] == 1, _v2)
+chequear("y mientras tanto se rearmó por atrás",
+         _rearmado.wait(5) and _armados[0] == 2, _armados)
+
+# Si la fuente se cae, se sigue mostrando lo último bueno en vez de romper.
+_fallo = _th.Event()
+def _rota():
+    _fallo.set()
+    raise OSError("se cayó la fuente")
+server.al_toque("prueba", _rota, frescura=0)
+_fallo.wait(5)
+chequear("si la fuente falla, se sigue mostrando lo último que anduvo",
+         server.al_toque("prueba", _contar, frescura=9999)["n"] == 2,
+         server._VIVO.get("prueba"))
+server._VIVO.clear()
+
+# Y las once ligas se piden a la vez, no una tras otra.
+chequear("las ligas de la portada se piden todas juntas",
+         "with ThreadPoolExecutor(max_workers=min(8, len(cuales))) as pool:" in _SRV
+         and "traido = dict(pool.map(de, cuales))" in _SRV)
+chequear("cada partido se copia antes de etiquetarlo",
+         "return [dict(g) for g in games" in _SRV)
+chequear("un día que ya pasó no se rearma cada diez segundos",
+         "if not hoy:\n            return 600" in _SRV)
 
 
 print("\n── el marcador y los goles cuentan lo mismo ──")

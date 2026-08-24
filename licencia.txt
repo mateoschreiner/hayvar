@@ -1,0 +1,54 @@
+HAYVAR — Términos de uso
+© 2026 Mateo Schreiner. Todos los derechos reservados.
+hayvar.com.ar
+
+
+QUÉ ES ESTO
+
+HAYVAR es un proyecto personal, sin fines comerciales, que muestra
+resultados, tablas y estadísticas de fútbol. El código, el diseño, los
+textos y los dibujos de las camisetas son obra propia.
+
+
+LO QUE NO ESTÁ PERMITIDO
+
+No se permite copiar, reproducir ni redistribuir el código, el diseño ni
+los dibujos de este sitio, ni publicarlos en otro lado, ni usarlos como
+base de otro proyecto, sin permiso escrito.
+
+Esto incluye el código que se puede ver desde el navegador. Que un archivo
+se pueda leer no significa que se pueda usar: cualquier página web se puede
+leer, y eso nunca fue una autorización.
+
+Tampoco se permite el uso automatizado del sitio ni de sus direcciones
+/api/ para alimentar otro servicio, ni la extracción masiva de sus datos.
+
+
+LO QUE SÍ
+
+Mirar el sitio, compartir sus enlaces y citarlo mencionando la fuente.
+
+Si querés usar algo de acá para un proyecto tuyo, escribime y lo hablamos.
+La respuesta va a ser que sí bastante seguido; lo único que pido es que se
+pregunte.
+
+
+DE DÓNDE SALEN LOS DATOS
+
+El fixture, las posiciones, los promedios y los goleadores salen de AFA.
+El minuto a minuto, las formaciones y los escudos, de 365scores. Esos datos
+son de sus fuentes y no de HAYVAR, y esta licencia no los alcanza.
+
+HAYVAR no está asociado a la AFA, a la Liga Profesional, a 365scores ni a
+los clubes. Los nombres y escudos de los clubes pertenecen a cada club y se
+usan sólo para identificarlos.
+
+
+SIN GARANTÍAS
+
+El sitio se ofrece como está. Los datos pueden tener errores, llegar tarde
+o faltar, porque dependen de fuentes de terceros. No sirve como fuente
+oficial para nada que importe de verdad.
+
+
+Contacto: mateoschreiner@gmail.com

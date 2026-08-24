@@ -2212,6 +2212,15 @@ chequear("y no viajan",
          "%.0f%% del original" % (100 * len(_ALIG) / len(HTML)))
 chequear("pero el bloque que reemplaza el servidor sobrevive al recorte",
          "<title>" in _ALIG and "og:title" in _ALIG)
+# El único comentario que sí tiene que viajar es el del derecho de autor:
+# borrarlo de la copia publicada sería borrarlo justo de donde sirve.
+chequear("el aviso de derecho de autor viaja con la página",
+         "/*! HAYVAR" in _ALIG and "Todos los derechos reservados" in _ALIG
+         and "© 2026 HAYVAR" in _ALIG)
+chequear("y los términos completos están en su archivo",
+         os.path.exists(os.path.join(AQUI, "licencia.txt")))
+chequear("los buscadores no tienen por qué recorrer las /api/",
+         "Disallow: /api/" in _SRV)
 
 # Lo delicado: una barra adentro de un texto o de una expresión regular no
 # es un comentario. Este archivo está lleno de https:// y de regex.

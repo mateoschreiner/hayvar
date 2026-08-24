@@ -3414,7 +3414,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · llave en las puertas de servicio, y la página viaja sin comentarios (86 → 55 KB)"
+VERSION_APP = "2026-08-24 · listo para publicar: llave en las puertas de servicio, página sin la receta y licencia a la vista"
 
 
 def reparar_recorridos():
@@ -7881,7 +7881,13 @@ def sin_comentarios_js(js):
         if c == "/" and sig == "*":
             j = js.find("*/", i + 2)
             fin = n if j < 0 else j + 2
-            emitir("\n" * js.count("\n", i, fin))
+            # Los que empiezan con /*! se quedan. Es la convención de toda
+            # la vida para el aviso de derecho de autor: es justamente el
+            # comentario que no tiene sentido borrar de la copia publicada.
+            if js[i:i + 3] == "/*!":
+                emitir(js[i:fin])
+            else:
+                emitir("\n" * js.count("\n", i, fin))
             i = fin
             continue
 
@@ -8370,7 +8376,13 @@ class Handler(SimpleHTTPRequestHandler):
             host = self.headers.get("Host") or "hayvar.com.ar"
             raiz = "https://%s" % host
             if path == "/robots.txt":
-                cuerpo = ("User-agent: *\nAllow: /\n"
+                # Las /api/ no son páginas: que las recorra un buscador no
+                # le sirve a nadie y a nosotros nos cuesta. Ojo con lo que
+                # esto es y lo que no: es un pedido, no una tranca. Lo que
+                # de verdad no tiene que estar abierto está en PRIVADAS.
+                cuerpo = ("User-agent: *\n"
+                          "Allow: /\n"
+                          "Disallow: /api/\n"
                           "Sitemap: %s/sitemap.xml\n" % raiz)
                 return self._texto(cuerpo, "text/plain; charset=utf-8")
             rutas = ["/"] + ["/" + s for s in RUTAS_LIGA] \

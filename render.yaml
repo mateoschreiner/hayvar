@@ -1,25 +1,56 @@
-# Configuración de Render. Con este archivo en el repo, Render arma el
-# servicio solo: no hay que completar nada a mano en el panel.
+# Cómo está armado el servicio en Render.
+#
+# ⚠ LEER ANTES DE SINCRONIZAR ESTE ARCHIVO
+#
+# Hoy el servicio NO se maneja desde acá: se creó y se ajustó a mano en el
+# panel. Se nota porque este archivo decía `plan: free` y sin disco, y el
+# servicio real está en Starter y con un disco montado — si se estuviera
+# aplicando, ya habría pasado lo contrario.
+#
+# Por eso este archivo vale sobre todo como documentación: dice cómo está
+# armado el servicio, para poder rehacerlo si alguna vez hay que empezar de
+# nuevo. Antes estaba desactualizado y era una mina enterrada: el día que
+# alguien lo sincronizara, bajaba el plan y se llevaba puesto el disco con
+# la base adentro.
+#
+# Si algún día lo vas a sincronizar de verdad, revisá primero que el
+# `name` del disco de abajo sea EXACTAMENTE el que figura en Render →
+# Settings → Disks. Si no coincide, Render entiende que es un disco nuevo
+# y te crea uno vacío: la base quedaría en el disco viejo, sin usar.
 services:
   - type: web
     name: hayvar
     runtime: python
-    plan: free
+    # Starter, US$7 al mes. El plan gratis NO sirve: no tiene disco
+    # persistente, y sin disco la base se borra en cada publicación.
+    plan: starter
     # No hay dependencias: el servidor usa sólo la biblioteca estándar.
     buildCommand: "echo sin dependencias"
     startCommand: "python3 server.py"
     healthCheckPath: /api/ligas
+
+    # El disco donde vive la base. `almacen.py` lo busca en /var/data
+    # justamente porque la carpeta del código se borra en cada publicación.
+    disk:
+      name: datos          # ⚠ confirmá este nombre contra Render
+      mountPath: /var/data
+      sizeGB: 1
+
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
-      # La llave de las puertas de servicio: /api/recorrido, /api/raw,
-      # /api/contenido, /api/diagnostico y /api/tiempos. Sin ella, esas
-      # direcciones quedan cerradas para todos —incluido vos—, que es lo
-      # que corresponde: olvidarse de ponerla tiene que romper algo tuyo y
-      # no dejar la puerta abierta.
-      #
-      # generateValue le pide a Render que invente una al crear el
-      # servicio. Queda en el panel, en Environment, para copiarla cuando
-      # la necesites. Así no pasa por el repositorio ni por un chat.
+
+      # Las dos claves van con `sync: false`: quiere decir "el valor se
+      # pone en el panel, no acá". Así este archivo puede vivir en el
+      # repositorio sin llevar ningún secreto adentro.
+
+      # Abre las puertas de servicio: /api/recorrido, /api/raw,
+      # /api/contenido, /api/diagnostico y /api/tiempos. Sin ella esas
+      # direcciones quedan cerradas para todos, incluido vos.
       - key: HAYVAR_LLAVE
-        generateValue: true
+        sync: false
+
+      # API-Football. Si no está, el servidor anda igual: sólo se quedan
+      # sin las cosas que dependen de esa fuente.
+      - key: APIFOOTBALL_KEY
+        sync: false

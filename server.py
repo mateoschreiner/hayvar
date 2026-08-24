@@ -3350,7 +3350,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · portada al toque, canal de TV cuando lo publican, y la ficha del jugador igual desde donde sea"
+VERSION_APP = "2026-08-24 · la portada, la ficha del club y los goleadores de la fecha contestan al toque"
 
 
 def reparar_recorridos():
@@ -3680,10 +3680,24 @@ def api_detalles(q):
     Canal de TV y goleadores de todos los partidos de una fecha, para poder
     mostrarlos en la lista sin abrir cada uno.
     Uso: /api/detalles?round=5  ·  /api/detalles?id=nacional&round=26
+
+    Igual que la portada: se contesta con lo último armado y se completa
+    por atrás. Acá importa el doble, porque la página vuelve a pedir esto
+    cada cuatro segundos mientras queden partidos sin resolver, y antes
+    cada una de esas vueltas armaba todo de nuevo.
     """
     lid = (q.get("id") or ["lpf"])[0]
     rnd = (q.get("round") or [None])[0]
     fecha = (q.get("date") or [None])[0]
+    return al_toque("det:%s:%s:%s" % (fecha or "", lid, rnd or ""),
+                    lambda: armar_detalles(lid, rnd, fecha),
+                    # corto porque acá viven los goles de lo que se está
+                    # jugando; igual la respuesta sale al toque, esto sólo
+                    # dice cada cuánto se rearma por atrás
+                    frescura=8)
+
+
+def armar_detalles(lid, rnd, fecha):
 
     def de_liga(x):
         return all_games() if x == "lpf" else api_liga_games({"id": [x]}).get("games", [])
@@ -6969,12 +6983,24 @@ for _n, _d in _OTROS_CLUBES.items():
 def api_club_info(q):
     """
     Todo lo del club para su página. /api/club-info?name=Belgrano
+
+    Tardaba 7,8 segundos: adentro recorre las trece ligas para armar el
+    fixture del club, y a cada una le pide además la tabla de posiciones
+    para saber en qué puesto va. Eran veintiséis esperas en fila.
+
+    Ahora se piden todas juntas, y encima la ficha entera se sirve al toque
+    desde lo último armado. Un club no cambia de un minuto al otro: lo que
+    se mueve son los resultados, y para eso está el minuto a minuto.
     """
     nombre = (q.get("name") or [""])[0].strip()
     if not nombre:
         return {"error": "falta el parámetro name"}
     canon = match_team(nombre) or nombre
+    return al_toque("club:%s" % canon, lambda: armar_club_info(canon),
+                    frescura=90)
 
+
+def armar_club_info(canon):
     ficha = dict(CLUBES_INFO.get(canon) or {})
     colores = COLORES.get(canon)
     escudo = None
@@ -7001,21 +7027,23 @@ def api_club_info(q):
                          + quote("%s %s" % (ficha["estadio"],
                                             ficha.get("direccion") or "Argentina")))
 
-    # el fixture completo del club, separado por competencia
-    fixture, orden = {}, []
-    for lid in (l for l in LIGAS if l != "fem"):
+    # El fixture completo del club, separado por competencia. Cada liga se
+    # resuelve entera —sus partidos y el puesto del club en su tabla— y las
+    # trece van a la vez: era lo que hacía esperar ocho segundos.
+    from concurrent.futures import ThreadPoolExecutor
+
+    def de_liga(lid):
         try:
             juegos = (all_games(ttl=600) if lid == "lpf"
                       else api_liga_games({"id": [lid]}).get("games", []))
         except Exception:
-            continue
+            return lid, None
         suyos = [m for m in juegos
                  if any(mismo_club(m[s].get("canon") or m[s].get("name"), canon)
                         for s in ("home", "away"))]
         if not suyos:
-            continue
+            return lid, None
         suyos.sort(key=lambda m: m.get("start") or "")
-        orden.append(lid)
 
         # dónde está el club en ese torneo: zona, puesto, puntos y los
         # últimos cinco. En las copas no hay tabla, así que queda vacío.
@@ -7039,10 +7067,17 @@ def api_club_info(q):
             except Exception:
                 pass
 
-        fixture[lid] = {"nombre": LIGAS[lid]["nombre"],
-                        "copa": bool(LIGAS[lid].get("copa")),
-                        "posicion": posicion,
-                        "games": suyos}
+        return lid, {"nombre": LIGAS[lid]["nombre"],
+                     "copa": bool(LIGAS[lid].get("copa")),
+                     "posicion": posicion,
+                     "games": suyos}
+
+    cuales = [l for l in LIGAS if l != "fem"]
+    with ThreadPoolExecutor(max_workers=min(8, len(cuales))) as pool:
+        traido = dict(pool.map(de_liga, cuales))
+    # el orden es el de LIGAS, no el que hayan terminado los pedidos
+    orden = [l for l in cuales if traido.get(l)]
+    fixture = {l: traido[l] for l in orden}
 
     return {
         "club": canon,

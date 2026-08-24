@@ -2108,6 +2108,29 @@ server._VIVO.clear()
 chequear("las ligas de la portada se piden todas juntas",
          "with ThreadPoolExecutor(max_workers=min(8, len(cuales))) as pool:" in _SRV
          and "traido = dict(pool.map(de, cuales))" in _SRV)
+
+# La ficha de un club tardaba 7,8 s: trece ligas en fila y, a cada una, su
+# tabla de posiciones aparte. Veintiséis esperas para dibujar una página.
+chequear("las trece ligas de la ficha del club también",
+         "traido = dict(pool.map(de_liga, cuales))" in _SRV
+         and "cuales = [l for l in LIGAS if l != \"fem\"]" in _SRV)
+chequear("y el orden sale de LIGAS, no de cuál contestó primero",
+         "orden = [l for l in cuales if traido.get(l)]" in _SRV)
+
+server._VIVO.clear()
+_veces = [0]
+_armar_real = server.armar_club_info
+server.armar_club_info = lambda canon: (_veces.__setitem__(0, _veces[0] + 1)
+                                        or {"club": canon})
+_c1 = server.api_club_info({"name": ["Belgrano"]})
+_c2 = server.api_club_info({"name": ["Belgrano"]})
+server.armar_club_info = _armar_real
+chequear("la ficha del club se arma una vez y se sirve muchas",
+         _veces[0] == 1 and _c1 == _c2 == {"club": "Belgrano"},
+         (_veces[0], _c1))
+chequear("los goleadores y canales de la fecha, igual",
+         "return al_toque(\"det:%s:%s:%s\" % (fecha or \"\", lid, rnd or \"\")," in _SRV)
+server._VIVO.clear()
 chequear("cada partido se copia antes de etiquetarlo",
          "return [dict(g) for g in games" in _SRV)
 chequear("un día que ya pasó no se rearma cada diez segundos",

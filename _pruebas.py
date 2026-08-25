@@ -4111,6 +4111,244 @@ console.log(JSON.stringify({
         chequear("y las que no entraron en el detalle igual se cuentan",
                  _av["loQueNoEntro"], _av)
 
+print("\n── los partidos, uno por fila ──")
+# El almacén guarda un torneo entero como un bloque de JSON: sirve para
+# mandar una pantalla, pero no se le puede preguntar nada. `fixture:11` son
+# 753 partidos en 463 KB, y para mirar uno hay que parsear los 753.
+_guion4 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import almacen, tablas
+
+    def pg(i, comp, loc, lid, vis, vid, dia, gh=None, ga=None, temp=1, ronda=1):
+        return {"id": i, "comp": comp, "temporada": temp, "round": ronda,
+                "start": dia + "T20:00:00-03:00", "status": "FIN",
+                "home": {"id": lid, "canon": loc, "name": loc, "score": gh},
+                "away": {"id": vid, "canon": vis, "name": vis, "score": ga},
+                "gh": gh, "ga": ga, "venue": "La Bombonera", "stage": ""}
+
+    tablas.iniciar()
+    # el torneo, por su competencia principal
+    tablas.guardar("champions", 572, [
+        pg(1, 572, "Bayern", 10, "Inter", 20, "2026-09-15", 2, 1),
+        pg(2, 572, "Inter", 20, "Bayern", 10, "2026-11-04", 0, 0),
+        # y una clasificatoria, que también está en la otra competencia
+        pg(9, 572, "Celje", 30, "Ararat", 40, "2026-08-04", 3, 1)],
+        principal=True)
+    # ahora la misma clasificatoria, por la competencia de la previa
+    tablas.guardar("champions", 332, [
+        pg(9, 332, "Celje", 30, "Ararat", 40, "2026-08-04", 3, 1)],
+        principal=False)
+    # y la temporada anterior del mismo torneo
+    tablas.guardar("champions", 572, [
+        pg(3, 572, "Bayern", 10, "Inter", 20, "2025-10-01", 1, 3, temp=0)],
+        principal=True)
+
+    e = tablas.estado()
+    fila9 = tablas._filas("SELECT liga, comp, principal FROM partidos WHERE id=9")
+    # volver a pasar lo mismo no duplica: la clave es el partido
+    tablas.guardar("champions", 572, [
+        pg(1, 572, "Bayern", 10, "Inter", 20, "2026-09-15", 2, 1)],
+        principal=True)
+    despues = tablas.estado()["partidos"]
+    # y un resultado que cambia sí se actualiza
+    tablas.guardar("champions", 572, [
+        pg(1, 572, "Bayern", 10, "Inter", 20, "2026-09-15", 4, 1)],
+        principal=True)
+    marcador = tablas._filas("SELECT gh, ga FROM partidos WHERE id=1")[0]
+
+    print(json.dumps({
+        "filas": e["partidos"], "equipos": e["equipos"],
+        "porLiga": e["porLiga"],
+        "elRepetido": fila9,
+        "trasRepasar": despues,
+        "marcador": [marcador["gh"], marcador["ga"]],
+        "cruces": [(m["dia"], m["gh"], m["ga"]) for m in tablas.entre(10, 20)],
+        "delEquipo": len(tablas.del_equipo(10)),
+        "deUnaTemporada": len(tablas.del_equipo(10, temporada=1)),
+        "temporadas": tablas.temporadas("champions"),
+
+        # ── quién jugó qué, y los goles ──
+        "part": tablas.guardar_participaciones(
+            [("bayern uno", 1), ("bayern uno", 2), ("inter uno", 1),
+             # el mismo par otra vez: no es una participación nueva
+             ("bayern uno", 1)]),
+        "gol": tablas.guardar_goles([
+            (1, "bayern uno", 12, "Bayern", "h"),
+            (1, "bayern uno", 70, "Bayern", "h"),   # dos del mismo, dos goles
+            (1, "inter uno", 55, "Inter", "a"),
+            (1, "bayern uno", 12, "Bayern", "h"),   # repetido: es el mismo gol
+            (2, "bayern uno", None, "Bayern", "h")]),  # sin minuto
+        "carrera": [(m["dia"], m["liga"], m["goles"])
+                    for m in tablas.carrera_de("bayern uno")],
+        "goleadores": [(g["jugador"], g["goles"])
+                       for g in tablas.goleadores(tope=5)],
+        "goleadoresDeUnaTemporada": [
+            (g["jugador"], g["goles"])
+            for g in tablas.goleadores(liga="champions", temporada=1)],
+        "cuentas": {k: tablas.estado()[k]
+                    for k in ("participaciones", "jugadores", "goles")},
+
+        "borradas": tablas.borrar_liga("champions"),
+        "quedan": tablas.estado()["partidos"],
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion4); _gp6 = _f.name
+_db4 = os.path.join(_tp2.gettempdir(), "hayvar_tab_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db4 + _ext):
+        os.unlink(_db4 + _ext)
+_pt2 = _sb2.run([sys.executable, _gp6, _db4, AQUI],
+                capture_output=True, text=True, timeout=120)
+os.unlink(_gp6)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db4 + _ext):
+        os.unlink(_db4 + _ext)
+_tb = None
+for _linea in _pt2.stdout.splitlines():
+    if _linea.startswith("{"):
+        _tb = json.loads(_linea)
+chequear("la tabla de partidos corre entera", _tb is not None,
+         (_pt2.stdout[-200:], _pt2.stderr[-400:]))
+if _tb:
+    # Cuatro partidos distintos: dos de la fase de liga, uno de la
+    # clasificación y uno de la temporada anterior. El de la clasificación
+    # llegó dos veces, por sus dos competencias.
+    chequear("cada partido es una fila y nada más que una",
+             _tb["filas"] == 4, _tb["filas"])
+    # Éste es EL error que había que evitar. Las clasificatorias de la
+    # Champions y la Europa están guardadas en dos competencias: son 151
+    # partidos con el mismo identificador en dos bloques. Con la clave
+    # equivocada se contaban dos veces y las tablas quedaban mal armadas
+    # para siempre.
+    chequear("el partido que está en dos competencias no se cuenta dos veces",
+             len(_tb["elRepetido"]) == 1, _tb["elRepetido"])
+    # Y queda con el torneo, no con el número interno de la previa.
+    chequear("y queda con la competencia principal, no con la de la previa",
+             _tb["elRepetido"][0]["comp"] == 572
+             and _tb["elRepetido"][0]["principal"] == 1, _tb["elRepetido"])
+    chequear("volver a pasar los mismos partidos no los duplica",
+             _tb["trasRepasar"] == 4, _tb["trasRepasar"])
+    chequear("pero un resultado que cambió sí se actualiza",
+             _tb["marcador"] == [4, 1], _tb["marcador"])
+    # La pregunta que con bloques no se podía hacer: los cruces entre dos
+    # equipos, de cualquier torneo y de cualquier temporada, ordenados.
+    chequear("se puede preguntar el historial entre dos equipos",
+             _tb["cruces"] == [["2026-11-04", 0, 0], ["2026-09-15", 4, 1],
+                               ["2025-10-01", 1, 3]], _tb["cruces"])
+    chequear("y todos los partidos de un equipo, de local y de visitante",
+             _tb["delEquipo"] == 3, _tb["delEquipo"])
+    chequear("acotados a una temporada", _tb["deUnaTemporada"] == 2,
+             _tb["deUnaTemporada"])
+    chequear("y qué temporadas hay de cada torneo",
+             [t["temporada"] for t in _tb["temporadas"]] == [1, 0],
+             _tb["temporadas"])
+    # ── quién jugó qué ──
+    # Cuatro pares mandados, tres distintos: el par jugador–partido es lo
+    # que de verdad no se puede repetir.
+    chequear("una participación es un jugador y un partido, una sola vez",
+             _tb["cuentas"]["participaciones"] == 3
+             and _tb["cuentas"]["jugadores"] == 2, _tb["cuentas"])
+    # Cinco goles mandados: uno era el mismo repetido. Los otros dos del
+    # mismo jugador en el mismo partido son dos goles distintos, y eso hay
+    # que respetarlo o los goleadores salen mal.
+    chequear("dos goles del mismo jugador en un partido son dos goles",
+             _tb["cuentas"]["goles"] == 4, _tb["cuentas"])
+    # La carrera sale de cruzar las dos tablas: los partidos que jugó, con
+    # el torneo y la fecha del partido y sus goles contados.
+    chequear("la carrera de un jugador sale de cruzar las dos tablas",
+             _tb["carrera"] == [["2026-09-15", "champions", 2],
+                                ["2026-11-04", "champions", 1]]
+             or _tb["carrera"] == [["2026-11-04", "champions", 1],
+                                   ["2026-09-15", "champions", 2]],
+             _tb["carrera"])
+    chequear("y la tabla de goleadores se calcula, no se guarda",
+             _tb["goleadores"] == [["bayern uno", 3], ["inter uno", 1]],
+             _tb["goleadores"])
+    chequear("acotada a un torneo y una temporada",
+             _tb["goleadoresDeUnaTemporada"] == [["bayern uno", 3],
+                                                 ["inter uno", 1]],
+             _tb["goleadoresDeUnaTemporada"])
+    # Si sale mal, se borra y se rearma: por eso esto no puede perder nada.
+    chequear("un torneo se puede borrar entero para rearmarlo",
+             _tb["borradas"] == 4 and _tb["quedan"] == 0, _tb)
+# La tabla se arma leyendo lo que ya está guardado. Si le pidiera algo a la
+# fuente, rearmarla costaría plata y no se podría hacer a la ligera.
+chequear("se arma de los bloques guardados, sin pedirle nada a la fuente",
+         'almacen.leer("fixture:%s" % comp)' in _SRV
+         and "fetch(" not in _SRV.split("def sincronizar_tablas")[1].split("\ndef ")[0])
+# Primero las principales y después las previas: si fuera al revés, los 151
+# quedarían con el número interno de la clasificación.
+# El orden no cambia el resultado —la condición del ON CONFLICT ya deja
+# ganar a la principal llegue cuando llegue— pero leerlo en ese orden dice
+# cuál manda, y no depende de acordarse de la condición.
+chequear("y primero las competencias principales",
+         "for principal in (True, False):" in _SRV)
+# El administrador tiene que poder mostrarla: si los números no cuadran con
+# los torneos, la tabla está mal armada y hay que verlo antes de usarla.
+if _sh.which("node"):
+    _bt = json.dumps({
+        "bytes": 1000, "entradas": 5, "sobrevive_al_deploy": True, "pesos": [],
+        "tablas": {"partidos": 4206, "equipos": 378, "porLiga": [
+            {"liga": "laliga", "partidos": 753, "temporadas": 2, "jugados": 379,
+             "desde": "2025-08-17", "hasta": "2027-05-30"},
+            {"liga": "champions", "partidos": 83, "temporadas": 1, "jugados": 83,
+             "desde": "2026-07-07", "hasta": "2026-08-19"}]},
+        "tablasCuando": {"cuando": "2026-08-25T20:00:00", "leidos": 4357,
+                         "filas": 4206}})
+    _colat = ("""
+const base = __B__;
+const s = tablaDePartidos(base);
+console.log(JSON.stringify({
+  filas: (s.match(/<tr>/g) || []).length,
+  total: s.indexOf('>4.206<') >= 0 || s.indexOf('>4206<') >= 0,
+  avisaRepetidos: s.indexOf('repetidos, unificados') >= 0,
+  nombraTorneos: s.indexOf('laliga') >= 0 && s.indexOf('champions') >= 0}));
+""").replace("__B__", _bt)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write("globalThis.location={search:'',hash:''};\n"
+                 + re.findall(r"<script>(.*?)</script>", _ADM, re.S)[-1]
+                   .split("/* ── armar todo")[0] + _colat)
+        _rt2 = _f.name
+    _pt3 = _sub.run(["node", _rt2], capture_output=True, text=True, timeout=60)
+    os.unlink(_rt2)
+    _at = json.loads(_pt3.stdout) if _pt3.returncode == 0 and _pt3.stdout else None
+    chequear("el administrador dibuja la tabla de partidos", _at is not None,
+             _pt3.stderr.strip().splitlines()[:2])
+    if _at:
+        chequear("con una fila por torneo",
+                 _at["filas"] == 3 and _at["nombraTorneos"], _at)
+        # 4.357 leídos y 4.206 filas: la diferencia son los 151 que están
+        # en dos competencias. Que se vea, y no parezca que se perdieron.
+        chequear("y avisa cuántos venían repetidos", _at["avisaRepetidos"], _at)
+# La tabla se rehacía sólo cuando el recolector recorría los calendarios, y
+# eso, con la historia completa, es una vez cada ocho vueltas: un gol de
+# ahora tardaba hasta dos horas en llegar. Se engancha donde se guarda el
+# calendario, que es el instante exacto en que hay un resultado nuevo.
+chequear("el calendario que se guarda va a la tabla en ese momento",
+         "guardados = list(acumulado.values())" in _SRV
+         and "tablas.guardar(lid, comp, guardados, principal=principal)" in _SRV)
+chequear("y para eso se sabe de qué torneo es cada competencia",
+         "def liga_de_comp(comp):" in _SRV)
+_ALM = open(os.path.join(AQUI, "almacen.py"), encoding="utf-8").read()
+# Leer once mil claves de a una son once mil consultas con su candado.
+chequear("las claves de una familia se leen de pocas pasadas, no de a una",
+         "def leer_prefijo(" in _ALM and "clave IN (%s)" in _ALM)
+# Y si una página del archivo está dañada, la consulta entera se cae: antes
+# eso devolvía una lista vacía y parecía que no había datos.
+chequear("y una página dañada no se lleva puesta a toda la familia",
+         "for clave in grupo:" in _ALM
+         and "la tanda tiene una página rota" in _ALM)
+chequear("el almacén presta su conexión en vez de abrir otra",
+         "def conexion():" in open(os.path.join(AQUI, "almacen.py"),
+                                   encoding="utf-8").read()
+         and "with almacen.conexion() as c:" in open(
+             os.path.join(AQUI, "tablas.py"), encoding="utf-8").read())
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

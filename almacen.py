@@ -20,6 +20,7 @@ volúmenes son chicos (un torneo entero son pocos cientos de KB) y así el
 esquema no se rompe cuando una fuente cambia un campo.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -203,6 +204,59 @@ def leer(clave, max_edad=None, con_largo=False):
         return (None, edad, 0) if con_largo else (None, edad)
 
 
+def leer_prefijo(prefijo, tanda=500):
+    """
+    Todo lo que empieza con ese prefijo, de pocas pasadas.
+
+    Hace falta para armar las tablas: hay once mil claves `pj:` y leerlas
+    de a una son once mil consultas, cada una con su candado.
+
+    Va por tandas y no de una sola vez por una razón concreta: si una
+    página del archivo está dañada, la consulta entera se cae y esto
+    devolvía una lista vacía sin decir nada —que es la peor forma de
+    fallar, porque parece que no hay datos—. Así, una tanda rota se
+    reintenta clave por clave y se pierde nada más lo que de verdad no se
+    puede leer.
+    """
+    try:
+        with _lock:
+            claves = [f[0] for f in _con().execute(
+                "SELECT clave FROM datos WHERE clave LIKE ? ORDER BY clave",
+                (prefijo + "%",)).fetchall()]
+    except sqlite3.Error:
+        return []
+
+    salida = []
+
+    def sumar(clave, crudo):
+        try:
+            salida.append((clave, json.loads(crudo)))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    for i in range(0, len(claves), tanda):
+        grupo = claves[i:i + tanda]
+        huecos = ",".join("?" * len(grupo))
+        try:
+            with _lock:
+                for clave, crudo in _con().execute(
+                        "SELECT clave, valor FROM datos WHERE clave IN (%s)"
+                        % huecos, grupo).fetchall():
+                    sumar(clave, crudo)
+        except sqlite3.Error:
+            for clave in grupo:          # la tanda tiene una página rota
+                try:
+                    with _lock:
+                        f = _con().execute(
+                            "SELECT valor FROM datos WHERE clave=?",
+                            (clave,)).fetchone()
+                except sqlite3.Error:
+                    continue
+                if f:
+                    sumar(clave, f[0])
+    return salida
+
+
 def con_respaldo(clave, traer, max_edad, tag=""):
     """
     El patrón que usa todo el servidor.
@@ -358,6 +412,24 @@ def _tamano():
         except OSError:
             pass
     return total
+
+
+@contextlib.contextmanager
+def conexion():
+    """
+    La conexión a la base, tomada con su candado.
+
+    Es la costura para lo que no entra en clave/valor: las tablas de
+    `tablas.py` viven en este mismo archivo y comparten la conexión, el
+    candado y el disco. Abrir una segunda conexión aparte andaría, pero
+    serían dos cosas que creerse dueñas de lo mismo.
+
+    Ojo adentro del `with`: el candado no es reentrante, así que nada de
+    llamar a `leer` o `guardar` desde ahí. Lo que haya que leer se lee
+    antes.
+    """
+    with _lock:
+        yield _con()
 
 
 def familia(clave):

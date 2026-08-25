@@ -49,6 +49,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 import almacen
+import tablas
 import visitas
 import apifootball
 
@@ -3429,7 +3430,18 @@ def _sc_fixture(comp, ttl=120):
     # de la base para siempre. Se muestra una cosa y se guarda otra, y eso
     # es a propósito.
     if frescos:
-        almacen.guardar(clave, list(acumulado.values()))
+        guardados = list(acumulado.values())
+        almacen.guardar(clave, guardados)
+        # Y a la tabla, en este mismo momento. Antes esperaba al recorrido
+        # de fondo, que una vez que la historia está completa pasa cada dos
+        # horas: un gol de ahora tardaba dos horas en llegar. Acá es el
+        # instante exacto en que hay un resultado nuevo guardado.
+        lid, principal = liga_de_comp(comp)
+        if lid:
+            try:
+                tablas.guardar(lid, comp, guardados, principal=principal)
+            except Exception:
+                pass
 
     return sorted(todos, key=lambda x: (x["round"] or 0, x["start"] or ""))
 
@@ -3499,7 +3511,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · el administrador ya no ve sólo por dónde entró cada uno: ahora sabe qué pantallas miró después y cuántas"
+VERSION_APP = "2026-08-25 · las tablas se actualizan al momento, y ahora también guardan quién jugó cada partido y quién hizo cada gol"
 
 
 def reparar_recorridos():
@@ -5885,6 +5897,105 @@ def anotar_plantel(club, ficha, titular, dia):
     almacen.guardar(clave, plantel)
 
 
+_LIGA_DE_COMP = {}
+
+
+def liga_de_comp(comp):
+    """
+    De qué torneo es una competencia de 365scores, y si es la principal.
+
+    Un torneo puede tener más de una: la Champions es la 572 y su
+    clasificación es la 332. Hace falta para poder pasar un calendario a la
+    tabla en el momento en que se guarda, que es cuando hay algo nuevo.
+    """
+    if not _LIGA_DE_COMP:
+        for lid, cfg in LIGAS.items():
+            for i, c in enumerate(comps_de(cfg)):
+                _LIGA_DE_COMP[c] = (lid, i == 0)
+    return _LIGA_DE_COMP.get(comp, (None, False))
+
+
+def sincronizar_jugadores():
+    """
+    Pasa a tablas quién jugó qué y quién hizo los goles.
+
+    Sale entero de lo que ya está guardado, igual que los partidos: `pj:`
+    tiene a cada jugador con la lista de los partidos que jugó, y
+    `goles:` los goles de cada partido con su autor y su minuto. Cero
+    pedidos a la fuente.
+
+    Se leen de una sola pasada por prefijo y no clave por clave: son once
+    mil claves `pj:` y de a una serían once mil consultas.
+    """
+    if not tablas.iniciar():
+        return None
+    partes, goles = [], []
+    for clave, valor in almacen.leer_prefijo("pj:"):
+        # pj:<liga>:<jugador>
+        try:
+            _, _lid, jugador = clave.split(":", 2)
+        except ValueError:
+            continue
+        for pid in (valor or {}).get("ids") or []:
+            # El torneo de la clave no se usa: puede no ser el que
+            # corresponde, y el del partido lo sabe la tabla de partidos.
+            partes.append((jugador, pid))
+    for clave, valor in almacen.leer_prefijo("goles:"):
+        try:
+            _, _lid, pid = clave.split(":", 2)
+        except ValueError:
+            continue
+        # Los guardados viejos son una lista pelada; los nuevos, un
+        # diccionario con la lista adentro y la marca de si está cerrado.
+        lista = valor.get("g") if isinstance(valor, dict) else valor
+        for g in (lista or []):
+            goles.append((pid, g.get("j"), g.get("m"), g.get("e"),
+                          g.get("s")))
+    hecho = {"participaciones": tablas.guardar_participaciones(partes),
+             "goles": tablas.guardar_goles(goles)}
+    almacen.guardar("tablas:jugadores",
+                    {"cuando": dt.datetime.now().isoformat(timespec="seconds"),
+                     **hecho})
+    return hecho
+
+
+def sincronizar_tablas():
+    """
+    Pasa los calendarios guardados a la tabla de partidos, uno por fila.
+
+    No le pide nada a la fuente: lee los bloques que ya están y los
+    convierte. Se puede correr todas las veces que haga falta —la clave es
+    el identificador del partido, así que volver a pasar el mismo lo
+    actualiza en vez de duplicarlo— y si algo saliera mal, se borra la
+    tabla y se rearma de acá.
+
+    El orden importa: primero las competencias principales y después las
+    de la clasificación. Los 151 partidos que están en las dos así quedan
+    con el torneo que corresponde, y no con el número interno que
+    365scores le pone a la previa.
+    """
+    if not tablas.iniciar():
+        return None
+    hecho = {"ligas": 0, "partidos": 0}
+    for principal in (True, False):
+        for lid, cfg in LIGAS.items():
+            comps = comps_de(cfg)
+            for comp in (comps[:1] if principal else comps[1:]):
+                guardado, _ = almacen.leer("fixture:%s" % comp)
+                if not guardado:
+                    continue
+                n = tablas.guardar(lid, comp, guardado, principal=principal)
+                hecho["partidos"] += n
+                if principal and n:
+                    hecho["ligas"] += 1
+    hecho["tabla"] = tablas.estado()
+    almacen.guardar("tablas:ultima",
+                    {"cuando": dt.datetime.now().isoformat(timespec="seconds"),
+                     "leidos": hecho["partidos"],
+                     "filas": hecho["tabla"]["partidos"]})
+    return hecho
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Sacar la basura
 #
@@ -7877,6 +7988,8 @@ ROUTES = {
     # Con el desglose por familia: sin eso, "202 MB" no dice qué hacer.
     "/api/base": lambda q: dict(almacen.estado(),
                                 pesos=almacen.pesos(),
+                                tablas=tablas.estado(),
+                                tablasCuando=almacen.leer("tablas:ultima")[0],
                                 limpieza=almacen.leer("limpieza:ultima")[0],
                                 cacheQueSobra=[almacen.familia(p + "/?")
                                                for p in CACHE_QUE_SOBRA],
@@ -9197,6 +9310,16 @@ def rescatar_todo():
             historia_al_dia = not pendientes
         _ESTADO_FONDO.update(historia_al_dia=historia_al_dia,
                              haciendo="esperando")
+
+        # Los calendarios que acabamos de recorrer, a la tabla de partidos.
+        # Va acá y no en cada guardado: recién ahora están completos.
+        if recorrer:
+            try:
+                sincronizar_tablas()
+                sincronizar_jugadores()
+            except Exception as e:
+                print("  Las tablas no se pudieron sincronizar: %s" % e,
+                      flush=True)
 
         # Y una vez por día, sacar la basura.
         try:

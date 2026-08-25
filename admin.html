@@ -372,6 +372,48 @@ function ultimas(v){
   entró no se repite ahí.</footer>`;
 }
 
+/* La tabla de partidos: uno por fila.
+
+   Todavía no la usa ninguna pantalla. Está acá para poder mirarla: si los
+   números de acá no cuadran con los torneos, la tabla está mal armada y
+   hay que verlo antes de empezar a leer de ella. */
+function tablaDePartidos(base){
+  const t = base.tablas, c = base.tablasCuando;
+  if(!t || !t.porLiga || !t.porLiga.length)
+    return `<div class="panel"><div class="vacio">Todavía no se armó.
+      Se arma sola cuando el recolector termina de recorrer los
+      calendarios.</div></div>`;
+  return `<div class="grilla" style="margin-bottom:14px">
+    ${caja('ok', 'Partidos en fila', miles(t.partidos),
+           `${miles(t.equipos)} equipos distintos`)}
+    ${caja('ok', 'Quién jugó qué', miles(t.participaciones || 0),
+           `${miles(t.jugadores || 0)} jugadores · ${miles(t.goles || 0)} goles
+            con autor y minuto`)}
+    ${caja('ok', 'Leídos de los bloques', miles((c || {}).leidos || 0),
+      (c || {}).leidos && (c || {}).leidos !== t.filas
+        ? `${miles(((c || {}).leidos || 0) - t.partidos)} repetidos, unificados`
+        : 'sin repetidos')}
+    ${caja('ok', 'Última vez', esc(((c || {}).cuando || '—').replace('T', ' ')),
+           'se rehace al recorrer los calendarios')}
+  </div>
+  <div class="panel"><table>
+    <tr><th>Torneo</th><th class="n">Partidos</th><th class="n">Temporadas</th>
+        <th class="n">Con resultado</th><th>Período</th></tr>
+    ${t.porLiga.map(l => `<tr>
+      <td class="ruta">${esc(l.liga)}</td>
+      <td class="n">${miles(l.partidos)}</td>
+      <td class="n">${l.temporadas}</td>
+      <td class="n">${miles(l.jugados)}</td>
+      <td style="color:var(--txt2)">${esc(l.desde)} → ${esc(l.hasta)}</td>
+    </tr>`).join('')}
+  </table></div>
+  <footer>Los mismos datos que ya estaban en los calendarios, pero uno por
+  fila: así se les puede preguntar algo. Los bloques siguen siendo la
+  verdad y las pantallas se siguen sirviendo de ahí; esto se arma leyendo
+  de ellos, sin pedirle nada a la fuente. Si sale mal, se borra y se
+  rearma.</footer>`;
+}
+
 /* Qué está ocupando el disco, familia por familia.
 
    Sin esto, "202 MB" no dice qué hacer. Con esto sí: si lo que pesa es
@@ -459,6 +501,8 @@ async function cargar(){
 
       <h2>El servidor</h2>
       ${salud(t, base, diag)}
+      <h2>La tabla de partidos</h2>
+      ${tablaDePartidos(base)}
       <h2>Qué ocupa el disco</h2>
       ${queOcupa(base)}
       <h2>Cuánto tarda cada cosa</h2>

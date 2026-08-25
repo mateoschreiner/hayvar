@@ -3433,7 +3433,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · arreglado: abrir el link de un partido en otra pestaña mostraba la portada"
+VERSION_APP = "2026-08-25 · la página del partido: marcador fijo, pestañas que responden y los dos equipos marcados en la tabla"
 
 
 def reparar_recorridos():

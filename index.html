@@ -614,11 +614,22 @@ td.l{text-align:left;padding-left:8px}
    baja a leer los goles y el marcador se iba de pantalla, que es justo el
    dato que uno quiere tener a la vista todo el tiempo. Las pestañas
    quedan pegadas debajo de él por la misma razón. */
-#matches > .mhead{position:sticky;top:var(--enc,56px);z-index:5;
-  border-radius:12px 12px 0 0}
-#matches > .tabs{position:sticky;top:calc(var(--enc,56px) + 116px);z-index:4;
-  background:var(--card)}
-#matches > .mbody{overflow:visible;padding:14px}
+/* La fila de los dos equipos del partido, en la tabla del costado. Un
+   fondo suave y negrita: se encuentra de un vistazo sin gritar. */
+tr.fila-destacada > td{background:rgba(47,111,237,.10);font-weight:700}
+.partido-pagina{background:var(--card);border:1px solid var(--line);
+  border-radius:12px;box-shadow:var(--shadow);margin-bottom:14px}
+.partido-pagina > .mhead{position:sticky;top:var(--enc,56px);z-index:5;
+  border-radius:11px 11px 0 0}
+/* Las pestañas se pegan justo abajo del marcador. La altura del marcador
+   no es fija —cambia con el minuto en un partido en curso, y en el celular
+   es otra— así que se mide y se guarda en --cab, en vez de clavar un
+   número que iba a quedar mal en la mitad de los casos. */
+.partido-pagina > .tabs{position:sticky;
+  top:calc(var(--enc,56px) + var(--cab,118px));z-index:4;
+  background:var(--card);border-bottom:1px solid var(--line)}
+.partido-pagina > .mbody{overflow:visible;padding:14px;
+  border-radius:0 0 11px 11px}
 .mhead{background:var(--nav);color:#fff;padding:16px;flex:none}
 .modal>.tabs{flex:none;background:var(--card)}
 .mhead .top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:rgba(255,255,255,.65);margin-bottom:12px;gap:8px}
@@ -1232,7 +1243,8 @@ const App=(()=>{
     }
     cerrarCapa();
     const antes=S.fondo;
-    S.fondo=d; S.modal=null;
+    // los equipos marcados eran los de un partido: fuera de ahí no van
+    S.fondo=d; S.modal=null; S.destacar=null;
     if(d.t==='club'){
       if(antes&&antes.t==='club'&&antes.slug===d.slug) return;
       S.liga='club';
@@ -1444,7 +1456,13 @@ const App=(()=>{
                      <button onclick="App.homeWeek(1)">›</button></div></div>
                  <div class="days" id="days"></div></div>`
             : `<div class="card"><div class="rounds" id="rounds"><span class="lb">Fecha</span></div></div>`}
-          <div class="card"><div id="matches"><div class="skel" style="width:55%"></div><div class="skel"></div><div class="skel" style="width:75%"></div></div></div>
+          ${quiere==='partido'
+            /* El partido no va adentro de una caja: se arma la caja él
+               mismo. Es por el `overflow:hidden` de .card, que anula el
+               position:sticky de todo lo que tenga adentro — o sea que el
+               marcador no se podía fijar mientras estuviera ahí dentro. */
+            ? `<div class="partido-pagina" id="matches"></div>`
+            : `<div class="card"><div id="matches"><div class="skel" style="width:55%"></div><div class="skel"></div><div class="skel" style="width:75%"></div></div></div>`}
         </main>
         <div>
           <div class="card">
@@ -3367,6 +3385,13 @@ const App=(()=>{
   }
 
   /* ── panel derecho ── */
+  /* Los equipos a marcar en las tablas. En la página de un partido son los
+     dos que juegan: la tabla está ahí para ubicarlos, no para leerla
+     entera. En cualquier otra pantalla no hay nadie que marcar y esto
+     devuelve vacío, así que las tablas de siempre no cambian. */
+  const destacada = r => (S.destacar||[]).some(
+    n => mismoNombre(n, r.canon || (r.team||{}).name || '')) ? ' fila-destacada' : '';
+
   function zoneTable(z){
     const rows=z.rows;
     return `<div class="tablewrap"><table><thead><tr>
@@ -3374,7 +3399,7 @@ const App=(()=>{
       <th>Pts</th><th>PJ</th><th>GF</th><th>GC</th><th>DIF</th><th style="width:80px">Últimos</th>
     </tr></thead><tbody>${rows.map(r=>{
       const zc=r.pos<=8?'z-play':'';
-      return `<tr class="${r.pos<=8?'fila-avanza':''}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
+      return `<tr class="${r.pos<=8?'fila-avanza':''}${destacada(r)}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.pts}</td><td>${r.pj}</td>
         <td style="color:var(--txt2)">${r.gf}</td><td style="color:var(--txt2)">${r.gc}</td>
@@ -3421,7 +3446,7 @@ const App=(()=>{
       // ser alcanzado le alcanza con la marca del costado: en esta tabla
       // son muchos y con el fondo amarillo quedaba media tabla resaltada,
       // que es como no resaltar nada.
-      return `<tr class="${r.descendiendo?'fila-desciende':''}"
+      return `<tr class="${r.descendiendo?'fila-desciende':''}${destacada(r)}"
         title="${esc(tit)}" style="${estiloClub(r.team.name)}"><td class="pos">${zc?`<span class="zone ${zc}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.prom.toFixed(3)}</td><td>${r.pts}</td><td>${r.pj}</td>
@@ -3445,7 +3470,7 @@ const App=(()=>{
       const c=COPA[r.copa];
       const FCOPA={libertadores:'fila-final',sudamericana:'fila-avanza',
                    campeon:'fila-repechaje',desciende:'fila-desciende'};
-      return `<tr class="${FCOPA[r.copa]||''}"${r.copaTexto?` title="${esc(r.copaTexto)}"`:''}
+      return `<tr class="${FCOPA[r.copa]||''}${destacada(r)}"${r.copaTexto?` title="${esc(r.copaTexto)}"`:''}
         style="${estiloClub(r.team.name)}">
         <td class="pos">${c?`<span class="zone ${c[0]}"></span>`:''}${r.pos}</td>
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
@@ -3678,7 +3703,24 @@ const App=(()=>{
     mData=dato;
     if(!mBase) mBase=(dato&&dato.id)?dato:{home:{},away:{}};
     drawModal(current(),false);
-    if(comoPagina) panelDelTorneo(current());
+    if(comoPagina){ medirCabecera(); panelDelTorneo(current()); }
+  }
+
+  /* Cuánto mide el marcador, para que las pestañas se peguen justo abajo.
+     No es un número fijo: cambia con el minuto de un partido en curso y en
+     el celular es otro. Se mide y se sigue midiendo. */
+  let observaCab=null;
+  function medirCabecera(){
+    const cab=document.querySelector('.partido-pagina > .mhead');
+    if(!cab) return;
+    const poner=()=>document.documentElement.style
+      .setProperty('--cab', cab.offsetHeight+'px');
+    poner();
+    if(observaCab) observaCab.disconnect();
+    if(window.ResizeObserver){
+      observaCab=new ResizeObserver(poner);
+      observaCab.observe(cab);
+    }
   }
 
   /* ── La columna de la derecha en la página de un partido ──────────────
@@ -5483,6 +5525,12 @@ const App=(()=>{
       if((t==='cuadro')!==(S.tab==='cuadro')||t==='previa'||S.tab==='previa')
         S.cuadroDesde=null;
       S.tab=t; document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+      /* En la página de un partido el panel de la derecha son las tablas de
+         la Liga Profesional, pero `S.liga` sigue diciendo "home" —nadie
+         entró a ningún torneo—. Sin esta línea, tocar Anual o Promedios
+         llamaba al dibujante de otra liga, que sin datos no hace nada: las
+         pestañas se marcaban y no pasaba nada más. */
+      if(S.modal&&S.modal.t==='partido') return drawRight();
       S.liga==='lpf'?drawRight():drawOtra(); },
     // Cada pantalla tiene su dibujante: la portada agrupa por torneo y un
     // torneo agrupa por zonas. Llamar siempre al de torneo dejaba la

@@ -1285,8 +1285,18 @@ chequear("el pop-up se arma en tres piezas y sólo se desplaza el cuerpo",
          and ".modal>.tabs{flex:none" in HTML)
 chequear("el cuerpo se deja achicar, si no el scroll se lo lleva la página",
          ".mbody{padding:14px;min-height:0;flex:1;overflow-y:auto" in HTML)
-chequear("y ya no queda nada apoyado en sticky adentro del pop-up",
-         "position:sticky;top:var(--cab" not in HTML and "--cab" not in HTML)
+# El pop-up no se sostiene con sticky sino con el flex de tres piezas: se
+# declaraba fijo y no lo era, y la cancha de las formaciones se le asomaba
+# por arriba. La página del partido sí usa sticky, pero es otra cosa —no
+# tiene alto máximo, se desplaza con la página— y por eso ahí sí funciona.
+_STICKY = [l for l in HTML.splitlines() if "position:sticky" in l
+           and "/*" not in l and "position:sticky de todo" not in l]
+chequear("el pop-up sigue sin depender de sticky",
+         not any(".modal" in l or l.strip().startswith(".mhead")
+                 or l.strip().startswith(".mbody") for l in _STICKY),
+         _STICKY)
+chequear("y lo único que se fija en el partido es su página",
+         sum(1 for l in _STICKY if ".partido-pagina" in l) == 2, _STICKY)
 # La barra lateral arrancaba catorce pixeles mas abajo que las otras dos
 # columnas: el encabezado mide 56 sin la barrita de estado y 84 con ella, y
 # el tope estaba clavado en 84.
@@ -1840,9 +1850,22 @@ chequear("y el mismo dibujante sirve para el pop-up y para la página",
          and "$(dondeVaElPartido).innerHTML=`" in HTML)
 # Uno baja a leer los goles y el marcador se le iba de pantalla, que es
 # justo el dato que quiere tener a la vista todo el tiempo.
-chequear("el marcador queda fijo al desplazarse",
-         "#matches > .mhead{position:sticky;top:var(--enc,56px)" in HTML
-         and "#matches > .tabs{position:sticky" in HTML)
+# El marcador no se fijaba, y el motivo no era la regla de sticky sino que
+# .card tiene overflow:hidden, que se lo anula a todo lo que tenga adentro.
+# Por eso el partido no va adentro de una caja: se arma la suya.
+chequear("el partido no va adentro de .card, que anularía el fijado",
+         ".card{" in HTML and "overflow:hidden" in HTML
+         and "? `<div class=\"partido-pagina\" id=\"matches\"></div>`" in HTML
+         and ".partido-pagina{background:var(--card)" in HTML)
+chequear("el marcador y las pestañas quedan fijos al desplazarse",
+         ".partido-pagina > .mhead{position:sticky;top:var(--enc,56px)" in HTML
+         and ".partido-pagina > .tabs{position:sticky" in HTML)
+# La altura del marcador no es fija: cambia con el minuto en un partido en
+# curso y en el celular es otra. Se mide en vez de clavar un número.
+chequear("y las pestañas se pegan a la altura de verdad del marcador",
+         "top:calc(var(--enc,56px) + var(--cab,118px))" in HTML
+         and "function medirCabecera()" in HTML
+         and "new ResizeObserver(poner)" in HTML)
 
 # La ficha de un jugador abierta por el link llega sin el nombre: sólo con
 # el slug. El servidor tiene que poder devolver el nombre bien escrito.
@@ -2789,6 +2812,79 @@ App.init();
              _tr and _tr["partido"] is True, _tr)
     chequear("y no se lo tapa la portada cuando llega la lista de clubes",
              _tr and _tr["tapado"] is False and _tr["calendario"] is False, _tr)
+
+    # Las cuatro pestañas del panel derecho, y la marca de los dos equipos.
+    _lpf = ("""
+process.on('unhandledRejection',()=>{});
+const eq=n=>({name:n, canon:n, logo:null, short:''});
+const fila=(pos,n,extra)=>Object.assign({pos, canon:n, team:eq(n), pts:10-pos,
+  pj:6, g:3, e:1, p:2, gf:8, gc:6, dif:2, form:['G','P'], live:false},
+  extra||{});
+const RESP={
+ '/api/match': {id:4633355, liga:'lpf', ligaNombre:'Liga Profesional',
+   torneo:'Clausura 2026', round:6, interzonal:true, zone:null,
+   home:eq('Talleres (C)'), away:eq('Rosario Central'), gh:2, ga:2,
+   status:'FIN', start:'2026-08-24T21:15:00-03:00', events:[], stats:[],
+   lineups:{home:[],away:[]}, banco:{home:[],away:[]}},
+ '/api/standings': {zones:[
+   {name:'Zona A', rows:[fila(1,'Instituto'), fila(15,'Talleres (C)')]},
+   {name:'Zona B', rows:[fila(1,'Boca Juniors')]}]},
+ '/api/annual': {rows:[fila(1,'Instituto',{copa:'libertadores'}),
+                       fila(20,'Talleres (C)',{copa:null})]},
+ '/api/promedios': {rows:[
+   fila(1,'Instituto',{prom:1.9, promMin:1.9, descendiendo:false,
+     enRiesgo:false, restantes:0, p2024:60, p2025:55, p2026:12}),
+   fila(28,'Talleres (C)',{prom:0.9, promMin:0.9, descendiendo:true,
+     enRiesgo:false, restantes:0, p2024:30, p2025:28, p2026:4})]},
+ '/api/ligas': {ligas:[]}, '/api/clubes': {clubes:[]}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).find(x=>u.startsWith(x));
+  if(!k) throw new Error('sin ruta');
+  return {ok:true, status:200, json:async()=>RESP[k]};
+};
+loc.pathname='/partido/talleres-c-vs-rosario-central-4633355';
+App.init();
+const ver=()=>doc.querySelector('#right').innerHTML||'';
+const esperar=async()=>{ for(let i=0;i<30;i++) await new Promise(r=>setImmediate(r)); };
+(async()=>{
+  await esperar();
+  const out={zona:(doc.querySelector('#tabs').innerHTML
+                    .match(/data-t="(\\w+)" class="on"/)||[])[1],
+             zonaMarca:/fila-destacada/.test(ver())&&ver().includes('Talleres')};
+  App.tab('anual'); await esperar();
+  out.anual=ver().includes('Instituto'); out.anualMarca=/fila-destacada/.test(ver());
+  App.tab('prom');  await esperar();
+  out.prom=ver().includes('Instituto');  out.promMarca=/fila-destacada/.test(ver());
+  App.tab('B');     await esperar();
+  out.zonaB=ver().includes('Boca'); out.zonaBsinMarca=!/fila-destacada/.test(ver());
+  console.log(JSON.stringify(out));
+})();
+""")
+    _g3 = (open(_DOMSITO, encoding="utf-8").read()
+           + "\nglobalThis.document=doc; globalThis.window=win;"
+             "\nglobalThis.location=loc; globalThis.history=historial;"
+             "\nglobalThis.localStorage=almacenLocal;"
+             "\nglobalThis.MutationObserver=MutationObserver;"
+             "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+             "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+           + _app.replace("const App=(()=>{", "App=(()=>{") + _lpf)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_g3); _rl2 = _f.name
+    _pl2 = _sub.run(["node", _rl2], capture_output=True, text=True, timeout=60)
+    os.unlink(_rl2)
+    _lp = json.loads(_pl2.stdout) if _pl2.returncode == 0 and _pl2.stdout else None
+    chequear("el panel de la Liga Profesional se arma", _lp is not None,
+             _pl2.stderr.strip().splitlines()[:2])
+    if _lp:
+        chequear("abre en la zona donde juegan, no en la primera",
+                 _lp["zona"] == "A" and _lp["zonaMarca"] is True, _lp)
+        chequear("la pestaña de Anual responde y marca a los dos",
+                 _lp["anual"] and _lp["anualMarca"], _lp)
+        chequear("la de Promedios también",
+                 _lp["prom"] and _lp["promMarca"], _lp)
+        chequear("y en la zona donde no juegan no marca a nadie",
+                 _lp["zonaB"] and _lp["zonaBsinMarca"], _lp)
 
 
 print("\n── \"lo que viene\" no es la lista de al lado otra vez ──")

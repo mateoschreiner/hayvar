@@ -3485,7 +3485,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la instancia de cada partido de copa, y las banderas: la de cada jugador en las formaciones y la del país del club en la portada, el fixture y el partido de los torneos internacionales"
+VERSION_APP = "2026-08-25 · la base ya no crece sin freno: se tira sola la caché de pedidos que nadie hace, y los partidos y los jugadores se quedan"
 
 
 def reparar_recorridos():
@@ -5809,6 +5809,70 @@ def anotar_plantel(club, ficha, titular, dia):
     almacen.guardar(clave, plantel)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Sacar la basura
+#
+# La base sólo crecía: cada respuesta de la fuente se guardaba y nada se
+# borraba nunca. En un disco de 1 GB eso tiene fecha de vencimiento.
+#
+# Lo que se tira es la caché de pedidos que ya nadie hace, y nada más. Los
+# partidos y los jugadores no caducan: alguien puede querer ver un partido
+# viejo, y las comparaciones entre temporadas se hacen justamente con eso.
+#
+# Cada entrada de la caché es la respuesta cruda de una dirección. Las de
+# esta lista son todas repetidas: lo que sirve de adentro ya está leído y
+# guardado aparte —los goles, las carreras, los calendarios— y si alguna
+# hiciera falta otra vez, se vuelve a pedir sola.
+#
+# Y una que NO está en la lista, a propósito: `sc:game`, el detalle de un
+# partido. Ahí viven las formaciones, los cambios y las tarjetas de cada
+# partido que alguien abrió. Es la familia más pesada —siete de los nueve
+# megas— y es la que crece con las visitas, pero es información de
+# partidos y se queda. Si el disco llega a molestar, sale más barato
+# agrandarlo: en Render son 25 centavos de dólar por giga por mes.
+CACHE_QUE_SOBRA = [
+    "sc:https://webws.365scores.com/web/standings",      # tablas de posiciones
+    "sc:https://webws.365scores.com/web/games/current",  # la ventana de hoy
+    "sc:https://webws.365scores.com/web/games/fixtures", # páginas de calendario
+    "sc:https://webws.365scores.com/web/games/results",  # páginas de resultados
+    "sc:https://webws.365scores.com/web/athletes",       # fichas de jugador
+    "sc:https://webws.365scores.com/web/stats",          # estadísticas sueltas
+]
+# Un mes sin que nadie la pida. Lo que se sigue usando se reescribe solo
+# cada vez que vence, así que treinta días es "esto no lo pidió nadie".
+DIAS_DE_CACHE = 30
+_ULTIMA_LIMPIEZA = [0.0]
+
+
+def limpieza_diaria(cada=86400):
+    """Tira la caché que ya nadie pide y las visitas viejas. Una vez por día."""
+    if time.time() - _ULTIMA_LIMPIEZA[0] < cada:
+        return None
+    _ULTIMA_LIMPIEZA[0] = time.time()
+    hecho = {"familias": [], "filas": 0, "bytes": 0}
+    for prefijo in CACHE_QUE_SOBRA:
+        try:
+            r = almacen.limpiar(prefijo, 60 * 60 * 24 * DIAS_DE_CACHE)
+        except Exception:
+            continue
+        if r["filas"]:
+            hecho["familias"].append({"que": almacen.familia(prefijo + "/?"),
+                                      "filas": r["filas"], "bytes": r["bytes"]})
+            hecho["filas"] += r["filas"]
+            hecho["bytes"] += r["bytes"]
+    try:
+        hecho["visitas"] = visitas.limpiar()
+    except Exception:
+        hecho["visitas"] = 0
+    hecho["cuando"] = dt.datetime.now().isoformat(timespec="seconds")
+    almacen.guardar("limpieza:ultima", hecho)
+    if hecho["filas"] or hecho["visitas"]:
+        print("  Limpieza: %d entradas de caché (%.1f MB) y %d días de visitas"
+              % (hecho["filas"], hecho["bytes"] / 1024 / 1024,
+                 hecho["visitas"]), flush=True)
+    return hecho
+
+
 def bandera_url(pais_id):
     return ("https://imagecache.365scores.com/image/upload/"
             "f_png,w_48,h_48,c_limit,q_auto:eco,dpr_2/"
@@ -7734,7 +7798,13 @@ ROUTES = {
     "/api/detalles": api_detalles,
     "/api/atleta": api_atleta,
     "/api/diagnostico": api_diagnostico,
-    "/api/base": lambda q: almacen.estado(),
+    # Con el desglose por familia: sin eso, "202 MB" no dice qué hacer.
+    "/api/base": lambda q: dict(almacen.estado(),
+                                pesos=almacen.pesos(),
+                                limpieza=almacen.leer("limpieza:ultima")[0],
+                                cacheQueSobra=[almacen.familia(p + "/?")
+                                               for p in CACHE_QUE_SOBRA],
+                                diasDeCache=DIAS_DE_CACHE),
     "/api/home": api_home,
     "/api/clubes": api_clubes,
     "/api/buscar": api_buscar,
@@ -8951,6 +9021,7 @@ def rescatar_todo():
     # ponía a recorrer todos los calendarios cada sesenta segundos. En una
     # máquina de medio procesador eso es todo el procesador, y la página se
     # arrastra para el que está mirándola. Ahora cada uno tiene su ritmo.
+    limpieza_diaria()
     VUELTAS_SEGUIDAS = 12
     vuelta, historia_al_dia = 0, False
     while True:
@@ -9042,6 +9113,12 @@ def rescatar_todo():
             historia_al_dia = not pendientes
         _ESTADO_FONDO.update(historia_al_dia=historia_al_dia,
                              haciendo="esperando")
+
+        # Y una vez por día, sacar la basura.
+        try:
+            limpieza_diaria()
+        except Exception as e:
+            print("  La limpieza falló: %s" % e, flush=True)
 
         # Y el ritmo: rápido sólo mientras falte historia, que es lo que
         # conviene apurar. Buscar goles es barato pero no urgente, y

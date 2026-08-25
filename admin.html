@@ -172,7 +172,20 @@ function salud(t, base, diag){
        background:${e === 'mal' ? 'var(--mal)' : e === 'mirar' ? 'var(--mirar)' : 'var(--acc)'}"></i></div>`,
     base.sobrevive_al_deploy === false
       ? 'La base vive en la carpeta del código: se borra en cada publicación.'
-      : pc > 60 ? 'Conviene empezar a podar lo viejo.' : '');
+      : pc > 60 ? `Agrandar el disco sale 25 centavos de dólar por giga por mes.`
+                : '');
+
+  /* Qué está ocupando el disco. Sin este desglose, "202 MB" no dice qué
+     hacer: hay que saber si es caché repetida —que se tira sola— o
+     información de partidos, que se queda y entonces lo que hay que hacer
+     es agrandar el disco. */
+  // ── la última limpieza ──
+  const li = base.limpieza;
+  if(li){
+    c += caja('ok', 'Última limpieza', megas(li.bytes || 0),
+      `${miles(li.filas)} entradas de caché · ${li.visitas || 0} días de
+       visitas<br>${esc((li.cuando || '').replace('T', ' '))}`);
+  }
 
   // ── la memoria, que es lo que hizo reiniciar el servicio una vez ──
   const m = t.memoria || {};
@@ -329,6 +342,40 @@ function ultimas(v){
   </table></div>`;
 }
 
+/* Qué está ocupando el disco, familia por familia.
+
+   Sin esto, "202 MB" no dice qué hacer. Con esto sí: si lo que pesa es
+   caché de pedidos, se tira sola y no hay nada que decidir; si lo que pesa
+   es información de partidos, el disco hay que agrandarlo, y eso son 25
+   centavos de dólar por giga por mes. */
+function queOcupa(base){
+  const pesos = base.pesos;
+  if(!pesos || pesos.error || !pesos.length)
+    return '<div class="panel"><div class="vacio">Todavía no se pudo medir.</div></div>';
+  const sobra = new Set(base.cacheQueSobra || []);
+  const total = pesos.reduce((s, p) => s + (p.bytes || 0), 0) || 1;
+  return `<div class="panel"><table>
+    <tr><th>Qué es</th><th class="n">Entradas</th><th class="n">Peso</th>
+        <th class="n">Parte</th><th class="n">La más vieja</th>
+        <th>Qué se hace</th></tr>
+    ${pesos.slice(0, 16).map(p => `<tr>
+      <td class="ruta">${esc(p.familia)}</td>
+      <td class="n">${miles(p.filas)}</td>
+      <td class="n">${megas(p.bytes)}</td>
+      <td class="n">${(100 * p.bytes / total).toFixed(0)}%</td>
+      <td class="n">${p.dias} d</td>
+      <td>${sobra.has(p.familia)
+        ? `<span class="pill">se tira a los ${base.diasDeCache} días</span>`
+        : '<span class="pill ok">se queda</span>'}</td></tr>`).join('')}
+  </table></div>
+  <footer>Se tira sólo la caché de pedidos que ya nadie hace: lo que sirve
+  de adentro ya está leído y guardado aparte, y si hiciera falta otra vez se
+  vuelve a pedir sola. Los partidos y los jugadores no caducan y no se
+  tocan — alguien puede querer ver un partido viejo, y las comparaciones
+  entre temporadas se hacen con eso. Si el disco se llena, agrandarlo sale
+  25 centavos de dólar por giga por mes.</footer>`;
+}
+
 /* ── armar todo ──────────────────────────────────────────────────────── */
 async function cargar(){
   $('#app').innerHTML = '<div class="vacio" style="padding:60px">Cargando…</div>';
@@ -382,6 +429,8 @@ async function cargar(){
 
       <h2>El servidor</h2>
       ${salud(t, base, diag)}
+      <h2>Qué ocupa el disco</h2>
+      ${queOcupa(base)}
       <h2>Cuánto tarda cada cosa</h2>
       ${tiempos(t)}
       <h2>Qué hay guardado</h2>

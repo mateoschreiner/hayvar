@@ -3555,6 +3555,159 @@ chequear("y al llegar los goles se repinta la fila, no sólo el pie",
          "if(m.status==='LIVE') actualizarFila(fila,m);" in HTML)
 
 
+print("\n── sacar la basura sin llevarse lo que sirve ──")
+# La base sólo crecía. Había dos funciones escritas para limpiarla y a
+# ninguna la llamaba nadie — y con razón: `almacen.limpiar` borraba por
+# fecha sin mirar qué era cada fila, así que se llevaba puesto justo lo que
+# no caduca. Ahora el prefijo es obligatorio.
+try:
+    server.almacen.limpiar("", 60)
+    _obligatorio = False
+except ValueError:
+    _obligatorio = True
+chequear("borrar por fecha a secas ya no se puede", _obligatorio)
+
+# La prueba de fondo se corre contra una base aparte: acá se borra de
+# verdad, y no es cosa de hacerlo sobre la del proyecto.
+import subprocess as _sb2, tempfile as _tp2, textwrap as _tw2
+_guion = _tw2.dedent("""
+    import os, time, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import almacen, server
+    VIEJO = time.time() - 60*60*24*200
+    gordo = {"x": "y"*40000}
+    B = "sc:https://webws.365scores.com/web/"
+    # basura: caché que nadie pide hace doscientos días
+    for p in ("standings", "games/current", "games/fixtures",
+              "games/results", "athletes", "stats"):
+        almacen.guardar(B+p+"/?a=1", gordo)
+    # el detalle de un partido, de los mismos doscientos días
+    almacen.guardar(B+"game/?gameId=123", gordo)
+    # y lo que no caduca nunca
+    for k in ("carrera:messi", "pj:lpf:messi", "fixture:102", "goles:lpf:99",
+              "hist:lpf", "plantel:boca", "nac:110543"):
+        almacen.guardar(k, gordo)
+    with almacen._lock:
+        c = almacen._con()
+        c.execute("UPDATE datos SET guardado=?", (VIEJO,)); c.commit()
+    # y una de la misma familia pero de recién: se está usando
+    almacen.guardar(B+"standings/?a=2", gordo)
+    antes_bytes = almacen.estado()["bytes"]
+    antes = set(almacen.claves())
+    r = server.limpieza_diaria()
+    quedan = set(almacen.claves())
+    print(json.dumps({
+        "borradas": sorted(k[:60] for k in antes - quedan),
+        "elPartidoSigue": (B+"game/?gameId=123") in quedan,
+        "laFrescaSigue": (B+"standings/?a=2") in quedan,
+        "loQueNoCaduca": sorted(k for k in quedan if not k.startswith("sc:")),
+        "dijoFilas": r["filas"],
+        "achico": antes_bytes - almacen.estado()["bytes"],
+        "dosVecesNoHaceNada": server.limpieza_diaria() is None,
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion); _gp3 = _f.name
+_dbtmp = os.path.join(_tp2.gettempdir(), "hayvar_limpieza_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_dbtmp + _ext):
+        os.unlink(_dbtmp + _ext)
+_pl = _sb2.run([sys.executable, _gp3, _dbtmp, AQUI],
+               capture_output=True, text=True, timeout=120)
+os.unlink(_gp3)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_dbtmp + _ext):
+        os.unlink(_dbtmp + _ext)
+_lim = None
+for _linea in _pl.stdout.splitlines():
+    if _linea.startswith("{"):
+        _lim = json.loads(_linea)
+chequear("la limpieza corre entera", _lim is not None,
+         (_pl.stdout[-200:], _pl.stderr[-300:]))
+if _lim:
+    chequear("se lleva las seis familias de caché que ya nadie pide",
+             len(_lim["borradas"]) == 6, _lim["borradas"])
+    # Lo que pidió Mateo, y es la regla: los partidos y los jugadores no se
+    # tocan. Alguien puede querer ver un partido viejo, y las comparaciones
+    # entre temporadas se hacen justamente con eso.
+    chequear("el detalle de un partido viejo se queda", _lim["elPartidoSigue"])
+    chequear("y las carreras, los planteles y los calendarios también",
+             _lim["loQueNoCaduca"] ==
+             ["carrera:messi", "fixture:102", "goles:lpf:99", "hist:lpf",
+              "limpieza:ultima", "nac:110543", "pj:lpf:messi", "plantel:boca"],
+             _lim["loQueNoCaduca"])
+    # Lo que se sigue usando se reescribe solo cada vez que vence: por eso
+    # mirar la última escritura alcanza para saber si alguien lo pide.
+    chequear("una entrada de esta semana no se toca aunque sea de la misma familia",
+             _lim["laFrescaSigue"])
+    # Sin el VACUUM, SQLite marca el espacio libre y no devuelve un mega.
+    chequear("y el archivo achica de verdad, no sólo la tabla",
+             _lim["achico"] > 100000, _lim["achico"])
+    chequear("corre una vez por día y no en cada vuelta",
+             _lim["dosVecesNoHaceNada"])
+# El administrador tiene que decir qué está ocupando el disco: "202 MB" solo
+# no dice qué hacer.
+chequear("el administrador muestra el peso de cada familia",
+         "pesos=almacen.pesos()" in _SRV and "def pesos():" in open(os.path.join(AQUI, "almacen.py"),
+                               encoding="utf-8").read())
+chequear("y qué familias se limpian y cada cuánto",
+         "cacheQueSobra=" in _SRV and "diasDeCache=" in _SRV)
+# La familia más pesada es el detalle de los partidos, y es justo la que no
+# se toca: que no se cuele en la lista por descuido.
+chequear("el detalle de los partidos no está en la lista de lo que se tira",
+         not any("web/game" in p and "games" not in p
+                 for p in server.CACHE_QUE_SOBRA),
+         server.CACHE_QUE_SOBRA)
+chequear("las visitas viejas también se van, que no son de nadie",
+         'hecho["visitas"] = visitas.limpiar()' in _SRV)
+
+# Y que el administrador lo muestre de verdad: se corre la función tal cual
+# está en admin.html con una base de mentira, y se mira qué dibujó.
+if _sh.which("node"):
+    _base_falsa = json.dumps({
+        "bytes": 12000000, "entradas": 45, "sobrevive_al_deploy": True,
+        "pesos": [{"familia": "sc:game", "filas": 30, "bytes": 9000000, "dias": 40},
+                  {"familia": "sc:standings", "filas": 10, "bytes": 2000000, "dias": 40},
+                  {"familia": "carrera", "filas": 5, "bytes": 900000, "dias": 40}],
+        "cacheQueSobra": ["sc:standings", "sc:games/current", "sc:athletes"],
+        "diasDeCache": 30})
+    _jsadm = re.findall(r"<script>(.*?)</script>", _ADM, re.S)[-1]
+    _jsadm = _jsadm.split("/* ── armar todo")[0]
+    _cola = ("""
+const base = __BASE__;
+const s = queOcupa(base);
+console.log(JSON.stringify({
+  filas: (s.match(/<tr>/g)||[]).length,
+  seQueda: (s.match(/se queda/g)||[]).length,
+  seTira: (s.match(/se tira a los 30/g)||[]).length,
+  elPartidoSeQueda: s.indexOf('sc:game<') >= 0
+                    && s.split('sc:game<')[1].indexOf('se queda')
+                       < s.split('sc:game<')[1].indexOf('se tira'),
+  diceElPrecio: s.indexOf('25 centavos') >= 0}));
+""").replace("__BASE__", _base_falsa)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write("globalThis.location={search:'',hash:''};\n" + _jsadm + _cola)
+        _ra = _f.name
+    _pa = _sub.run(["node", _ra], capture_output=True, text=True, timeout=60)
+    os.unlink(_ra)
+    _adm = json.loads(_pa.stdout) if _pa.returncode == 0 and _pa.stdout else None
+    chequear("el administrador dibuja el desglose del disco", _adm is not None,
+             _pa.stderr.strip().splitlines()[:2])
+    if _adm:
+        chequear("con una fila por familia", _adm["filas"] == 4, _adm)
+        chequear("diciendo cuál se tira y cuál se queda",
+                 _adm["seTira"] == 1 and _adm["seQueda"] == 2, _adm)
+        # La familia más pesada es el detalle de los partidos: tiene que
+        # quedar dicho ahí mismo que ésa no se toca.
+        chequear("y que el detalle de los partidos se queda",
+                 _adm["elPartidoSeQueda"], _adm)
+        # Porque si el disco molesta, la salida es agrandarlo, no borrar
+        # partidos: son 25 centavos de dólar por giga por mes.
+        chequear("con el precio del disco a la vista", _adm["diceElPrecio"])
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

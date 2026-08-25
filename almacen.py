@@ -22,6 +22,7 @@ esquema no se rompe cuando una fuente cambia un campo.
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -279,10 +280,7 @@ def estado():
             nuevo = c.execute("SELECT MAX(guardado) FROM datos").fetchone()[0]
     except sqlite3.Error as e:
         return {"error": str(e), "en_memoria": EN_MEMORIA}
-    try:
-        tam = 0 if EN_MEMORIA else os.path.getsize(RUTA)
-    except OSError:
-        tam = 0
+    tam = _tamano()
     # ¿el archivo sobrevive a una publicación? Sólo si está en un disco
     # montado aparte; la carpeta del código se borra en cada deploy.
     persistente = EN_MEMORIA is False and not RUTA.startswith(AQUI)
@@ -311,10 +309,7 @@ def borrar_prefijo(prefijo):
                       (prefijo + "%",)).rowcount
         c.commit()
         if n:
-            try:
-                c.execute("VACUUM")
-            except sqlite3.Error:
-                pass
+            _compactar(c)
         return n
 
 
@@ -325,12 +320,130 @@ def claves():
         return [f[0] for f in c.execute("SELECT clave FROM datos").fetchall()]
 
 
-def limpiar(mas_viejo_que=60 * 60 * 24 * 90):
-    """Borra lo que ya no le sirve a nadie. Por defecto, 90 días."""
+def _compactar(c):
+    """
+    Devolverle al disco el espacio de lo borrado. Son dos pasos, no uno.
+
+    El VACUUM reconstruye la base sin los huecos, pero en modo WAL esa
+    reconstrucción se escribe en el WAL: el archivo principal queda como
+    estaba y el WAL se infla con la base entera. Medido justo después, una
+    limpieza de 200 KB daba "creció 3,7 MB", y era cierto. El checkpoint
+    con TRUNCATE es el que pasa todo al archivo principal y deja el WAL en
+    cero, que es cuando el espacio vuelve a estar libre de verdad.
+    """
+    for orden in ("VACUUM", "PRAGMA wal_checkpoint(TRUNCATE)"):
+        try:
+            c.execute(orden)
+        except sqlite3.Error:
+            pass
+
+
+def _tamano():
+    """
+    Lo que ocupa la base en el disco, contando todos sus archivos.
+
+    Ojo con esto: la base anda en modo WAL, y en WAL lo recién escrito vive
+    en un archivo aparte —`hayvar.db-wal`— hasta que SQLite lo consolida.
+    Mirando sólo el archivo principal, la base parecía más chica de lo que
+    era; y peor, una limpieza podía dar "creció 400 KB", porque el VACUUM
+    consolida y recién ahí lo del WAL aparece en el principal. El disco lo
+    ocupan los tres archivos, así que se suman los tres.
+    """
+    if EN_MEMORIA:
+        return 0
+    total = 0
+    for extra in ("", "-wal", "-shm"):
+        try:
+            total += os.path.getsize(RUTA + extra)
+        except OSError:
+            pass
+    return total
+
+
+def familia(clave):
+    """
+    A qué grupo pertenece una clave, para poder mirar la base por partes.
+
+    Las de la caché de 365scores son todas `sc:` seguido de la dirección
+    entera, así que juntas no dicen nada: se las separa por lo que se
+    pidió —`game`, `standings`, `athletes`—, que es lo que hace falta para
+    saber qué está ocupando el disco.
+    """
+    if clave.startswith("sc:"):
+        m = re.search(r"365scores\.com/web/([^/?]+(?:/[^/?]+)?)/?\?", clave)
+        return "sc:" + (m.group(1) if m else "?")
+    return clave.split(":")[0] if ":" in clave else clave
+
+
+def pesos():
+    """
+    Cuánto ocupa cada familia y cuál es su fila más vieja.
+
+    Es para poder decidir qué limpiar mirando números en vez de a ojo, y
+    para ver si el disco alcanza o hay que agrandarlo. Recorre la tabla
+    entera, así que se guarda el resultado un rato: no es para llamarla en
+    cada visita, es para el administrador.
+    """
+    global _PESOS
+    if _PESOS and time.time() - _PESOS[0] < 600:
+        return _PESOS[1]
+    ahora, salida = time.time(), {}
+    try:
+        with _lock:
+            filas = _con().execute(
+                "SELECT clave, LENGTH(valor), guardado FROM datos").fetchall()
+    except sqlite3.Error as e:
+        return {"error": str(e)}
+    for clave, largo, guardado in filas:
+        f = familia(clave)
+        d = salida.setdefault(f, {"familia": f, "filas": 0, "bytes": 0,
+                                  "dias": 0})
+        d["filas"] += 1
+        d["bytes"] += largo or 0
+        d["dias"] = max(d["dias"], round((ahora - (guardado or ahora)) / 86400))
+    orden = sorted(salida.values(), key=lambda x: -x["bytes"])
+    _PESOS = (ahora, orden)
+    return orden
+
+
+_PESOS = None
+
+
+def limpiar(prefijo, mas_viejo_que):
+    """
+    Borra lo viejo de una familia de claves, y sólo de ésa.
+
+    El prefijo es obligatorio a propósito. Antes esto borraba por fecha sin
+    mirar qué era cada fila, y con eso se llevaba puesto justo lo que no
+    caduca nunca: la carrera de cada jugador y el índice de jugadores, que
+    se escriben una sola vez —cuando lo vemos por primera vez— y se leen
+    para siempre; y los calendarios, que son partidos ya jugados. A los
+    noventa días las fichas habrían quedado vacías y las tablas mal
+    armadas. Por eso nunca se llamó a esta función: como estaba, llamarla
+    era romper la base.
+
+    La fecha que se mira es la de la última escritura, y para una caché eso
+    es exactamente lo que hace falta: lo que se sigue usando se reescribe
+    solo cada vez que vence, así que una fila vieja es una que nadie pidió
+    en todo ese tiempo.
+
+    Devuelve cuántas filas se fueron y cuántos bytes le devolvió al disco.
+    """
+    if not prefijo:
+        raise ValueError("limpiar necesita un prefijo: borrar por fecha a "
+                         "secas se lleva la carrera de los jugadores")
+    global _PESOS
+    antes = _tamano()
     with _lock:
         c = _con()
-        c.execute("DELETE FROM datos WHERE guardado < ?", (time.time() - mas_viejo_que,))
+        n = c.execute("DELETE FROM datos WHERE clave LIKE ? AND guardado < ?",
+                      (prefijo + "%", time.time() - mas_viejo_que)).rowcount
         c.commit()
+        if n:
+            _compactar(c)
+    _PESOS = None
+    despues = _tamano()
+    return {"prefijo": prefijo, "filas": n, "bytes": max(0, antes - despues)}
 
 
 iniciar()

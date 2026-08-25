@@ -3708,6 +3708,122 @@ console.log(JSON.stringify({
         # partidos: son 25 centavos de dólar por giga por mes.
         chequear("con el precio del disco a la vista", _adm["diceElPrecio"])
 
+print("\n── no guardar lo que nadie va a volver a leer ──")
+# El 84% del disco eran 2.638 respuestas crudas de partidos, 161 MB, y no
+# las dejaba la gente abriendo partidos: las dejaba nuestro propio buscador
+# de goles, que recorre todos los calendarios y pide el detalle de cada uno
+# para sacar quién convirtió. De ahí salen los goles, quiénes jugaron y el
+# canal —todo guardado aparte— y el crudo de sesenta kilobytes queda por el
+# solo hecho de que `fetch` cachea todo lo que pide.
+_guion2 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import almacen, server
+
+    ev = lambda pid, mn, cid: {"playerId": pid, "gameTime": mn,
+                               "eventType": {"id": 1, "name": "Gol"},
+                               "competitorId": cid, "subType": {"name": ""}}
+    P = {"game": {"id": 99, "statusText": "Finalizado",
+        "gameTimeAndStatusDisplayType": 2,
+        "homeCompetitor": {"id": 1, "name": "Boca Juniors", "score": 2,
+            "lineups": {"members": [{"id": 10, "jerseyNumber": 9, "status": 1}]}},
+        "awayCompetitor": {"id": 2, "name": "River Plate", "score": 1,
+            "lineups": {"members": [{"id": 20, "jerseyNumber": 7, "status": 1}]}},
+        "members": [{"id": 10, "name": "Miguel Merentiel"},
+                    {"id": 20, "name": "Facundo Colidio"}],
+        "events": [ev(10, 23, 1), ev(10, 55, 1), ev(20, 70, 2)],
+        "tvNetworks": [{"name": "ESPN"}]}}
+
+    class F:
+        def read(self): return json.dumps(P).encode()
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    n = [0]
+    def falso(req, timeout=None):
+        n[0] += 1
+        return F()
+    server.urlopen = falso
+    sc = lambda: len([k for k in almacen.claves() if k.startswith("sc:")])
+
+    # el recolector, con el partido ya terminado
+    d = server.detalle_liviano("99", en_juego=False, liga="lpf")
+    crudoTerminado = sc()
+    guardado = sorted(k for k in almacen.claves() if not k.startswith("sc:"))
+    # el mismo pedido otra vez: tiene que salir de memoria, no de la fuente
+    server.detalle_liviano("99", en_juego=False, liga="lpf")
+    pedidosTrasRepetir = n[0]
+    # y un partido en juego sí se guarda: ahí el respaldo vale
+    server.detalle_liviano("77", en_juego=True, liga="lpf")
+    crudoEnJuego = sc()
+
+    # Y la pregunta que importa: un partido viejo, sin nada cacheado,
+    # ¿sigue mostrando todo en su página?
+    n[0] = 0
+    m = server.api_match({"id": ["99"], "liga": ["lpf"]})
+    print(json.dumps({
+        "crudoTerminado": crudoTerminado,
+        "crudoEnJuego": crudoEnJuego,
+        "pedidosTrasRepetir": pedidosTrasRepetir,
+        "goles": [(g["min"], g["player"]) for g in (d.get("goles") or [])],
+        "guardado": guardado,
+        "pedidosDeLaPagina": n[0],
+        "marcador": [m.get("gh"), m.get("ga")],
+        "formaciones": len(m["lineups"]["home"]) + len(m["lineups"]["away"]),
+        "eventos": len(m.get("events") or []),
+        "canal": m.get("tv"),
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion2); _gp4 = _f.name
+_db2 = os.path.join(_tp2.gettempdir(), "hayvar_fetch_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db2 + _ext):
+        os.unlink(_db2 + _ext)
+_pf = _sb2.run([sys.executable, _gp4, _db2, AQUI],
+               capture_output=True, text=True, timeout=120)
+os.unlink(_gp4)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db2 + _ext):
+        os.unlink(_db2 + _ext)
+_fe = None
+for _linea in _pf.stdout.splitlines():
+    if _linea.startswith("{"):
+        _fe = json.loads(_linea)
+chequear("el recolector corre entero", _fe is not None,
+         (_pf.stdout[-200:], _pf.stderr[-400:]))
+if _fe:
+    chequear("un partido terminado no deja el crudo en la base",
+             _fe["crudoTerminado"] == 0, _fe["crudoTerminado"])
+    # Mientras se juega sí: ahí tener lo último bueno vale algo si la fuente
+    # se cae, y son unas pocas decenas de partidos a la vez, no miles.
+    chequear("uno en juego sí, que es cuando el respaldo sirve",
+             _fe["crudoEnJuego"] == 1, _fe["crudoEnJuego"])
+    # No guardar en la base no significa pedirlo de nuevo cada vez: la
+    # memoria lo sigue cacheando, así que no cuesta un pedido más.
+    chequear("y no se pide dos veces: la memoria lo sigue cacheando",
+             _fe["pedidosTrasRepetir"] == 1, _fe["pedidosTrasRepetir"])
+    # Lo que hacía falta del partido ya salió y quedó guardado aparte: eso
+    # es lo que hace que tirar el crudo no pierda nada.
+    chequear("los goles salen igual",
+             _fe["goles"] == [[23, "Miguel Merentiel"], [55, "Miguel Merentiel"],
+                              [70, "Facundo Colidio"]], _fe["goles"])
+    chequear("y quedan guardados los goles, las carreras, los planteles y el canal",
+             _fe["guardado"] == ["carrera:facundo colidio",
+                                 "carrera:miguel merentiel", "goles:lpf:99",
+                                 "golesidx:lpf", "pj:lpf:facundo colidio",
+                                 "pj:lpf:miguel merentiel", "plantel:boca juniors",
+                                 "plantel:river plate", "tv:lpf:99"],
+             _fe["guardado"])
+    # La pregunta de Mateo: sin el crudo guardado, ¿la página de un partido
+    # viejo sigue mostrando todo? La página pide el partido por su cuenta.
+    chequear("y la página de un partido viejo sigue mostrando todo",
+             _fe["marcador"] == [2, 1] and _fe["formaciones"] == 2
+             and _fe["eventos"] == 3 and _fe["canal"] == ["ESPN"], _fe)
+    chequear("con un solo pedido, igual que antes",
+             _fe["pedidosDeLaPagina"] == 1, _fe["pedidosDeLaPagina"])
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

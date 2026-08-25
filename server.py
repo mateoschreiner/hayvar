@@ -495,13 +495,22 @@ def _guardar_en_cache(url, valor, cuanto=None):
                 _cache_bytes -= v[2]
 
 
-def fetch(path, params, ttl=15):
+def fetch(path, params, ttl=15, guardar=True):
     """
     Pedido a 365scores, con dos niveles de caché.
 
     En memoria para el segundo a segundo, y en la base para todo lo demás.
     La base es la que hace la diferencia: sobrevive a los reinicios y, si la
     fuente se cae, devuelve lo último bueno en vez de dejar la página vacía.
+
+    Con `guardar=False` sólo se usa la memoria. Es para los pedidos de un
+    solo uso: el buscador de goles recorre todos los partidos de todos los
+    calendarios, y de cada uno saca lo que le sirve —los goles, quiénes
+    jugaron— y lo guarda aparte. La respuesta cruda que queda son sesenta
+    kilobytes por partido que nadie vuelve a leer nunca: eran 2.638
+    entradas y 161 MB, el 84% de la base, para nada. Lo que hace la fuente
+    de respaldo tampoco se pierde ahí, porque si el pedido falla el
+    recolector lo reintenta en la vuelta siguiente.
     """
     qs = {"appTypeId": 5, "langId": LANG, "timezoneName": TZ, "userCountryId": 382}
     qs.update(params)
@@ -519,8 +528,12 @@ def fetch(path, params, ttl=15):
         with urlopen(req, timeout=20) as r:
             return json.loads(r.read().decode("utf-8"))
 
-    data, info = almacen.con_respaldo("sc:" + url, ir_a_la_fuente,
-                                      max_edad=ttl, tag=path)
+    if guardar:
+        data, info = almacen.con_respaldo("sc:" + url, ir_a_la_fuente,
+                                          max_edad=ttl, tag=path)
+    else:
+        data, info = ir_a_la_fuente(), {"origen": "fuente", "edad": 0,
+                                        "tag": path, "bytes": 0}
     if info.get("origen") == "cache-vieja":
         ULTIMO_PROBLEMA["365scores"] = info
 
@@ -3485,7 +3498,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la base ya no crece sin freno: se tira sola la caché de pedidos que nadie hace, y los partidos y los jugadores se quedan"
+VERSION_APP = "2026-08-25 · la base deja de crecer sola: el recolector ya no guarda el crudo de cada partido terminado, que era el 84% del disco"
 
 
 def reparar_recorridos():
@@ -3710,7 +3723,12 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
     eso se ocupa `detalle_al_dia`.
     """
     ttl = 30 if en_juego else 300
-    data = fetch("game", {"gameId": game_id}, ttl=ttl)
+    # El crudo se guarda sólo mientras el partido se juega, que es cuando
+    # tener lo último bueno vale algo si la fuente se cae. Terminado el
+    # partido no: de acá ya salieron los goles y quiénes jugaron, guardados
+    # aparte, y el crudo son sesenta kilobytes que nadie vuelve a leer. Ese
+    # era el 84% del disco, y lo llenaba este mismo recorrido.
+    data = fetch("game", {"gameId": game_id}, ttl=ttl, guardar=bool(en_juego))
     g = data.get("game") or {}
     hid = (g.get("homeCompetitor") or {}).get("id")
     quien = {m.get("id"): (m.get("name") or m.get("shortName") or "")

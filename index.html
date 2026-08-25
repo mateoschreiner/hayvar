@@ -3338,9 +3338,9 @@ const App=(()=>{
     return `<${r?'a':'div'} class="match ${changed?'flash':''}" data-id="${esc(m.id)}"${abre}>
       <div class="m-fila">
         ${htmlTiempo(m)}
-        <div class="${claseLado(m,true)}">${crest(m.home)}<span class="tn">${esc(m.home.canon||m.home.name)}</span></div>
+        <div class="${claseLado(m,true)}">${crest(m.home)}<span class="tn">${paisDelClub(m.home)}${esc(m.home.canon||m.home.name)}</span></div>
         ${htmlMarcador(m)}
-        <div class="${claseLado(m,false)}">${crest(m.away)}<span class="tn">${esc(m.away.canon||m.away.name)}</span></div>
+        <div class="${claseLado(m,false)}">${crest(m.away)}<span class="tn">${paisDelClub(m.away)}${esc(m.away.canon||m.away.name)}</span></div>
       </div>
       ${htmlExtras(m)}
     </${r?'a':'div'}>`;

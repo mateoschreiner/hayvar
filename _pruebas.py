@@ -2960,6 +2960,54 @@ App.init();
     chequear("y en uno local no aparece ninguna",
              _loc and _loc["club"] == 0 and _loc["conBandera"] == 3, _loc)
 
+    # El país del club no está donde uno lo buscaría. Los calendarios
+    # guardados de la Libertadores y la Sudamericana no lo traen —se
+    # guardaron antes de que el campo existiera, y de un partido ya
+    # guardado sólo se refrescan la fase y la zona— y los de la Champions y
+    # la Europa sí. Leyendo nada más el calendario, la bandera saldría en
+    # dos torneos y en los otros dos no.
+    import copy
+
+    def _eq(n, cid, pais=None):
+        d = {"id": cid, "name": n, "canon": n}
+        if pais is not None:
+            d["pais"] = pais
+        return d
+
+    _vivos = [{"home": _eq("Estudiantes", 100, 10),
+               "away": _eq("Flamengo", 200, 21)}]
+    _tabla = server.recordar_paises(_vivos)
+    chequear("de la ventana en vivo se aprende de qué país es cada club",
+             _tabla.get("100") == 10 and _tabla.get("200") == 21, _tabla)
+
+    _guardado = [{"id": "9", "home": _eq("Estudiantes", 100),
+                  "away": _eq("Flamengo", 200)}]
+    _copia = copy.deepcopy(_guardado)
+    _conb = server.con_banderas(_guardado, "lib")
+    chequear("y con eso se completa el calendario que no lo trae",
+             _conb[0]["home"].get("bandera", "").endswith("/10")
+             and _conb[0]["away"].get("bandera", "").endswith("/21"), _conb[0])
+    # La lista que llega es la que está guardada en la base: sin copiar, la
+    # bandera se colaba en el calendario en el próximo `guardar`.
+    chequear("sin escribirle nada al calendario guardado",
+             _guardado == _copia, _guardado)
+    chequear("en un torneo local no se toca ni un partido",
+             server.con_banderas(_guardado, "lpf") is _guardado)
+    # Inventar la bandera de un club que nunca vimos sería poner una
+    # bandera equivocada, que es peor que no poner ninguna.
+    _raro = [{"id": "7", "home": _eq("Club Nuevo", 999),
+              "away": _eq("Otro", 998)}]
+    _sr = server.con_banderas(_raro, "lib")
+    chequear("y a un club que nunca vimos no se le inventa una",
+             "bandera" not in _sr[0]["home"] and "bandera" not in _sr[0]["away"])
+    chequear("el fixture de un torneo internacional sale con banderas",
+             "games = con_banderas(games, lid)" in _SRV)
+    chequear("y la portada las hereda de ahí, sin pedir nada más",
+             'api_liga_games({"id": [lid]}).get("games", [])' in _SRV)
+    chequear("las filas de partido las dibujan, en la portada y en el fixture",
+             "${paisDelClub(m.home)}${esc(m.home.canon||m.home.name)}" in HTML
+             and HTML.count("paisDelClub(m.home)") == 2)
+
     if _gru:
         chequear("en la fase de grupos sigue yendo la tabla del grupo",
                  _gru["hayTabla"] and _gru["cajas"] == 0, _gru)

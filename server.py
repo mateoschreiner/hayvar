@@ -1998,9 +1998,17 @@ def api_match(q):
     # único que los distingue. El país ya viene con cada equipo; acá sólo
     # se lo convierte en imagen.
     if (LIGAS.get(liga_id) or {}).get("internacional"):
+        # Este pedido llega fresco y trae el país, así que de paso deja
+        # anotado de dónde son estos dos: el calendario guardado de las
+        # copas sudamericanas no lo sabe y así se va llenando solo.
+        try:
+            tabla = recordar_paises([out])
+        except Exception:
+            tabla = {}
         for lado in (out["home"], out["away"]):
-            if lado.get("pais"):
-                lado["bandera"] = bandera_url(lado["pais"])
+            pais = lado.get("pais") or tabla.get(str(lado.get("id") or ""))
+            if pais:
+                lado["bandera"] = bandera_url(pais)
     out.update({"events": events, "stats": stats, "lineups": lineups,
                 "banco": banco, "confirmada": confirmada,
                 "bancoReal": banco_real,
@@ -3477,7 +3485,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la instancia de cada partido de copa, la bandera de cada jugador en las formaciones y la del país del club en los torneos internacionales"
+VERSION_APP = "2026-08-25 · la instancia de cada partido de copa, y las banderas: la de cada jugador en las formaciones y la del país del club en la portada, el fixture y el partido de los torneos internacionales"
 
 
 def reparar_recorridos():
@@ -4413,8 +4421,13 @@ def api_liga_games(q):
         porNombre = {}
         for m in games:
             porNombre[(norm(m["home"]["name"]), norm(m["away"]["name"]))] = m
+        # Esta ventana llega fresca y trae el país de cada club, que el
+        # calendario guardado de las copas sudamericanas no tiene. Se anota
+        # al pasar: es la única parte de acá que lo sabe.
+        aprendidos = []
         for g in raw:
             lv = map_game(g)
+            aprendidos.append(lv)
             # Los mismos dos equipos se cruzan más de una vez en el torneo, así
             # que hay que mirar también la fecha: si no, el partido en vivo se
             # pega al de la primera rueda y queda el marcador donde no va.
@@ -4443,6 +4456,8 @@ def api_liga_games(q):
                 vivos += 1
                 jugando.add(norm(key["home"]["name"]))
                 jugando.add(norm(key["away"]["name"]))
+        if cfg.get("internacional"):
+            recordar_paises(aprendidos)
     except Exception:
         pass
 
@@ -4669,6 +4684,9 @@ def api_liga_games(q):
 
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]
+    # La bandera del país de cada club, en los torneos internacionales. Va
+    # acá, después de filtrar: se copian sólo los partidos que se mandan.
+    games = con_banderas(games, lid)
     res = {"games": games, "count": len(games), "rounds": rounds, "current": actual,
            "live": vivos, "interzonal": sum(1 for g in games if g["interzonal"]),
            "sinZona": sin_zona, "nombre": cfg["nombre"],
@@ -5795,6 +5813,65 @@ def bandera_url(pais_id):
     return ("https://imagecache.365scores.com/image/upload/"
             "f_png,w_48,h_48,c_limit,q_auto:eco,dpr_2/"
             "v1/Countries/Round/%s" % pais_id)
+
+
+# De qué país es cada club, aprendido de los partidos que van pasando.
+#
+# Hace falta porque el país no está donde uno lo buscaría. Los calendarios
+# guardados de la Libertadores y la Sudamericana no lo tienen: se guardaron
+# antes de que el campo existiera, y de un partido ya guardado sólo se
+# refrescan la fase y la zona, nunca los equipos. Los de la Champions y la
+# Europa sí lo tienen, porque se bajaron después. O sea que leyendo nada
+# más el calendario, la bandera aparecería en dos torneos y en los otros
+# dos no, que es peor que no ponerla en ninguno.
+#
+# La ventana de lo que se juega ahora, en cambio, se pide fresca cada vez y
+# siempre lo trae. Así que se aprende de ahí: cada club que juega deja
+# anotado de dónde es, y de la fecha siguiente en adelante ya se sabe. No
+# cuesta un pedido más —esa ventana ya se pedía— y no hay que volver a
+# bajar ningún calendario.
+_CLAVE_PAIS_CLUB = "paises:clubes"
+
+
+def recordar_paises(games):
+    """Anota de qué país es cada club que aparezca en estos partidos."""
+    tabla, _ = almacen.leer(_CLAVE_PAIS_CLUB)
+    tabla = tabla or {}
+    nuevos = False
+    for g in games or []:
+        for lado in ("home", "away"):
+            t = g.get(lado) or {}
+            cid, pais = str(t.get("id") or ""), t.get("pais")
+            if cid and pais and tabla.get(cid) != pais:
+                tabla[cid], nuevos = pais, True
+    if nuevos:
+        almacen.guardar(_CLAVE_PAIS_CLUB, tabla)
+    return tabla
+
+
+def con_banderas(games, liga_id):
+    """
+    Los mismos partidos con la bandera del país de cada club, para los
+    torneos internacionales.
+
+    Devuelve copias. La lista que llega es la que está guardada en la base
+    y no es de acá para escribirla: sin copiar, la bandera se colaba en el
+    calendario guardado en el próximo `guardar`.
+    """
+    if not (LIGAS.get(liga_id) or {}).get("internacional"):
+        return games
+    tabla = recordar_paises(games)
+    salida = []
+    for g in games:
+        g = dict(g)
+        for lado in ("home", "away"):
+            t = dict(g.get(lado) or {})
+            pais = t.get("pais") or tabla.get(str(t.get("id") or ""))
+            if pais:
+                t["bandera"] = bandera_url(pais)
+            g[lado] = t
+        salida.append(g)
+    return salida
 
 
 def nacionalidades(ids):

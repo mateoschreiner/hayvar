@@ -2436,6 +2436,87 @@ chequear("y el tiempo va por latidos, no por el evento de cerrar",
          and "if(document.hidden) latir();" in HTML)
 
 
+print("\n── la portada se ordena según quién entra ──")
+# La pregunta difícil no es qué hacer con el que llega buscando algo: es qué
+# hacer con el que entra por la puerta grande sin decir nada, que son casi
+# todos. Cuatro señales más, con puntaje, y sin ninguna queda el orden de
+# siempre. Se prueba corriendo la función tal cual está en la página.
+if _sh.which("node"):
+    _i = HTML.index("  // El interruptor. En false")
+    _j = HTML.index("  async function loadHome(){")
+    _orden = ("let S={};\nclass URLSearchParams{constructor(s){this.s=s||''}"
+              "get(k){const m=new RegExp('[?&]'+k+'=([^&]*)').exec(this.s);"
+              "return m?m[1]:null}}\nconst location={search:''};\n"
+              + HTML[_i:_j].replace("const PORTADA_SEGUN_VISITA = false;",
+                                    "let PORTADA_SEGUN_VISITA = true;") + """
+const L=(l,v)=>({liga:l, games: v?[{status:'LIVE'}]:[{status:'FIN'}]});
+const orden=b=>b.map(x=>x.liga).join(' ');
+const out={};
+function caso(n, visita, club, bloques, search){
+  S={visita:visita||{}, club:club?{name:'x'}:null};
+  location.search=search||'';
+  ordenarPortada(bloques); out[n]=orden(bloques);
+}
+const cinco=()=>[L('lpf'),L('nacional'),L('lib'),L('laliga'),L('premier')];
+caso('nada', {}, false, cinco());
+caso('quiere', {quiere:'laliga'}, false, cinco());
+caso('quiereQueNoJuega', {quiere:'sud'}, false, cinco());
+caso('pais', {region:'IT'}, false, [L('lpf'),L('lib'),L('seriea'),L('laliga')]);
+caso('paisVsQuiere', {quiere:'premier',region:'IT'}, false, cinco());
+caso('club', {}, true, [L('lib'),L('laliga'),L('lpf'),L('premier')]);
+caso('vivo', {}, false, [L('lpf'),L('nacional'),L('lib',true),L('laliga')]);
+caso('quiereVsVivo', {quiere:'laliga'}, false,
+     [L('lpf'),L('nacional'),L('lib',true),L('laliga')]);
+caso('clubVsVivo', {}, true, [L('lib',true),L('laliga'),L('lpf')]);
+caso('vivoVsPais', {region:'ES'}, false, [L('lib',true),L('laliga'),L('lpf')]);
+PORTADA_SEGUN_VISITA=false;
+caso('apagado', {quiere:'laliga', region:'IT'}, false, cinco());
+caso('forzado', {}, false, cinco(), '?ver=premier');
+console.log(JSON.stringify(out));
+""")
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_orden); _ro = _f.name
+    _po = _sub.run(["node", _ro], capture_output=True, text=True,
+                   timeout=60)
+    os.unlink(_ro)
+    _o = json.loads(_po.stdout) if _po.returncode == 0 else None
+    chequear("la función de ordenar corre", _o is not None,
+             _po.stderr.strip().splitlines()[:2])
+    if _o:
+        _esperado = {
+            # sin señales no se toca nada: el orden a mano sigue mandando
+            "nada": "lpf nacional lib laliga premier",
+            "quiere": "laliga lpf nacional lib premier",
+            # nunca se sube un torneo que hoy no tiene partidos
+            "quiereQueNoJuega": "lpf nacional lib laliga premier",
+            "pais": "seriea lpf lib laliga",
+            # lo que dijo al entrar le gana a de dónde es
+            "paisVsQuiere": "premier lpf nacional lib laliga",
+            "club": "lpf lib laliga premier",
+            "vivo": "lib lpf nacional laliga",
+            # y lo que dijo al entrar le gana también a lo que está rodando
+            "quiereVsVivo": "laliga lib lpf nacional",
+            "clubVsVivo": "lpf lib laliga",
+            "vivoVsPais": "lib laliga lpf",
+            # con el interruptor apagado la portada es igual para todos
+            "apagado": "lpf nacional lib laliga premier",
+            # pero ?ver= anda igual, para poder probarlo sin encenderlo
+            "forzado": "premier lpf nacional lib laliga",
+        }
+        _malos = {k: (v, _o.get(k)) for k, v in _esperado.items()
+                  if _o.get(k) != v}
+        chequear("las cinco señales ordenan como corresponde",
+                 not _malos, _malos)
+chequear("el interruptor viene apagado",
+         "const PORTADA_SEGUN_VISITA = false;" in HTML)
+chequear("y se puede probar sin encenderlo",
+         "new URLSearchParams(location.search).get('ver')" in HTML)
+chequear("si el aviso llega tarde, se reordena sin quedar dando vueltas",
+         "if(S.liga==='home' && S.home && ordenarPortada(S.home.bloques))" in HTML
+         and "loadHome();" in HTML)
+
+
 print("\n── la página de administración ──")
 _ADM = open(os.path.join(AQUI, "admin.html"), encoding="utf-8").read()
 chequear("no es pública", "/admin" in server.PRIVADAS)

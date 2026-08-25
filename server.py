@@ -3421,7 +3421,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · el administrador cuenta quién entra, de dónde y qué mira, sin guardar quién es nadie"
+VERSION_APP = "2026-08-24 · la portada se ordena según quién entra (apagada de fábrica: se prueba con ?ver=)"
 
 
 def reparar_recorridos():

@@ -2633,6 +2633,70 @@ const App=(()=>{
     status('ok',`<b>${esc(S.clubInfo.club)}</b> · ficha del club`);
   }
 
+  /* ── Qué torneo va primero en la portada ──────────────────────────────
+
+     La pregunta difícil no es qué hacer con el que llega buscando algo:
+     ése lo dijo solo. Es qué hacer con el que entra por la puerta grande
+     sin decir nada, que son casi todos.
+
+     Para ése hay cuatro señales más, y no valen lo mismo. Se le pone
+     puntaje a cada bloque y se ordena por eso. Sin ninguna señal el
+     puntaje es cero para todos y queda el orden de siempre, que es el que
+     está pensado a mano y sigue siendo un buen orden.
+
+       lo que venía a ver     100  lo dijo al entrar, no hay nada mejor
+       el club que eligió      50  lo dijo explícitamente alguna vez
+       lo que se juega ahora   40  esto no es sobre él, es sobre el
+                                   partido: un torneo con algo rodando
+                                   vale más que uno terminado, para
+                                   cualquiera
+       el país del navegador   10  la más floja de todas, pero para el
+                                   que entra de afuera es la diferencia
+                                   entre encontrar lo suyo o rebotar
+
+     Dos cuidados. Sólo se ordenan los bloques que ya vinieron, así que
+     nunca se sube uno vacío. Y el orden es estable: entre dos bloques con
+     el mismo puntaje gana el que ya venía primero.                      */
+
+  // El interruptor. En false la portada es igual para todo el mundo.
+  // Se puede probar sin encenderlo agregando ?ver=laliga a la dirección.
+  const PORTADA_SEGUN_VISITA = false;
+
+  // De qué torneo es probable que quiera saber alguien según el país que
+  // tiene configurado el navegador. Sólo los casos donde no hay duda.
+  const TORNEO_DEL_PAIS = {AR:'lpf', ES:'laliga', GB:'premier', UK:'premier',
+                           IT:'seriea', DE:'bundesliga', AT:'bundesliga',
+                           BR:'lib'};
+
+  function puntajeDelBloque(b, quiere, delClub, delPais){
+    let p = 0;
+    if(quiere && b.liga === quiere) p += 100;
+    if(delClub && b.liga === delClub) p += 50;
+    if((b.games || []).some(m => m.status === 'LIVE')) p += 40;
+    if(delPais && b.liga === delPais) p += 10;
+    return p;
+  }
+
+  function ordenarPortada(bloques){
+    if(!bloques || bloques.length < 2) return false;
+    const forzado = new URLSearchParams(location.search).get('ver');
+    const v = S.visita || {};
+    // El forzado anda siempre, aunque el interruptor esté apagado: es un
+    // pedido explícito y sirve para probar esto sin encenderlo para todos.
+    const quiere = forzado || (PORTADA_SEGUN_VISITA ? (v.quiere || '') : '');
+    const delPais = PORTADA_SEGUN_VISITA
+      ? (TORNEO_DEL_PAIS[v.region] || '') : '';
+    // El club elegido es del propio visitante y no depende del registro de
+    // visitas, así que se respeta con el interruptor apagado también.
+    const delClub = S.club ? 'lpf' : '';
+
+    const antes = bloques.map(b => b.liga).join('|');
+    bloques.forEach((b, i) => { b._orden = i;
+      b._punta = puntajeDelBloque(b, quiere, delClub, delPais); });
+    bloques.sort((a, b) => (b._punta - a._punta) || (a._orden - b._orden));
+    return bloques.map(b => b.liga).join('|') !== antes;
+  }
+
   async function loadHome(){
     shell(true); drawSide();
     if(!S.weekStart){ const w=new Date(S.homeDate); w.setDate(w.getDate()-((w.getDay()+6)%7)); S.weekStart=w; }
@@ -2642,7 +2706,8 @@ const App=(()=>{
     let h;
     try{ h=await get('/api/home?date='+ymd(S.homeDate)); }
     catch(e){ return status('err','No se pudo cargar la portada: '+esc(e.message)); }
-    S.home=h; S.games=h.bloques.flatMap(b=>b.games);
+    S.home=h; ordenarPortada(h.bloques);
+    S.games=h.bloques.flatMap(b=>b.games);
     // en modo club, el panel de la derecha arranca con el partido anterior
     // y el siguiente del equipo elegido
     S.clubGames=null;
@@ -5203,7 +5268,18 @@ const App=(()=>{
                  +'&ref='+encodeURIComponent(document.referrer||'')
                  +'&p='+screen.width+'x'+screen.height),
               {cache:'no-store'})
-          .then(r=>r.json()).then(d=>{ if(d&&d.v){ vid=d.v; S.visita=d; } })
+          .then(r=>r.json()).then(d=>{
+            if(!d||!d.v) return;
+            vid=d.v; S.visita=d;
+            /* La respuesta puede llegar después de que la portada ya se
+               dibujó: los dos pedidos salen juntos a propósito. Si con lo
+               que trajo el orden cambia, se vuelve a dibujar. Pasa dentro
+               del primer segundo, antes de que nadie haya leído nada, y
+               no puede repetirse: al redibujar ya queda ordenada y la
+               función avisa que no cambió nada. */
+            if(S.liga==='home' && S.home && ordenarPortada(S.home.bloques))
+              loadHome();
+          })
           .catch(()=>{});
       }catch(e){}
       const latir=()=>{

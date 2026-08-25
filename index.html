@@ -2655,9 +2655,10 @@ const App=(()=>{
      · No sube un torneo que ese día no tiene partidos. Subir un bloque
        vacío es peor que no hacer nada.                                  */
 
-  // El interruptor. En false la portada es igual para todo el mundo.
-  // Se puede probar sin encenderlo agregando ?ver=laliga a la dirección.
-  const PORTADA_SEGUN_VISITA = false;
+  // El interruptor. En false la portada vuelve a ser igual para todo el
+  // mundo, con el orden de HOME_LIGAS. Es una línea: si algo sale mal con
+  // gente adentro, se apaga y listo, sin tener que deshacer nada.
+  const PORTADA_SEGUN_VISITA = true;
 
   // La liga de cada país europeo. Sólo los cuatro que tenemos: para el
   // resto de Europa no hay liga propia que ofrecer y va la de "sin país".
@@ -2690,11 +2691,17 @@ const App=(()=>{
     const club = S.club ? 'lpf' : '';
     const pais = PORTADA_SEGUN_VISITA ? (v.region || '') : '';
 
+    // El continente sale de la zona horaria y casi nunca falla; el país
+    // exacto sólo hace falta para las cuatro ligas europeas que tenemos.
+    const cont = PORTADA_SEGUN_VISITA ? ((S.visita || {}).continente || '') : '';
+    const enAmerica = cont === 'america' || (!cont && PAISES_AMERICA.has(pais));
+    const enEuropa  = cont === 'europa'  || (!cont && PAISES_EUROPA.has(pais));
+
     let lista, alFinal = [];
     if(pais === 'AR')                    lista = ['lpf','lib','champions','nacional','sud'];
-    else if(PAISES_AMERICA.has(pais))    lista = ['lib','lpf','champions','nacional','sud'];
+    else if(enAmerica)                   lista = ['lib','lpf','champions','nacional','sud'];
     else if(LIGA_DEL_PAIS[pais])         lista = [LIGA_DEL_PAIS[pais],'champions','lib','lpf'];
-    else if(PAISES_EUROPA.has(pais)){    lista = ['champions','lpf','lib'];
+    else if(enEuropa){                   lista = ['champions','lpf','lib'];
                                          alFinal = ['nacional']; }
     else                                 lista = [];   // el orden de siempre
 
@@ -2738,6 +2745,26 @@ const App=(()=>{
     return bloques.map(b => b.liga).join('|') !== antes;
   }
 
+  /* Pintar la lista de la portada con lo que ya está en S.home.
+
+     Está separado de `loadHome` porque hay que poder repintar sin volver a
+     pedir nada: el aviso de la visita llega unas décimas después que los
+     partidos, y si con lo que trae cambia el orden hay que rehacer la
+     lista. Llamando a `loadHome` se veía el parpadeo de los esqueletos —
+     los pinta antes de pedir— y quedaba peor que no reordenar. */
+  function pintarPortada(){
+    const h = S.home; if(!h) return;
+    $('#matches').innerHTML=h.total
+      ? h.bloques.map(b=>`<div class="lgrow">
+            <span class="badge">${esc((b.nombre.match(/\b\w/g)||[]).join('').slice(0,3).toUpperCase())}</span>
+            <span class="nm">${esc(b.nombre)}</span>
+            <a class="go" href="${esc(Rutas.url({t:'liga',id:b.liga}))}" data-ir>ver torneo →</a></div>`
+          + b.games.map(matchRow).join('')).join('')
+      : `<div class="empty"><span class="big">◎</span>No hay partidos programados para este día.</div>`;
+    $('#liveCnt').textContent=h.live;
+    $('#liveBtn').classList.toggle('on',h.live>0);
+  }
+
   async function loadHome(){
     shell(true); drawSide();
     if(!S.weekStart){ const w=new Date(S.homeDate); w.setDate(w.getDate()-((w.getDay()+6)%7)); S.weekStart=w; }
@@ -2756,15 +2783,7 @@ const App=(()=>{
       try{ S.clubGames=await get('/api/club?name='+encodeURIComponent(S.club.name)); }
       catch(e){}
     }
-    $('#matches').innerHTML=h.total
-      ? h.bloques.map(b=>`<div class="lgrow">
-            <span class="badge">${esc((b.nombre.match(/\b\w/g)||[]).join('').slice(0,3).toUpperCase())}</span>
-            <span class="nm">${esc(b.nombre)}</span>
-            <a class="go" href="${esc(Rutas.url({t:'liga',id:b.liga}))}" data-ir>ver torneo →</a></div>`
-          + b.games.map(matchRow).join('')).join('')
-      : `<div class="empty"><span class="big">◎</span>No hay partidos programados para este día.</div>`;
-    $('#liveCnt').textContent=h.live;
-    $('#liveBtn').classList.toggle('on',h.live>0);
+    pintarPortada();
     // faltaba esto: la portada armaba las filas pero nunca pedía los
     // goleadores ni el canal, así que abajo de cada partido no salía nada
     cargarDetalles();
@@ -5313,8 +5332,15 @@ const App=(()=>{
       const contar=()=>Math.round((Date.now()-desde)/1000);
       const url=(p)=>'/api/visita?'+p;
       try{
+        // La zona horaria es la mejor señal de dónde está mirando: nadie la
+        // configura a mano, la pone el sistema. El idioma no sirve —media
+        // Argentina tiene el teléfono en inglés— y con eso los mandábamos
+        // a la lista de "América" en vez de a la Liga Profesional.
+        let zona='';
+        try{ zona=Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(e){}
         fetch(url('r='+encodeURIComponent(location.pathname)
                  +'&ref='+encodeURIComponent(document.referrer||'')
+                 +'&tz='+encodeURIComponent(zona)
                  +'&p='+screen.width+'x'+screen.height),
               {cache:'no-store'})
           .then(r=>r.json()).then(d=>{
@@ -5326,8 +5352,11 @@ const App=(()=>{
                del primer segundo, antes de que nadie haya leído nada, y
                no puede repetirse: al redibujar ya queda ordenada y la
                función avisa que no cambió nada. */
-            if(S.liga==='home' && S.home && ordenarPortada(S.home.bloques))
-              loadHome();
+            if(S.liga==='home' && S.home && ordenarPortada(S.home.bloques)){
+              S.games=S.home.bloques.flatMap(b=>b.games);
+              pintarPortada();      // sin esqueletos: ya tenemos los datos
+              drawHomeRight();      // y el partidazo, que también cambia
+            }
           })
           .catch(()=>{});
       }catch(e){}

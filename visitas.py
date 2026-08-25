@@ -211,6 +211,54 @@ def que_buscaba(referente):
         return ""
 
 
+# ── De dónde está mirando ────────────────────────────────────────────────
+#
+# La zona horaria del navegador es la mejor señal de dónde está alguien, y
+# de lejos. El idioma no sirve: media Argentina tiene el teléfono en
+# inglés, y con eso los estábamos mandando a "América" en vez de a la Liga
+# Profesional. La zona horaria en cambio no la configura nadie a mano —la
+# pone el sistema— y dice "America/Argentina/Buenos_Aires" sin lugar a
+# dudas.
+#
+# Tampoco es geolocalización por IP: no dice dónde está el aparato, dice
+# con qué reloj vive la persona. Para saber qué fútbol le interesa, eso es
+# mejor: un argentino de viaje sigue teniendo su reloj y su fútbol.
+_ZONA_PAIS = {
+    "America/Argentina": "AR", "America/Buenos_Aires": "AR",
+    "America/Cordoba": "AR", "America/Mendoza": "AR",
+    "America/Catamarca": "AR", "America/Jujuy": "AR",
+    "Europe/Madrid": "ES", "Atlantic/Canary": "ES", "Africa/Ceuta": "ES",
+    "Europe/London": "GB", "Europe/Belfast": "GB",
+    "Europe/Rome": "IT", "Europe/Berlin": "DE", "Europe/Busingen": "DE",
+    "Europe/Vienna": "AT",
+}
+
+
+def pais_de_zona(zona):
+    """El país, cuando la zona horaria lo dice sin ambigüedad."""
+    z = (zona or "").strip()
+    for prefijo, pais in _ZONA_PAIS.items():
+        if z == prefijo or z.startswith(prefijo + "/"):
+            return pais
+    return ""
+
+
+def continente_de_zona(zona):
+    """
+    "america", "europa" o "". Es lo que decide qué lista de torneos usar
+    cuando no sabemos el país exacto, y acierta casi siempre porque la
+    primera parte de la zona horaria ya es el continente.
+    """
+    z = (zona or "").strip()
+    if z.startswith("America/"):
+        # Estados Unidos y Canadá comparten el prefijo con toda la región,
+        # y para el fútbol que mostramos entran en la misma bolsa.
+        return "america"
+    if z.startswith("Europe/") or z in ("Atlantic/Canary", "Africa/Ceuta"):
+        return "europa"
+    return ""
+
+
 def region(idiomas):
     """
     De qué país es, según cómo tiene configurado el navegador.

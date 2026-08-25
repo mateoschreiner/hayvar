@@ -2359,9 +2359,34 @@ chequear("los términos de búsqueda se guardan cuando el buscador los manda",
          == "aldosivi union")
 chequear("y no se inventan cuando Google no los manda",
          visitas.que_buscaba("https://www.google.com/") == "")
-chequear("el país sale del idioma del navegador",
+chequear("el idioma sirve de respaldo para el país",
          visitas.region("es-AR,es;q=0.9") == "AR"
          and visitas.region("en-US") == "US" and visitas.region("") == "")
+
+# Pero el idioma solo no alcanza, y éste es el error que se habría comido a
+# los argentinos: media Argentina tiene el teléfono en inglés, manda en-US,
+# y con eso les poníamos la Libertadores antes que la Liga Profesional. La
+# zona horaria no la configura nadie a mano y no se equivoca.
+chequear("la zona horaria dice el país mejor que el idioma",
+         visitas.pais_de_zona("America/Argentina/Buenos_Aires") == "AR"
+         and visitas.pais_de_zona("America/Argentina/Cordoba") == "AR"
+         and visitas.pais_de_zona("Europe/Madrid") == "ES"
+         and visitas.pais_de_zona("Europe/London") == "GB"
+         and visitas.pais_de_zona("Asia/Tokyo") == "")
+chequear("y el continente sale casi siempre",
+         visitas.continente_de_zona("America/Santiago") == "america"
+         and visitas.continente_de_zona("Europe/Paris") == "europa"
+         and visitas.continente_de_zona("Atlantic/Canary") == "europa"
+         and visitas.continente_de_zona("Asia/Tokyo") == ""
+         and visitas.continente_de_zona("") == "")
+chequear("el argentino con el teléfono en inglés sigue siendo argentino",
+         (visitas.pais_de_zona("America/Argentina/Buenos_Aires")
+          or visitas.region("en-US")) == "AR")
+chequear("la página manda la zona horaria",
+         "Intl.DateTimeFormat().resolvedOptions().timeZone" in HTML
+         and "&tz='+encodeURIComponent(zona)" in HTML)
+chequear("y el servidor la prefiere al idioma",
+         "visitas.pais_de_zona(zona) or visitas.region(" in _SRV)
 
 # Contar de verdad, con la base.
 server.almacen.borrar_prefijo("vis:")
@@ -2475,7 +2500,7 @@ if _sh.which("node"):
     _orden = ("let S={};\nclass URLSearchParams{constructor(s){this.s=s||''}"
               "get(k){const m=new RegExp('[?&]'+k+'=([^&]*)').exec(this.s);"
               "return m?m[1]:null}}\nconst location={search:''};\n"
-              + HTML[_i:_j].replace("const PORTADA_SEGUN_VISITA = false;",
+              + HTML[_i:_j].replace("const PORTADA_SEGUN_VISITA = true;",
                                     "let PORTADA_SEGUN_VISITA = true;") + """
 const L=(l,v)=>({liga:l, games: v?[{status:'LIVE'}]:[{status:'FIN'}]});
 const orden=b=>b.map(x=>x.liga).join(' ');
@@ -2587,8 +2612,8 @@ chequear("cada torneo elige su propio partidazo",
 chequear("y con un bloque vacío no se rompe ni inventa",
          server.partidazo_del_dia([{"liga": "x", "games": []}]) is None
          and server.partidazo_del_dia([]) is None)
-chequear("el interruptor viene apagado",
-         "const PORTADA_SEGUN_VISITA = false;" in HTML)
+chequear("el interruptor está encendido y se puede apagar en una línea",
+         "const PORTADA_SEGUN_VISITA = true;" in HTML)
 chequear("y se puede probar sin encenderlo",
          "new URLSearchParams(location.search).get('ver')" in HTML)
 chequear("si el aviso llega tarde, se reordena sin quedar dando vueltas",

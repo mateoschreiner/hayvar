@@ -3421,7 +3421,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · la portada se ordena por lo que buscó, el club elegido y la región (apagada: se prueba con ?ver=)"
+VERSION_APP = "2026-08-24 · portada dinámica encendida: lo que buscó, el club elegido y la región (por zona horaria)"
 
 
 def reparar_recorridos():
@@ -8117,8 +8117,14 @@ def anotar_visita(handler, q):
           or handler.client_address[0])
     ref = (q.get("ref") or [""])[0][:300]
     ruta = (q.get("r") or ["/"])[0][:120]
+    zona = (q.get("tz") or [""])[0][:60]
     fuente, dominio = visitas.de_donde(ref, handler.headers.get("Host") or "")
     quiere = que_venia_a_ver(ruta)
+    # La zona horaria manda sobre el idioma: el idioma lo cambia la gente,
+    # la zona la pone el sistema. Si no vino zona —navegador viejo— se cae
+    # al idioma, que es mejor que nada.
+    pais = visitas.pais_de_zona(zona) or visitas.region(
+        handler.headers.get("Accept-Language"))
     datos = {
         "huella": visitas.huella(ip, ua),
         "ruta": ruta,
@@ -8128,7 +8134,7 @@ def anotar_visita(handler, q):
         "dispositivo": visitas.dispositivo(ua),
         "sistema": visitas.sistema_de(ua),
         "navegador": visitas.navegador_de(ua),
-        "region": visitas.region(handler.headers.get("Accept-Language")),
+        "region": pais,
         "pantalla": (q.get("p") or [""])[0][:12],
         "intencion": quiere,
     }
@@ -8138,7 +8144,8 @@ def anotar_visita(handler, q):
     # tomar a mí. Mientras tanto se puede ver en el administrador qué
     # habría sugerido para cada visita.
     return {"ok": True, "v": vid, "quiere": quiere,
-            "region": datos["region"], "fuente": fuente}
+            "region": pais, "continente": visitas.continente_de_zona(zona),
+            "fuente": fuente}
 
 
 def clave_de_ruta(path, q):

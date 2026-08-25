@@ -2672,6 +2672,62 @@ console.log(JSON.stringify(out));
                  ":" in _lq["martesTranquilo"][0], _lq["martesTranquilo"])
 chequear("la ventana y los topes están a la vista para cambiarlos",
          "const VENTANA_HORAS = 2, VIENEN_MINIMO = 2, VIENEN_MAXIMO = 5;" in HTML)
+# En el partidazo y en "lo que viene" los partidos vienen sueltos, mezclados
+# de todas las competencias: sin decir de cuál es, uno lee "Sabah – Hapoel
+# Beer Sheva" y no sabe qué está mirando.
+chequear("el partidazo y lo que viene dicen de qué competencia son",
+         "const deQueTorneo = m => m && m.ligaNombre" in HTML
+         and "${deQueTorneo(golazo)}" in HTML
+         and "${m.ligaNombre?`<div style=\"font-size:10px" in HTML)
+
+
+print("\n── el filtro de \"en vivo\" en la portada ──")
+# Apretar "en vivo" en la portada llamaba al dibujante de un torneo, que
+# agrupa por zonas: quedaban los partidos correctos con los títulos de otra
+# cosa —"Interzonal" arriba de la Europa League—.
+chequear("cada pantalla usa su propio dibujante",
+         "if(S.liga==='home') pintarPortada(); else drawMatches();" in HTML)
+if _sh.which("node"):
+    _i = HTML.index("  function pintarPortada(){")
+    _j = HTML.index("  async function loadHome(){")
+    _fv = ("let S={onlyLive:false, home:null};\nconst pintado={};\n"
+           "const esc=s=>String(s==null?'':s);\n"
+           "const matchRow=m=>'[fila '+m.id+']';\n"
+           "const Rutas={url:()=>'/x'};\n"
+           "const $=sel=>({set innerHTML(v){pintado[sel]=v;},"
+           " get innerHTML(){return pintado[sel]||'';},"
+           " set textContent(v){}, classList:{toggle(){}}});\n"
+           + HTML[_i:_j] + """
+const B=(liga,nombre,vivos,otros)=>({liga,nombre,games:
+  [].concat(Array.from({length:vivos},(_,k)=>({id:liga+'v'+k,status:'LIVE'})),
+            Array.from({length:otros},(_,k)=>({id:liga+'f'+k,status:'FIN'})))});
+S.home={total:9, live:2, bloques:[B('lpf','Liga Profesional',0,3),
+  B('europa','Europa League',2,2), B('lib','Copa Libertadores',0,2)]};
+const titulos=()=>(pintado['#matches'].match(/class="nm">([^<]+)/g)||[])
+  .map(s=>s.replace(/.*">/,''));
+S.onlyLive=false; pintarPortada(); const todos=titulos();
+S.onlyLive=true;  pintarPortada(); const soloVivo=titulos();
+S.home.bloques.forEach(b=>b.games=b.games.filter(m=>m.status!=='LIVE'));
+pintarPortada();
+console.log(JSON.stringify({todos, soloVivo,
+  cartel: pintado['#matches'].includes('No hay partidos en vivo')}));
+""")
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_fv); _rf = _f.name
+    _pf = _sub.run(["node", _rf], capture_output=True, text=True, timeout=60)
+    os.unlink(_rf)
+    _fq = json.loads(_pf.stdout) if _pf.returncode == 0 else None
+    chequear("la portada se dibuja con el filtro puesto", _fq is not None,
+             _pf.stderr.strip().splitlines()[:2])
+    if _fq:
+        chequear("los títulos son de torneo y no de zona",
+                 _fq["todos"] == ["Liga Profesional", "Europa League",
+                                  "Copa Libertadores"], _fq["todos"])
+        chequear("con el filtro puesto queda sólo el torneo que tiene algo rodando",
+                 _fq["soloVivo"] == ["Europa League"], _fq["soloVivo"])
+        chequear("y si no hay ninguno, lo dice en vez de quedar en blanco",
+                 _fq["cartel"] is True)
 
 
 print("\n── la página de administración ──")

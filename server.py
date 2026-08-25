@@ -3421,7 +3421,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · portada dinámica encendida, y \"lo que viene\" muestra lo que viene de verdad"
+VERSION_APP = "2026-08-25 · arreglado el filtro de en vivo en la portada; los paneles dicen de qué torneo es cada partido"
 
 
 def reparar_recorridos():

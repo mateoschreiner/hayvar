@@ -2754,15 +2754,30 @@ const App=(()=>{
      los pinta antes de pedir— y quedaba peor que no reordenar. */
   function pintarPortada(){
     const h = S.home; if(!h) return;
-    $('#matches').innerHTML=h.total
-      ? h.bloques.map(b=>`<div class="lgrow">
+    /* El filtro de "en vivo" se aplica acá, bloque por bloque, y el torneo
+       que se queda sin partidos desaparece entero: un título de torneo con
+       nada debajo no dice nada.
+
+       Antes este filtro lo hacía `drawMatches`, que es el dibujante de un
+       torneo y agrupa por zonas —Interzonal, Zona A—. En la portada eso
+       daba una pantalla con los partidos correctos y los títulos de otra
+       cosa: aparecía "Interzonal" arriba de la Europa League. */
+    const bloques = h.bloques
+      .map(b => S.onlyLive
+        ? Object.assign({}, b, {games: b.games.filter(m => m.status === 'LIVE')})
+        : b)
+      .filter(b => b.games.length);
+    $('#matches').innerHTML = bloques.length
+      ? bloques.map(b=>`<div class="lgrow">
             <span class="badge">${esc((b.nombre.match(/\b\w/g)||[]).join('').slice(0,3).toUpperCase())}</span>
             <span class="nm">${esc(b.nombre)}</span>
             <a class="go" href="${esc(Rutas.url({t:'liga',id:b.liga}))}" data-ir>ver torneo →</a></div>`
           + b.games.map(matchRow).join('')).join('')
-      : `<div class="empty"><span class="big">◎</span>No hay partidos programados para este día.</div>`;
+      : `<div class="empty"><span class="big">${S.onlyLive?'⚽':'◎'}</span>${S.onlyLive
+          ? 'No hay partidos en vivo en este momento.'
+          : 'No hay partidos programados para este día.'}</div>`;
     $('#liveCnt').textContent=h.live;
-    $('#liveBtn').classList.toggle('on',h.live>0);
+    $('#liveBtn').classList.toggle('on',S.onlyLive||h.live>0);
   }
 
   async function loadHome(){
@@ -2879,6 +2894,14 @@ const App=(()=>{
     return hhmm(start);
   }
 
+  /* De qué torneo es un partido, para los paneles de la derecha.
+
+     En la lista del medio no hace falta —cada bloque tiene su título
+     arriba— pero en el partidazo y en "lo que viene" los partidos vienen
+     sueltos, mezclados de todas las competencias. Sin esto uno lee
+     "Sabah – Hapoel Beer Sheva" y no tiene idea de qué está mirando. */
+  const deQueTorneo = m => m && m.ligaNombre ? esc(m.ligaNombre) + ' · ' : '';
+
   // Panel derecho de la portada: lo que pasa hoy, sin tener que entrar al torneo
   function drawHomeRight(){
     const h=S.home; if(!h) return;
@@ -2921,7 +2944,7 @@ const App=(()=>{
           <div class="pz-eq">${crest(golazo.away,20)}<span class="tn">${esc(golazo.away.canon||golazo.away.name)}</span>
             <b>${golazo.ga??''}</b></div>
           <div style="font-size:10px;color:var(--txt2);padding:2px 0 0">
-            ${golazo.interzonal?'Interzonal · ':''}${golazo.status==='LIVE'?(golazo.minute??'')+"' en vivo"
+            ${deQueTorneo(golazo)}${golazo.interzonal?'Interzonal · ':''}${golazo.status==='LIVE'?(golazo.minute??'')+"' en vivo"
               :golazo.status==='FIN'?'Finalizado':hhmm(golazo.start)}</div>
         </a></div>`:''}
       ${proximos.length?`<div class="globo"><div style="padding:11px 14px 4px">
@@ -2932,6 +2955,7 @@ const App=(()=>{
           <div style="min-width:0">
             <div class="tcell" style="gap:6px">${crest(m.home,17)}<span class="tn" style="font-size:12.5px">${esc(m.home.canon||m.home.name)}</span></div>
             <div class="tcell" style="gap:6px;margin-top:3px">${crest(m.away,17)}<span class="tn" style="font-size:12.5px">${esc(m.away.canon||m.away.name)}</span></div>
+            ${m.ligaNombre?`<div style="font-size:10px;color:var(--txt3);margin-top:4px">${esc(m.ligaNombre)}</div>`:''}
           </div></a>`).join('')}</div>`:''}
       <div class="note" style="padding:0 2px">Elegí un torneo en el menú de la izquierda para ver sus tablas.</div>`;
   }
@@ -5321,7 +5345,11 @@ const App=(()=>{
         S.cuadroDesde=null;
       S.tab=t; document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
       S.liga==='lpf'?drawRight():drawOtra(); },
-    onlyLive(){ S.onlyLive=!S.onlyLive; drawMatches(); },
+    // Cada pantalla tiene su dibujante: la portada agrupa por torneo y un
+    // torneo agrupa por zonas. Llamar siempre al de torneo dejaba la
+    // portada con títulos de Zona A y Interzonal encima de la Europa League.
+    onlyLive(){ S.onlyLive=!S.onlyLive;
+      if(S.liga==='home') pintarPortada(); else drawMatches(); },
     mtab(t){ mTab=t; drawModal(current(),false); },
     // Los partidos que 365scores no tiene no se pueden abrir aparte: no
     // hay nada que mostrar del otro lado del link. Ésos siguen siendo un

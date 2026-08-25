@@ -1957,6 +1957,9 @@ def api_match(q):
     out["liga"] = liga_id
     out["ligaNombre"] = (LIGAS.get(liga_id) or {}).get("nombre") or ""
     out["torneo"] = (LIGAS.get(liga_id) or {}).get("torneo") or ""
+    # En una copa la fecha no dice nada: lo que ubica al partido es la
+    # instancia. Un Boca–Flamengo es de octavos, no de la "fecha 2".
+    out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"))
     out.update({"events": events, "stats": stats, "lineups": lineups,
                 "banco": banco, "confirmada": confirmada,
                 "bancoReal": banco_real,
@@ -3433,7 +3436,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la ficha del jugador también es una página: menú al costado, la tabla donde uno lo buscaría y el nombre bien escrito"
+VERSION_APP = "2026-08-25 · en las copas la página del partido dice qué instancia se juega, y al costado van los cruces de esa ronda"
 
 
 def reparar_recorridos():
@@ -3932,6 +3935,15 @@ _RANGO_ETAPA = [
     (("fase previa 1", "primera fase previa"), 0.1),
     (("fase previa 2", "segunda fase previa"), 0.2),
     (("fase previa 3", "tercera fase previa"), 0.4),
+    # A las clasificatorias de agosto 365scores las llama "Primera/Segunda/
+    # Tercera Ronda". Sin estas tres líneas no encajaban en ninguna fase del
+    # torneo y los partidos se descartaban enteros; y "Tercera Ronda" era
+    # peor, porque caía en `tercer` —el partido por el tercer puesto— y se
+    # ordenaba entre la semifinal y la final. Van acá arriba, antes que
+    # `tercer`, porque gana la primera coincidencia de la lista.
+    (("primera ronda", "ronda 1"), 0.1),
+    (("segunda ronda", "ronda 2"), 0.2),
+    (("tercera ronda", "ronda 3"), 0.4),
     (("repechaje de acceso", "play-off de acceso"), 0.8),
     (("fase de liga", "league phase"), 1),
     # Las previas van antes que los grupos y son tres en la Libertadores, no
@@ -4000,6 +4012,32 @@ def canonizar_fase(crudo, fases):
         candidatas = [f for f in fases if rango_etapa(f) <= 1]
         return min(candidatas, key=rango_etapa) if candidatas else None
     return None
+
+
+def etapa_de_copa(liga_id, stage, round_=None):
+    """
+    Qué instancia de la copa se está jugando, escrita como la escribe el torneo.
+
+    Hace falta para la página de un partido, que trabaja con un partido solo.
+    El calendario completo resuelve esto mirando todas las fases juntas
+    (`api_liga_games`), pero desde acá no hay con qué comparar: lo único que
+    llega es el `stageName` de 365scores, escrito a su manera —"Octavos de
+    Final", "Semifinales", "Primera Fase"—, que `canonizar_fase` lleva al
+    nombre del torneo.
+
+    En la fase de grupos ese campo llega vacío y lo único que viene es el
+    número de fecha. Ahí se resuelve por descarte: la única fase de una copa
+    que numera fechas es la de grupos —o la de liga, en Europa—, que es la
+    que tiene rango 1.
+    """
+    fases = FASES_COPA.get(liga_id)
+    if not fases:
+        return ""                      # no es copa: la fecha alcanza
+    if (stage or "").strip():
+        return canonizar_fase(stage, fases) or ""
+    if round_:
+        return next((f for f in fases if rango_etapa(f) == 1), "")
+    return ""
 
 
 def rango_etapa(nombre):
@@ -4614,6 +4652,14 @@ def api_liga_games(q):
         res["llavesPrevia"] = llaves_previa
     if err:
         res["error"] = err
+    # La página de un partido de copa quiere los cruces de su instancia y
+    # nada más. Mandarle el calendario entero —163 partidos en la
+    # Libertadores— para dibujar ocho cajitas al costado es gastarle la
+    # conexión al que está mirando el partido en el celular.
+    if (q.get("solo") or [""])[0] == "llaves":
+        return {k: v for k, v in res.items()
+                if k in ("nombre", "copa", "etapas", "llaves", "llavesPrevia",
+                         "final", "error")}
     return res
 
 

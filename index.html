@@ -293,6 +293,12 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cuadro-et{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
   font-weight:700;margin:12px 0 6px}
 .cuadro-et:first-child{margin-top:0}
+/* Las mismas cajas, pero apiladas en una columna: así entran al costado de
+   la página de un partido, donde el cuadro entero no tiene lugar. */
+.brk-lado{position:static;display:block;margin:0 0 6px;color:inherit;
+  text-decoration:none}
+.brk-lado:last-child{margin-bottom:0}
+.brk-suya{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
 
 /* ── página del club ── */
 .cl-top{display:flex;align-items:center;gap:16px;padding:18px 16px;flex-wrap:wrap}
@@ -3843,6 +3849,24 @@ const App=(()=>{
              onclick="App.tab('${k}')">${n}</button>`).join('');
         return drawRight();
       }
+      /* Copas: al costado va la instancia que se está jugando, no la tabla.
+         En octavos la fase de grupos ya terminó y su tabla no dice nada;
+         lo que uno quiere ver ahí es cómo quedó armada la ronda. En la
+         fase de grupos no hay llaves y sigue valiendo la tabla, así que
+         este camino se saltea solo. */
+      // La fase de grupos se reconoce por tener fecha numerada, y ahí no
+      // hay llaves: se saltea el pedido en vez de hacerlo para descartarlo.
+      if(m.etapa&&m.round==null){
+        const cruces=await llavesDeLaEtapa(lid,m.etapa);
+        if(cruces&&cruces.length){
+          $('#tabs').innerHTML='';
+          el.innerHTML=`<div class="cuadro-et" style="padding:12px 14px 0">
+              ${esc(m.etapa)}</div>
+            <div style="padding:8px 14px 14px">
+              ${llavesAlCostado(cruces,nombres)}</div>`;
+          return;
+        }
+      }
       const d=await get('/api/liga?id='+encodeURIComponent(lid));
       S.destacar=nombres;
       const zonas=d.zonas||[];
@@ -3852,12 +3876,59 @@ const App=(()=>{
       el.innerHTML=z
         ? `<div class="cuadro-et" style="padding:12px 14px 0">${esc(z.name||z.nombre||d.nombre||'')}</div>`
           + tablaSimple(z.rows||z.filas||[],nombres)
-        : `<div class="empty" style="padding:26px 18px">
-             ${esc(d.nombre||'')} está en eliminación directa: no hay tabla de
-             posiciones para mostrar.</div>`;
+        : `<div class="empty" style="padding:26px 18px">${m.etapa
+             ? `${esc(d.nombre||'')} está jugando ${esc(m.etapa.toLowerCase())}:
+                los cruces todavía no están sorteados.`
+             : `${esc(d.nombre||'')} está en eliminación directa: no hay tabla
+                de posiciones para mostrar.`}</div>`;
     }catch(e){
       el.innerHTML='<div class="empty" style="padding:22px">No se pudo cargar la tabla.</div>';
     }
+  }
+
+  /* Los cruces de una instancia. Se piden con `solo=llaves` porque el
+     calendario entero de la Libertadores son ciento sesenta partidos y acá
+     se dibujan ocho cajas: pedirlo completo para eso es tirar la conexión
+     del que está mirando el partido en el celular. */
+  async function llavesDeLaEtapa(lid,etapa){
+    try{
+      const g=await get('/api/liga/games?id='+encodeURIComponent(lid)
+                        +'&solo=llaves');
+      const bloques=[].concat(g.llavesPrevia||[],g.llaves||[]);
+      const b=bloques.find(x=>sinTildes(x.etapa||'').toLowerCase()
+                            ===sinTildes(etapa||'').toLowerCase());
+      return b?b.llaves:null;
+    }catch(e){ return null; }
+  }
+
+  /* Las mismas cajas del cuadro pero en una columna, que es lo que entra al
+     costado. La del partido que se está viendo va marcada, y cada una
+     lleva al partido de la llave que se juega ahora: es un link que
+     funciona aunque la página se abra de cero, cosa que el de la serie no
+     hace hasta que el cuadro está dibujado. */
+  function llavesAlCostado(llaves,destacar){
+    const nom=e=>e.team?(e.team.canon||e.team.name):'';
+    // el que se juega: primero el que está en curso, después el que viene,
+    // y si ya pasó todo, el último
+    const cual=k=>{
+      const ps=k.partidos||[];
+      return ps.find(p=>p.status==='LIVE')
+          || ps.find(p=>p.gh==null)
+          || ps[ps.length-1] || null;
+    };
+    return llaves.map(k=>{
+      const suya=k.equipos.some(e=>e.team
+        &&(destacar||[]).some(n=>mismoNombre(n,nom(e))));
+      const p=cual(k), r=p?rutaPartido(p):null;
+      const filas=k.equipos.map((e,i)=>`<div class="eq${
+          k.cerrada?(e.pasa?' pasa':' cae'):''}">
+        ${e.team?crest(e.team,15):''}
+        <span class="tn">${esc(nom(e)||'Por definir')}</span>
+        ${k.penales?`<i class="pen">(${k.penales[i]})</i>`:''}
+        <b>${e.goles==null?'':e.goles}</b></div>`).join('');
+      return `<${r?'a':'div'} class="brk brk-lado${suya?' brk-suya':''}"${
+        r?` href="${esc(Rutas.url(r))}" data-ir`:''}>${filas}</${r?'a':'div'}>`;
+    }).join('');
   }
 
   // comparar nombres de club sin volverse loco con acentos y paréntesis
@@ -4305,10 +4376,16 @@ const App=(()=>{
        en las copas, que es lo que corresponde en cada caso. */
     const dondeJuega=[
       [m.ligaNombre, m.torneo].filter(Boolean).join(' ') || 'Partido',
+      // En una copa lo que ubica al partido es la instancia, no la fecha.
+      // El servidor la manda ya traducida al nombre del torneo, porque el
+      // que llega de la fuente viene escrito de cualquier manera
+      // —"Octavos de Final", "Semifinales"— y en la fase de grupos no
+      // viene. Fuera de las copas `m.etapa` llega vacía y no cambia nada.
+      m.etapa||'',
       m.round!=null ? 'Fecha '+m.round : '',
       m.interzonal ? 'Interzonal'
         : (m.zone!=null&&m.zone!=='' ? 'Zona '+m.zone
-          : (m.stage ? etapaCorta(m.stage) : '')),
+          : (!m.etapa&&m.stage ? etapaCorta(m.stage) : '')),
     ].filter(Boolean).join(' · ');
 
     $(dondeVaLaFicha).innerHTML=`

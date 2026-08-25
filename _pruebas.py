@@ -2697,6 +2697,172 @@ chequear("el encabezado dice el torneo de verdad y no siempre el Clausura",
          and "'Clausura 2026 · Fecha '" not in HTML
          and "[m.ligaNombre, m.torneo].filter(Boolean).join(' ')" in HTML)
 
+
+print("\n── en una copa, la instancia que se juega ──")
+# 365scores escribe la fase de cada partido a su manera y cambiando de
+# torneo. Estos son los nombres tal como estaban guardados en la base el
+# 25/8/26: si la fuente los cambia, esta prueba lo avisa antes que el sitio.
+_CRUDOS = {
+    "champions": ["Primera Ronda", "Segunda Ronda", "Tercera Ronda", "Playoff"],
+    "europa":    ["Primera Ronda", "Segunda Ronda", "Tercera Ronda", "Playoff"],
+    "lib":       ["Primera Fase", "Segunda Fase", "Tercera Fase",
+                  "Octavos de Final", "Cuartos de Final", "Semifinales", "Final"],
+    "sud":       ["Primera Fase", "Octavos de Final", "Cuartos de Final",
+                  "Semifinales", "Final"],
+    "ca":        ["32avos de final", "16avos de final", "Octavos de Final",
+                  "Cuartos de Final", "Semifinales", "Final"],
+}
+_perdidos = [(lid, s) for lid, sts in _CRUDOS.items() for s in sts
+             if not server.etapa_de_copa(lid, s)]
+chequear("cada fase que manda la fuente encaja en una del torneo", not _perdidos,
+         _perdidos)
+# Las clasificatorias de agosto llegan como "Primera/Segunda/Tercera Ronda".
+# No encajaban en ninguna fase y `api_liga_games` descarta lo que no encaja:
+# de los 83 partidos de la Champions se veían 7, y de los 68 de la Europa, 12.
+chequear("las rondas previas de Champions y Europa ya no se descartan",
+         server.etapa_de_copa("champions", "Primera Ronda") == "Fase previa 1"
+         and server.etapa_de_copa("champions", "Segunda Ronda") == "Fase previa 2"
+         and server.etapa_de_copa("europa", "Tercera Ronda") == "Fase previa 3")
+# Y "Tercera Ronda" era peor que no encajar: caía en `tercer` —el partido por
+# el tercer puesto— y se ordenaba entre la semifinal y la final.
+chequear("y la tercera ronda no se confunde con el partido por el tercer puesto",
+         server.rango_etapa("Tercera Ronda") < server.rango_etapa("Fase de grupos")
+         and sorted(server.FASES_COPA["champions"], key=server.rango_etapa)
+             == server.FASES_COPA["champions"])
+# En la fase de grupos la fuente no manda el nombre de la fase: manda el
+# número de fecha y nada más. Es la única fase de una copa que numera fechas.
+chequear("la fase de grupos se deduce de que tenga fecha numerada",
+         server.etapa_de_copa("lib", "", 4) == "Fase de grupos"
+         and server.etapa_de_copa("sud", "", 2) == "Fase de grupos"
+         and server.etapa_de_copa("champions", "", 3) == "Fase de liga")
+chequear("sin fase y sin fecha no se inventa ninguna",
+         server.etapa_de_copa("lib", "", None) == "")
+# Un torneo que no es copa tiene fechas y no instancias: la etapa va vacía y
+# el encabezado queda exactamente como estaba.
+chequear("en las ligas no cambia nada",
+         all(server.etapa_de_copa(l, "", 5) == "" and server.etapa_de_copa(l, "Clausura", 5) == ""
+             for l in ("lpf", "laliga", "premier", "seriea", "nacional")))
+chequear("y el partido la lleva puesta",
+         'out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"))'
+         in _SRV)
+# Pedir el calendario entero de la Libertadores —163 partidos— para dibujar
+# ocho cajitas al costado es gastarle la conexión al que mira desde el celular.
+chequear("las llaves se piden solas, sin el calendario entero",
+         '(q.get("solo") or [""])[0] == "llaves"' in _SRV
+         and "'&solo=llaves'" in HTML)
+
+# Y la prueba que vale: abrir un partido de octavos de la Libertadores y
+# mirar qué quedó dibujado al costado.
+if _sh.which("node"):
+    _LLAVES = """{nombre:'Copa Libertadores', copa:true,
+  etapas:['Fase de grupos','Octavos de final','Cuartos de final'],
+  llaves:[
+   {etapa:'Octavos de final', previa:false, llaves:[
+     {slot:1, penales:null, cerrada:false,
+      equipos:[{team:{name:'Boca Juniors',canon:'Boca Juniors'},goles:2,pasa:false},
+               {team:{name:'Flamengo',canon:'Flamengo'},goles:1,pasa:false}],
+      partidos:[{id:'99', liveId:'99', start:'2026-08-25T21:30:00Z', tramo:'Ida',
+                 status:'FIN', gh:2, ga:1,
+                 home:{name:'Boca Juniors',canon:'Boca Juniors'},
+                 away:{name:'Flamengo',canon:'Flamengo'}}]},
+     {slot:2, penales:[4,2], cerrada:true,
+      equipos:[{team:{name:'River Plate',canon:'River Plate'},goles:1,pasa:true},
+               {team:{name:'Palmeiras',canon:'Palmeiras'},goles:1,pasa:false}],
+      partidos:[{id:'100', liveId:'100', start:'2026-08-26T21:30:00Z', tramo:'Ida',
+                 status:'FIN', gh:1, ga:1,
+                 home:{name:'River Plate',canon:'River Plate'},
+                 away:{name:'Palmeiras',canon:'Palmeiras'}}]}]},
+   {etapa:'Cuartos de final', previa:false, llaves:[]}]}"""
+
+    def _copa(match):
+        _js = ("""
+process.on('unhandledRejection',()=>{});
+const RESP={
+ '/api/match': %s,
+ '/api/liga/games': %s,
+ '/api/liga': {id:'lib', nombre:'Copa Libertadores', zonas:[{name:'Grupo C',
+   rows:[{pos:1, canon:'Flamengo',
+          team:{name:'Flamengo',canon:'Flamengo'}, pts:12, pj:6, dif:5},
+         {pos:2, canon:'Boca Juniors',
+          team:{name:'Boca Juniors',canon:'Boca Juniors'}, pts:9, pj:6, dif:2}]}]}};
+const pedidos=[];
+globalThis.fetch=async(u)=>{
+  pedidos.push(u);
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};
+};
+loc.pathname='/partido/boca-juniors-vs-flamengo-99';
+App.init();
+(async()=>{
+  for(let i=0;i<80;i++) await new Promise(r=>setImmediate(r));
+  const medio=doc.querySelector('#matches').innerHTML||'';
+  const der=doc.querySelector('#right').innerHTML||'';
+  const enc=(medio.match(/<span>([^<]*Libertadores[^<]*)<\\/span>/)||[])[1]||'';
+  console.log(JSON.stringify({
+    encabezado: enc.trim().replace(/\\s+/g,' '),
+    cajas: (der.match(/brk-lado/g)||[]).length,
+    marcada: (der.match(/brk-suya/g)||[]).length,
+    hayTabla: der.includes('<table'),
+    penales: der.includes('(4)'),
+    linkAlOtro: der.includes('river-plate-vs-palmeiras-100'),
+    soloLlaves: pedidos.some(u=>u.indexOf('solo=llaves')>=0),
+    calendarioEntero: pedidos.some(u=>u.indexOf('/api/liga/games')===0
+                                    && u.indexOf('solo=llaves')<0)}));
+})();
+""" % (match, _LLAVES))
+        _gg = (open(_DOMSITO, encoding="utf-8").read()
+               + "\nglobalThis.document=doc; globalThis.window=win;"
+                 "\nglobalThis.location=loc; globalThis.history=historial;"
+                 "\nglobalThis.localStorage=almacenLocal;"
+                 "\nglobalThis.MutationObserver=MutationObserver;"
+                 "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+                 "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+               + _app.replace("const App=(()=>{", "App=(()=>{") + _js)
+        with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as _f:
+            _f.write(_gg); _rc = _f.name
+        _pc = _sub.run(["node", _rc], capture_output=True, text=True, timeout=60)
+        os.unlink(_rc)
+        return json.loads(_pc.stdout) if _pc.returncode == 0 and _pc.stdout else None
+
+    _OCT = """{id:'99', liveId:'99', liga:'lib', ligaNombre:'Copa Libertadores',
+  torneo:'2026', etapa:'Octavos de final', stage:'Octavos de Final', round:null,
+  start:'2026-08-25T21:30:00Z', status:'FIN', gh:2, ga:1,
+  home:{name:'Boca Juniors',canon:'Boca Juniors'},
+  away:{name:'Flamengo',canon:'Flamengo'},
+  events:[], stats:[], lineups:{home:[],away:[]}, banco:{home:[],away:[]},
+  confirmada:{}, bancoReal:{}, formation:{}, tv:[]}"""
+    _oct = _copa(_OCT)
+    _gru = _copa(_OCT.replace("etapa:'Octavos de final'", "etapa:'Fase de grupos'")
+                     .replace("stage:'Octavos de Final'", "stage:''")
+                     .replace("round:null", "round:3"))
+    chequear("la página de un partido de copa se arma entera", _oct is not None)
+    if _oct:
+        chequear("el encabezado dice la instancia y no una fecha",
+                 _oct["encabezado"] == "Copa Libertadores 2026 · Octavos de final",
+                 _oct["encabezado"])
+        # En octavos la tabla del grupo ya no dice nada: esa fase terminó.
+        chequear("al costado van los cruces de la instancia, no la tabla",
+                 _oct["cajas"] == 2 and not _oct["hayTabla"], _oct)
+        chequear("con el cruce de este partido marcado", _oct["marcada"] == 1,
+                 _oct["marcada"])
+        chequear("y la tanda de penales al lado del global", _oct["penales"],
+                 _oct)
+        # El link de la serie no sirve en frío —se registra recién al dibujar
+        # el cuadro—, así que cada caja lleva al partido que se juega.
+        chequear("cada cruce lleva a su partido", _oct["linkAlOtro"], _oct)
+        chequear("y se pidió sólo las llaves, no el calendario entero",
+                 _oct["soloLlaves"] and not _oct["calendarioEntero"], _oct)
+    if _gru:
+        chequear("en la fase de grupos sigue yendo la tabla del grupo",
+                 _gru["hayTabla"] and _gru["cajas"] == 0, _gru)
+        chequear("y ahí ni se piden las llaves, que no existen",
+                 not _gru["soloLlaves"], _gru)
+        chequear("con la fase y la fecha juntas en el encabezado",
+                 _gru["encabezado"]
+                 == "Copa Libertadores 2026 · Fase de grupos · Fecha 3",
+                 _gru["encabezado"])
+
 # Y la prueba que vale: abrir el link de un partido de la Champions con el
 # navegador de mentira y mirar qué quedó dibujado en cada columna.
 if _sh.which("node"):

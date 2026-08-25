@@ -2002,7 +2002,8 @@ def api_match(q):
     out["torneo"] = (LIGAS.get(liga_id) or {}).get("torneo") or ""
     # En una copa la fecha no dice nada: lo que ubica al partido es la
     # instancia. Un Boca–Flamengo es de octavos, no de la "fecha 2".
-    out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"))
+    out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"),
+                                 out.get("start"))
 
     # Y en un torneo internacional, de qué país es cada club. En la
     # Libertadores hay clubes que se llaman igual —Nacional es el de
@@ -3498,7 +3499,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la base deja de crecer sola: el recolector ya no guarda el crudo de cada partido terminado, que era el 84% del disco"
+VERSION_APP = "2026-08-25 · el repechaje de agosto de Champions y Europa ya no se confunde con el play-off de febrero, que la fuente llama igual"
 
 
 def reparar_recorridos():
@@ -4081,7 +4082,43 @@ def canonizar_fase(crudo, fases):
     return None
 
 
-def etapa_de_copa(liga_id, stage, round_=None):
+# Los dos "play-off" de la Champions, que la fuente llama igual
+#
+# UEFA juega dos rondas con ese nombre y no son la misma cosa: la de agosto
+# es el último escalón de la clasificación —el que la gana entra a la fase
+# de liga— y la de febrero es la que da entrada a los octavos, entre los
+# que salieron del 9° al 24°. 365scores manda "Playoff" en las dos, así que
+# por el nombre no hay manera de saber cuál es.
+#
+# Lo que sí las separa sin lugar a dudas es cuándo se juegan. La
+# clasificación va de junio a agosto y termina antes de que arranque la
+# fase de liga; la otra es a mitad de febrero. En el calendario de este año
+# los de la Champions son el 18 y el 19 de agosto, y los de la Europa el
+# 20. No hay play-off de acceso en otoño ni de octavos en verano.
+MESES_DE_CLASIFICACION = (6, 7, 8)
+
+
+def desempatar_playoff(fase, fases, cuando):
+    """
+    De los dos play-off con el mismo nombre, cuál es: lo dice la fecha.
+
+    Sólo se mete cuando hay ambigüedad de verdad: si el torneo tiene una
+    sola fase con ese rango —la Libertadores, la Sudamericana— no hay nada
+    que desempatar y se devuelve lo que vino.
+    """
+    if not fase or not cuando or rango_etapa(fase) != 2:
+        return fase
+    acceso = next((f for f in fases if rango_etapa(f) == 0.8), None)
+    if not acceso:
+        return fase
+    try:
+        mes = int(str(cuando)[5:7])
+    except (TypeError, ValueError):
+        return fase
+    return acceso if mes in MESES_DE_CLASIFICACION else fase
+
+
+def etapa_de_copa(liga_id, stage, round_=None, cuando=""):
     """
     Qué instancia de la copa se está jugando, escrita como la escribe el torneo.
 
@@ -4101,7 +4138,8 @@ def etapa_de_copa(liga_id, stage, round_=None):
     if not fases:
         return ""                      # no es copa: la fecha alcanza
     if (stage or "").strip():
-        return canonizar_fase(stage, fases) or ""
+        return desempatar_playoff(canonizar_fase(stage, fases),
+                                  fases, cuando) or ""
     if round_:
         return next((f for f in fases if rango_etapa(f) == 1), "")
     return ""
@@ -4510,8 +4548,21 @@ def api_liga_games(q):
         # del torneo que corresponda según cuándo se juega
         stages = sorted({g.get("stageNum") for g in games},
                         key=lambda s: (s is None, s))
+        # Cuándo se juega cada fase, que es lo que distingue a los dos
+        # play-off de la Champions: la fuente los llama igual a los dos.
+        cuando_stage = {}
+        for g in games:
+            sn, ini = g.get("stageNum"), g.get("start") or ""
+            if ini and (sn not in cuando_stage or ini < cuando_stage[sn]):
+                cuando_stage[sn] = ini
+
+        def resolver(crudo, sn=None):
+            return desempatar_playoff(canonizar_fase(crudo, fases), fases,
+                                      cuando_stage.get(sn))
+
         libres = [f for f in (fases or [])
-                  if f not in {canonizar_fase(n, fases) for n in nombre_stage.values()}]
+                  if f not in {resolver(n, sn)
+                               for sn, n in nombre_stage.items()}]
         for sn in stages:
             if sn in nombre_stage:
                 continue
@@ -4531,7 +4582,14 @@ def api_liga_games(q):
             if not et:
                 et = ("Fase de grupos" if (g.get("zone") or hay_grupos)
                       else "Fase única")
-            return canonizar_fase(et, fases) if fases else et
+            if not fases:
+                return et
+            # La fecha del partido, no la de la fase: en el borde entre dos
+            # meses los dos dan lo mismo, y así no depende de qué partido
+            # de la fase se mire primero.
+            return desempatar_playoff(canonizar_fase(et, fases), fases,
+                                      g.get("start")
+                                      or cuando_stage.get(g.get("stageNum")))
 
         # Las rondas se ordenan por stageNum, que es el orden real del
         # torneo. La fecha no sirve sola: los 32avos de una zona pueden

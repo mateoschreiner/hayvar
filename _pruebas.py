@@ -2755,14 +2755,53 @@ chequear("la fase de grupos se deduce de que tenga fecha numerada",
          and server.etapa_de_copa("champions", "", 3) == "Fase de liga")
 chequear("sin fase y sin fecha no se inventa ninguna",
          server.etapa_de_copa("lib", "", None) == "")
+
+# Los dos "play-off" de la Champions. UEFA juega dos rondas con ese nombre y
+# no son la misma cosa: la de agosto es el último escalón de la
+# clasificación —el que la gana entra a la fase de liga— y la de febrero es
+# la que da entrada a los octavos. 365scores manda "Playoff" en las dos.
+# En el calendario de este año los de la Champions son el 18 y 19 de agosto
+# y los de la Europa el 20, y salían rotulados como los de febrero.
+_pl = lambda lid, cuando: server.etapa_de_copa(lid, "Playoff", None, cuando)
+chequear("el play-off de agosto es el de clasificación",
+         _pl("champions", "2026-08-18T21:00:00Z") == "Repechaje de acceso"
+         and _pl("europa", "2026-08-20T21:00:00Z") == "Repechaje de acceso",
+         (_pl("champions", "2026-08-18T21:00:00Z"),
+          _pl("europa", "2026-08-20T21:00:00Z")))
+chequear("y el de febrero, el que da entrada a los octavos",
+         _pl("champions", "2027-02-17T21:00:00Z") == "Play-offs"
+         and _pl("europa", "2027-02-18T21:00:00Z") == "Play-offs",
+         (_pl("champions", "2027-02-17T21:00:00Z"),
+          _pl("europa", "2027-02-18T21:00:00Z")))
+# Sin fecha no hay con qué decidir, y adivinar sería peor: se deja el que
+# viene, que es el que la fuente nombra.
+chequear("sin fecha no adivina", _pl("champions", "") == "Play-offs")
+# La Libertadores y la Sudamericana tienen un solo play-off —los pre
+# octavos— y ahí no hay nada que desempatar: agosto es su fecha real.
+chequear("y donde hay un solo play-off no se mete",
+         server.etapa_de_copa("lib", "Pre octavos", None,
+                              "2026-08-18T21:00:00Z") == "Pre octavos"
+         and server.etapa_de_copa("sud", "Pre octavos", None,
+                                  "2026-08-18T21:00:00Z") == "Pre octavos")
+# El partido lleva su fecha a la función, que es de dónde sale el desempate.
+chequear("la página del partido le pasa la fecha",
+         'etapa_de_copa(liga_id, out.get("stage"), out.get("round"),\n'
+         '                                 out.get("start"))' in _SRV)
+chequear("y el calendario también, que es donde se arma el cuadro",
+         "desempatar_playoff(canonizar_fase(et, fases), fases," in _SRV)
+# Con el desempate puesto, el orden del torneo tiene que seguir siendo el
+# real: el repechaje de acceso antes de la fase de liga, y el otro después.
+chequear("el repechaje queda antes de la fase de liga y los play-offs después",
+         server.rango_etapa("Repechaje de acceso")
+         < server.rango_etapa("Fase de liga") < server.rango_etapa("Play-offs")
+         < server.rango_etapa("Octavos de final"))
 # Un torneo que no es copa tiene fechas y no instancias: la etapa va vacía y
 # el encabezado queda exactamente como estaba.
 chequear("en las ligas no cambia nada",
          all(server.etapa_de_copa(l, "", 5) == "" and server.etapa_de_copa(l, "Clausura", 5) == ""
              for l in ("lpf", "laliga", "premier", "seriea", "nacional")))
 chequear("y el partido la lleva puesta",
-         'out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"))'
-         in _SRV)
+         'out["etapa"] = etapa_de_copa(' in _SRV)
 # Pedir el calendario entero de la Libertadores —163 partidos— para dibujar
 # ocho cajitas al costado es gastarle la conexión al que mira desde el celular.
 chequear("las llaves se piden solas, sin el calendario entero",

@@ -2836,16 +2836,56 @@ const App=(()=>{
     </div>`;
   }
 
+  /* ── "Lo que viene" ───────────────────────────────────────────────────
+
+     Antes mostraba los seis primeros partidos del día. A las diez de la
+     mañana eso es todo lo que va a pasar hasta la noche: no es "lo que
+     viene", es la lista de al lado otra vez.
+
+     Ahora es una ventana de dos horas, pero con piso y techo, porque
+     ninguna de las dos reglas sola funciona:
+
+       · sólo por tiempo → un martes a las 15:00 no hay nada en dos horas
+         y la sección queda vacía, que es peor que mostrar de más
+       · sólo por cantidad → cuando no hay nada cerca te muestra partidos
+         de dentro de siete horas como si fueran inminentes
+
+     Con el piso nunca queda vacía: si en la ventana no hay nada, se
+     muestran igual los dos siguientes, y la hora de cada uno se encarga de
+     aclarar que faltan cuatro horas.                                     */
+  const VENTANA_HORAS = 2, VIENEN_MINIMO = 2, VIENEN_MAXIMO = 5;
+
+  function loQueViene(ahora){
+    const cuando = m => new Date(m.start).getTime();
+    const porVenir = S.games
+      .filter(m => m.status === 'PROG' && m.start && cuando(m) >= ahora)
+      .sort((a, b) => cuando(a) - cuando(b));
+    const enVentana = porVenir.filter(
+      m => cuando(m) <= ahora + VENTANA_HORAS * 3600000);
+    const elegidos = enVentana.length >= VIENEN_MINIMO
+      ? enVentana : porVenir.slice(0, VIENEN_MINIMO);
+    return elegidos.slice(0, VIENEN_MAXIMO);
+  }
+
+  /* Cuánto falta, dicho como lo diría una persona. Para lo que está por
+     empezar el reloj no sirve: "21:15" obliga a hacer la cuenta y
+     "en 12 min" no. Pasada la hora y media vuelve el reloj, que para algo
+     lejano se lee mejor que "en 200 min". La hora exacta queda igual en el
+     globito que aparece al pasar el mouse, por si alguien la necesita. */
+  function faltaPara(start, ahora){
+    const min = Math.round((new Date(start).getTime() - ahora) / 60000);
+    if(min <= 0)  return 'empieza';
+    if(min <= 90) return 'en ' + min + ' min';
+    return hhmm(start);
+  }
+
   // Panel derecho de la portada: lo que pasa hoy, sin tener que entrar al torneo
   function drawHomeRight(){
     const h=S.home; if(!h) return;
     const vivos=S.games.filter(m=>m.status==='LIVE');
     // ordenados por hora: primero el que está más cerca de empezar
     const ahora=Date.now();
-    const proximos=S.games.filter(m=>m.status==='PROG'&&m.start)
-      .sort((a,b)=>new Date(a.start)-new Date(b.start))
-      .filter((m,i,arr)=>new Date(m.start)>=ahora||arr.every(x=>new Date(x.start)<ahora))
-      .slice(0,6);
+    const proximos=loQueViene(ahora);
     const finalizados=S.games.filter(m=>m.status==='FIN');
     // El partidazo lo elige el servidor: el partido de Primera con el equipo
     // mejor ubicado en la tabla, salvo la fecha de los interzonales, donde
@@ -2886,9 +2926,9 @@ const App=(()=>{
         </a></div>`:''}
       ${proximos.length?`<div class="globo"><div style="padding:11px 14px 4px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:5px">Lo que viene</div></div>
-        ${proximos.map(m=>`<a class="match" style="grid-template-columns:46px 1fr"
+        ${proximos.map(m=>`<a class="match" style="grid-template-columns:56px 1fr"
             href="${esc(Rutas.url(rutaPartido(m)||{t:'home'}))}" data-ir>
-          <div class="m-time">${hhmm(m.start)}</div>
+          <div class="m-time" title="${esc(hhmm(m.start))}">${esc(faltaPara(m.start,ahora))}</div>
           <div style="min-width:0">
             <div class="tcell" style="gap:6px">${crest(m.home,17)}<span class="tn" style="font-size:12.5px">${esc(m.home.canon||m.home.name)}</span></div>
             <div class="tcell" style="gap:6px;margin-top:3px">${crest(m.away,17)}<span class="tn" style="font-size:12.5px">${esc(m.away.canon||m.away.name)}</span></div>

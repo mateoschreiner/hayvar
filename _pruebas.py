@@ -2621,6 +2621,59 @@ chequear("si el aviso llega tarde, se reordena sin quedar dando vueltas",
          and "loadHome();" in HTML)
 
 
+print("\n── \"lo que viene\" no es la lista de al lado otra vez ──")
+# Mostraba los seis primeros partidos del día: a las diez de la mañana, eso
+# es todo lo que va a pasar hasta la noche. Ahora es una ventana de dos
+# horas con piso y techo, porque ninguna de las dos reglas sola sirve.
+if _sh.which("node"):
+    _i = HTML.index("  const VENTANA_HORAS =")
+    _j = HTML.index("  // Panel derecho de la portada")
+    _lv = ("let S={};const hhmm=s=>new Date(s).toISOString().slice(11,16);\n"
+           + HTML[_i:_j] + """
+const T0=Date.parse('2026-08-24T18:00:00Z');
+const p=m=>({status:'PROG', start:new Date(T0+m*60000).toISOString()});
+const out={};
+const caso=(n,mins)=>{ S={games:mins.map(p)};
+  out[n]=loQueViene(T0).map(m=>faltaPara(m.start,T0)); };
+caso('sabadoCargado', [5,20,35,50,65,80,95,240]);
+caso('martesTranquilo', [200,300,420]);
+caso('unoSolo', [180]);
+caso('todoEmpezado', []);
+caso('bordeDeLaVentana', [119,121,400]);
+caso('inminente', [3,45,300]);
+console.log(JSON.stringify(out));
+""")
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_lv); _rl = _f.name
+    _pl = _sub.run(["node", _rl], capture_output=True, text=True, timeout=60)
+    os.unlink(_rl)
+    _lq = json.loads(_pl.stdout) if _pl.returncode == 0 else None
+    chequear("la selección corre", _lq is not None,
+             _pl.stderr.strip().splitlines()[:2])
+    if _lq:
+        chequear("un sábado cargado no llena la columna: cinco y basta",
+                 len(_lq["sabadoCargado"]) == 5, _lq["sabadoCargado"])
+        chequear("un martes sin nada cerca igual muestra los que siguen",
+                 len(_lq["martesTranquilo"]) == 2
+                 and all(":" in x for x in _lq["martesTranquilo"]),
+                 _lq["martesTranquilo"])
+        chequear("con un solo partido en el día, ése",
+                 len(_lq["unoSolo"]) == 1, _lq["unoSolo"])
+        chequear("y si ya empezaron todos, la sección no aparece",
+                 _lq["todoEmpezado"] == [], _lq["todoEmpezado"])
+        chequear("el piso alcanza al que quedó justo afuera de la ventana",
+                 len(_lq["bordeDeLaVentana"]) == 2, _lq["bordeDeLaVentana"])
+        # Lo que le da sentido a la sección: no hay que hacer la cuenta.
+        chequear("lo que está por empezar dice cuánto falta, no la hora",
+                 _lq["inminente"][0] == "en 3 min"
+                 and _lq["inminente"][1] == "en 45 min", _lq["inminente"])
+        chequear("y lo lejano vuelve al reloj, que se lee mejor",
+                 ":" in _lq["martesTranquilo"][0], _lq["martesTranquilo"])
+chequear("la ventana y los topes están a la vista para cambiarlos",
+         "const VENTANA_HORAS = 2, VIENEN_MINIMO = 2, VIENEN_MAXIMO = 5;" in HTML)
+
+
 print("\n── la página de administración ──")
 _ADM = open(os.path.join(AQUI, "admin.html"), encoding="utf-8").read()
 chequear("no es pública", "/admin" in server.PRIVADAS)

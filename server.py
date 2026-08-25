@@ -3436,7 +3436,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · en las copas la página del partido dice qué instancia se juega, y al costado van los cruces de esa ronda"
+VERSION_APP = "2026-08-25 · en las copas la página del partido dice qué instancia se juega, y la Sudamericana ya nunca aparece arriba de la Libertadores"
 
 
 def reparar_recorridos():

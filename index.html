@@ -2750,15 +2750,15 @@ const App=(()=>{
     // todo, en ese orden: uno es de ahora y el otro es de siempre.
     if(club) lista = [club].concat(lista.filter(x => x !== club));
     if(quiere) lista = [quiere].concat(lista.filter(x => x !== quiere));
-    return {lista, alFinal};
+    return {lista, alFinal, quiere};
   }
 
   function ordenarPortada(bloques){
     if(!bloques || bloques.length < 2) return false;
-    const {lista, alFinal} = ordenDeseado();
-    if(!lista.length && !alFinal.length) return false;
-
+    const {lista, alFinal, quiere} = ordenDeseado();
     const antes = bloques.map(b => b.liga).join('|');
+
+    if(lista.length || alFinal.length){
     const lugar = l => alFinal.indexOf(l) >= 0 ? 999
                      : (lista.indexOf(l) < 0 ? 500 : lista.indexOf(l));
     bloques.forEach((b, i) => { b._orden = i; });
@@ -2782,6 +2782,25 @@ const App=(()=>{
       grupo.forEach((b, k) => { b._g = k; });   // por dónde venía cada una
       grupo.sort((a, b) => (enVivo(a) - enVivo(b)) || (a._g - b._g));
       puestos.forEach((p, k) => { bloques[p] = grupo[k]; });
+    }
+    }
+
+    /* La Sudamericana nunca va arriba de la Libertadores.
+
+       Hoy ya sale así, pero por el orden en que están escritas las listas
+       de más arriba: es suerte, no regla. Con tocar cualquiera de esas
+       listas se pierde sin que nadie se entere. Acá queda escrito como lo
+       que es, y por eso está afuera del `if`: vale también cuando no
+       sabemos nada del visitante y no se reordena nada más.
+
+       La excepción es la de siempre: si vino a ver un partido de la
+       Sudamericana, eso manda por encima de cualquier jerarquía. */
+    if(quiere !== 'sud'){
+      const iL = bloques.findIndex(b => b.liga === 'lib');
+      const iS = bloques.findIndex(b => b.liga === 'sud');
+      if(iL >= 0 && iS >= 0 && iS < iL){
+        const t = bloques[iS]; bloques[iS] = bloques[iL]; bloques[iL] = t;
+      }
     }
     return bloques.map(b => b.liga).join('|') !== antes;
   }

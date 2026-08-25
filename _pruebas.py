@@ -2571,6 +2571,15 @@ caso('vivoNoPisaLaPropia', {region:'ES'}, false, todo(['premier','seriea']));
 caso('vivoNoSubeSolo', {region:'AR'}, false, todo(['laliga']));
 caso('noSubeUnoQueNoJuega', {region:'ES'}, false,
      [L('lpf'),L('nacional'),L('lib')]);
+// La Sudamericana nunca arriba de la Libertadores. Se le da vuelta a
+// propósito el orden con que llegan, y de un visitante del que no sabemos
+// nada, que es el caso donde no se reordena nada más.
+caso('sudNuncaArriba', {region:'JP'}, false, [L('sud'),L('lib'),L('lpf')]);
+caso('sudNuncaArribaSinPais', {}, false, [L('sud'),L('lib')]);
+caso('sudNuncaArribaEnEuropa', {region:'ES'}, false, [L('sud'),L('lib')]);
+// salvo que haya venido justamente a ver la Sudamericana
+caso('sudGanaSiVinoPorElla', {region:'AR', quiere:'sud'}, false,
+     [L('lib'),L('sud'),L('lpf')]);
 PORTADA_SEGUN_VISITA=false;
 caso('apagado', {region:'ES', quiere:'premier'});
 caso('forzado', {}, false, todo(), '?ver=premier');
@@ -2618,6 +2627,15 @@ console.log(JSON.stringify(out));
             # siguiente que sí está —Libertadores— y después la Liga
             # Profesional, que es lo que su lista dice.
             "noSubeUnoQueNoJuega": "lib lpf nacional",
+            # La Sudamericana es el hermano menor de la Libertadores y va
+            # abajo siempre, aunque lleguen al revés y aunque del visitante
+            # no sepamos nada.
+            "sudNuncaArriba":        "lib sud lpf",
+            "sudNuncaArribaSinPais": "lib sud",
+            "sudNuncaArribaEnEuropa": "lib sud",
+            # salvo que haya venido a ver justamente la Sudamericana: lo que
+            # la persona vino a ver le gana a cualquier jerarquía nuestra
+            "sudGanaSiVinoPorElla":  "sud lpf lib",
             # con el interruptor apagado la portada es igual para todos
             "apagado":       "lpf nacional ca lib sud champions europa laliga premier seriea bundesliga",
             # pero ?ver= anda igual, para poder probarlo sin encenderlo

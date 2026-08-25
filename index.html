@@ -1243,8 +1243,51 @@ const App=(()=>{
      que pueden cambiarla: un clic, el botón de atrás del navegador y la
      carga inicial. Que sea una sola es lo que hace que las tres se
      comporten igual. */
+  /* ── Qué pantalla se está mirando ───────────────────────────────────
+
+     La página no recarga al cambiar de pantalla: cada torneo, cada partido
+     y cada jugador tienen su dirección, pero es el mismo documento. Así
+     que si el navegador no avisa, el servidor no se entera de nada y lo
+     único que queda anotado es por dónde entró cada uno.
+
+     Va junto con el reloj de la visita, aprovechando el mismo viaje. Y no
+     se manda nada hasta que llegue el identificador: lo que pase mientras
+     tanto se guarda y sale después, para no perder al que entra y toca un
+     partido en el primer segundo. */
+  let vid=null, desde=Date.now(), pantallasPendientes=[];
+  /* Arranca con la pantalla de entrada porque ésa ya se anota sola al
+     abrir: sin esto se mandaba dos veces. Y de paso tapa las repetidas —
+     el botón de atrás y volver a tocar la sección donde ya estás vuelven a
+     pasar por acá y no son una pantalla nueva—. Consecutivas nada más: ir
+     de un torneo a un partido y volver al torneo sí cuenta dos veces. */
+  let ultimaPantalla=(typeof location!=='undefined'&&location.pathname)||'';
+  const contar=()=>Math.round((Date.now()-desde)/1000);
+  const url=(p)=>'/api/visita?'+p;
+
+  function mandarPantalla(ruta){
+    try{
+      fetch(url('v='+encodeURIComponent(vid)+'&r='+encodeURIComponent(ruta)
+                +'&seg='+contar()), {cache:'no-store'}).catch(()=>{});
+    }catch(e){}
+  }
+
+  function verPantalla(ruta){
+    if(!ruta||ruta===ultimaPantalla) return;
+    ultimaPantalla=ruta;
+    // Sin identificador todavía no hay contra qué anotarla: se guarda y
+    // sale cuando llegue. Mandarla igual sería anotarla en la nada.
+    if(!vid){
+      if(pantallasPendientes.length<20) pantallasPendientes.push(ruta);
+      return;
+    }
+    mandarPantalla(ruta);
+  }
+
   function aplicar(d){
     d=d||{t:'home'};
+    // Todas las pantallas pasan por acá: las del menú, las de un link y
+    // las del botón de atrás. Para cuando llega, la dirección ya cambió.
+    verPantalla(location.pathname);
     if(Rutas.esCapa(d)){
       // lo de encima no toca el fondo: cerrar el partido te devuelve a la
       // fecha que estabas mirando, sin volver a bajarla
@@ -5582,6 +5625,9 @@ const App=(()=>{
         : 'Grito de gol desactivado');
     },
     init(){
+      // La pantalla por la que entró ya queda anotada con la visita, así
+      // que se la da por vista: si no, salía avisada dos veces.
+      ultimaPantalla=location.pathname;
       document.documentElement.dataset.theme=localStorage.getItem('hayvar.theme')||'light';
       pintarSonido();
       medir.arrancar();
@@ -5802,9 +5848,7 @@ const App=(()=>{
        Si algo de esto falla, no pasa nada. Es una estadística, no la
        página: `catch` en todos lados y seguimos.                        */
     avisar(){
-      let vid=null, desde=Date.now(), latido=null;
-      const contar=()=>Math.round((Date.now()-desde)/1000);
-      const url=(p)=>'/api/visita?'+p;
+      let latido=null;
       try{
         // La zona horaria es la mejor señal de dónde está mirando: nadie la
         // configura a mano, la pone el sistema. El idioma no sirve —media
@@ -5820,6 +5864,10 @@ const App=(()=>{
           .then(r=>r.json()).then(d=>{
             if(!d||!d.v) return;
             vid=d.v; S.visita=d;
+            // Lo que se haya mirado mientras esta respuesta viajaba: la
+            // primera pantalla llega en menos de un segundo, pero alcanza
+            // para que alguien ya haya tocado un partido.
+            pantallasPendientes.splice(0).forEach(r=>mandarPantalla(r));
             /* La respuesta puede llegar después de que la portada ya se
                dibujó: los dos pedidos salen juntos a propósito. Si con lo
                que trajo el orden cambia, se vuelve a dibujar. Pasa dentro

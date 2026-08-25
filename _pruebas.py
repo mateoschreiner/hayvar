@@ -3863,6 +3863,254 @@ if _fe:
     chequear("con un solo pedido, igual que antes",
              _fe["pedidosDeLaPagina"] == 1, _fe["pedidosDeLaPagina"])
 
+print("\n── qué miraron, no sólo por dónde entraron ──")
+# La página no recarga al cambiar de pantalla: cada torneo, cada partido y
+# cada jugador tienen su dirección pero es el mismo documento. Así que si el
+# navegador no avisa, lo único que queda anotado es la puerta de entrada.
+_guion3 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import almacen, visitas
+
+    vid = visitas.anotar({"huella": "abc", "ruta": "/partido/boca-vs-river-99",
+                          "fuente": "Google", "intencion": "lpf"})
+    v0 = [x for x in almacen.leer("vis:ultimas")[0] if x["id"] == vid][0]
+
+    # la de entrada ya está anotada: avisarla de nuevo no suma
+    repetida = visitas.mirar(vid, "/partido/boca-vs-river-99")
+    # el recorrido de verdad
+    for r in ["/lpf", "/laliga", "/jugador/enzo-fernandez", "/lpf"]:
+        visitas.mirar(vid, r)
+    # dos veces la misma seguida: no es una pantalla nueva
+    seguida = visitas.mirar(vid, "/lpf")
+    # y una visita que ya no está en el anillo
+    fantasma = visitas.mirar("2020-01-01-nadie", "/lpf")
+
+    v = [x for x in almacen.leer("vis:ultimas")[0] if x["id"] == vid][0]
+    dia = almacen.leer("vis:dia:%s" % visitas.hoy())[0]
+
+    # el tope del detalle: veinte pantallas más, y el camino no crece
+    for i in range(20):
+        visitas.mirar(vid, "/torneo-%d" % i)
+    v2 = [x for x in almacen.leer("vis:ultimas")[0] if x["id"] == vid][0]
+
+    print(json.dumps({
+        "alEntrar": {"vistas": v0.get("vistas"), "vio": v0.get("vio")},
+        "repetida": repetida, "seguida": seguida, "fantasma": fantasma,
+        "camino": v.get("vio"), "vistas": v.get("vistas"),
+        "delDia": dia.get("paginasVistas"),
+        "visitasDelDia": dia.get("vistas"),
+        "paginasDelDia": sorted(dia.get("paginas", {})),
+        "tope": len(v2.get("vio")), "cuentaIgual": v2.get("vistas"),
+        "empiezaPorDondeAnduvo": (v2.get("vio") or [None])[0],
+        "resumen": {k: visitas.resumen(2)["hoy"][k]
+                    for k in ("vistas", "paginas", "paginasPorVisita")},
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion3); _gp5 = _f.name
+_db3 = os.path.join(_tp2.gettempdir(), "hayvar_vis_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db3 + _ext):
+        os.unlink(_db3 + _ext)
+_pv = _sb2.run([sys.executable, _gp5, _db3, AQUI],
+               capture_output=True, text=True, timeout=120)
+os.unlink(_gp5)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db3 + _ext):
+        os.unlink(_db3 + _ext)
+_vi = None
+for _linea in _pv.stdout.splitlines():
+    if _linea.startswith("{"):
+        _vi = json.loads(_linea)
+chequear("el registro de recorrido corre entero", _vi is not None,
+         (_pv.stdout[-200:], _pv.stderr[-400:]))
+if _vi:
+    chequear("una visita nace con su pantalla de entrada contada",
+             _vi["alEntrar"] == {"vistas": 1, "vio": []}, _vi["alEntrar"])
+    chequear("y queda el camino que hizo, en orden",
+             _vi["camino"] == ["/lpf", "/laliga", "/jugador/enzo-fernandez",
+                               "/lpf"], _vi["camino"])
+    # Volver a la misma pantalla en la que ya estás pasa seguido con el
+    # botón de atrás, y no es una pantalla nueva. Pero ir a un partido y
+    # volver al torneo sí: por eso se miran sólo las consecutivas.
+    chequear("avisar dos veces seguidas la misma no suma", _vi["seguida"] is False)
+    chequear("ni avisar de nuevo la de entrada", _vi["repetida"] is False)
+    chequear("pero volver a una donde ya estuviste, sí",
+             _vi["camino"].count("/lpf") == 2, _vi["camino"])
+    chequear("la cuenta de la visita suma la de entrada y las demás",
+             _vi["vistas"] == 5, _vi["vistas"])
+    chequear("el día cuenta páginas y visitas por separado",
+             _vi["delDia"] == 5 and _vi["visitasDelDia"] == 1, _vi)
+    chequear("y las páginas del día son todas las que se miraron",
+             _vi["paginasDelDia"] == ["/jugador/enzo-fernandez", "/laliga",
+                                      "/lpf", "/partido/boca-vs-river-99"],
+             _vi["paginasDelDia"])
+    # El detalle del camino tiene tope: es lo único que podría crecer sin
+    # freno. El total se sigue contando, para poder distinguir una visita
+    # de treinta pantallas de una de doce.
+    chequear("el camino guardado tiene tope",
+             _vi["tope"] == visitas.PANTALLAS_POR_VISITA, _vi["tope"])
+    chequear("pero la cuenta sigue subiendo igual",
+             _vi["cuentaIgual"] == 25, _vi["cuentaIgual"])
+    # Se guardan las primeras, no las últimas: lo que interesa es por dónde
+    # empezó a moverse, no dónde terminó.
+    chequear("y guarda por dónde empezó, no dónde terminó",
+             _vi["empiezaPorDondeAnduvo"] == "/lpf",
+             _vi["empiezaPorDondeAnduvo"])
+    chequear("una visita que ya se cayó del anillo no rompe nada",
+             _vi["fantasma"] is False)
+    chequear("el administrador recibe las dos cuentas",
+             _vi["resumen"] == {"vistas": 1, "paginas": 25,
+                                "paginasPorVisita": 25.0}, _vi["resumen"])
+# Los dos datos llegan por el mismo pedido: al cambiar de pantalla se
+# aprovecha el viaje para actualizar el reloj.
+chequear("la página avisa la pantalla y el reloj en el mismo viaje",
+         "'v='+encodeURIComponent(vid)+'&r='+encodeURIComponent(ruta)" in HTML
+         and "+'&seg='+contar()" in HTML)
+chequear("y el servidor los atiende a los dos",
+         "visitas.mirar(v, ruta)" in _SRV and 'if q.get("seg"):' in _SRV)
+
+# Y la prueba que vale: navegar de verdad con el navegador de mentira,
+# entrando por un partido y pasando por seis pantallas.
+if _sh.which("node"):
+    _nav = ("""
+process.on('unhandledRejection',()=>{});
+const avisos=[]; const eq=n=>({name:n, canon:n});
+const RESP={
+ '/api/visita': {v:'2026-08-25-abc123', quiere:'lpf', region:'AR'},
+ '/api/match': {id:'99', liveId:'99', liga:'lpf', ligaNombre:'Liga Profesional',
+   torneo:'Clausura', round:5, status:'FIN', gh:2, ga:1, events:[], stats:[],
+   tv:[], start:'2026-08-25T21:30:00Z', home:eq('Boca'), away:eq('River'),
+   lineups:{home:[],away:[]}, banco:{home:[],away:[]}, confirmada:{},
+   bancoReal:{}, formation:{}},
+ '/api/atleta': {name:'Enzo Fernandez', liga:'lpf', team:'River', pj:5,
+   carrera:[]},
+ '/api/home': {date:'2026-08-25', total:0, live:0, bloques:[], partidazos:{}},
+ '/api/liga/games': {games:[], rounds:[], llaves:[]},
+ '/api/liga': {zonas:[], anual:[], goleadores:[]},
+ '/api/scorers': {rows:[]}, '/api/standings': {zones:[]}, '/api/detalles': {},
+ '/api/ligas': {ligas:[]}, '/api/clubes': {clubes:[]}};
+globalThis.fetch=async(u)=>{
+  if(u.indexOf('/api/visita?')===0){
+    avisos.push(u);
+    // el aviso de la visita tarda: mientras tanto la persona ya navegó
+    if(u.indexOf('v=')<0)
+      for(let i=0;i<40;i++) await new Promise(r=>setImmediate(r));
+  }
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='/partido/boca-vs-river-99';
+App.init();
+(async()=>{
+  const esperar=async n=>{for(let i=0;i<n;i++) await new Promise(r=>setImmediate(r));};
+  await esperar(5);
+  // dos pantallas ANTES de que llegue el identificador
+  for(const r of ['/lpf','/laliga']){
+    loc.pathname=r; Rutas.ir(Rutas.leer(r)); await esperar(3); }
+  await esperar(80);
+  for(const r of ['/jugador/enzo-fernandez','/laliga','/laliga','/lpf','/']){
+    loc.pathname=r; Rutas.ir(Rutas.leer(r)); await esperar(15); }
+  await esperar(20);
+  const conRuta=avisos.filter(u=>u.indexOf('&r=')>0);
+  console.log(JSON.stringify({
+    pantallas: conRuta.map(u=>decodeURIComponent(
+      (u.match(/[?&]r=([^&]*)/)||[])[1]||'')),
+    avisoDeEntrada: avisos.filter(u=>u.indexOf('v=')<0).length,
+    mismoId: conRuta.every(u=>u.indexOf('v=2026-08-25-abc123')>0),
+    conReloj: conRuta.every(u=>u.indexOf('&seg=')>0)}));
+})();
+""")
+    _gn = (open(_DOMSITO, encoding="utf-8").read()
+           + "\nglobalThis.document=doc; globalThis.window=win;"
+             "\nglobalThis.location=loc; globalThis.history=historial;"
+             "\nglobalThis.localStorage=almacenLocal;"
+             "\nglobalThis.MutationObserver=MutationObserver;"
+             "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+             "\nglobalThis.requestAnimationFrame=f=>0;"
+             "\nglobalThis.setInterval=()=>0;\nlet App, Rutas;\n"
+           + _app.replace("const App=(()=>{", "App=(()=>{")
+                 .replace("  const Rutas={", "  Rutas={") + _nav)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gn); _rn = _f.name
+    _pn = _sub.run(["node", _rn], capture_output=True, text=True, timeout=60)
+    os.unlink(_rn)
+    _na = json.loads(_pn.stdout) if _pn.returncode == 0 and _pn.stdout else None
+    chequear("la página navega y avisa", _na is not None,
+             _pn.stderr.strip().splitlines()[:2])
+    if _na:
+        # La de entrada no está: ésa la anota el aviso de la visita.
+        chequear("avisa cada pantalla por la que pasa, y no la de entrada",
+                 _na["pantallas"] == ["/lpf", "/laliga",
+                                      "/jugador/enzo-fernandez", "/laliga",
+                                      "/lpf", "/"], _na["pantallas"])
+        # Las dos primeras pasaron antes de que llegara el identificador:
+        # se guardan y salen después, o se perderían las de quien entra y
+        # toca un partido en el primer segundo.
+        chequear("incluidas las que pasaron antes de tener identificador",
+                 _na["pantallas"][:2] == ["/lpf", "/laliga"], _na["pantallas"])
+        chequear("todas contra la misma visita", _na["mismoId"])
+        chequear("y aprovechan el viaje para el reloj", _na["conReloj"])
+        chequear("el aviso de la visita sigue siendo uno solo",
+                 _na["avisoDeEntrada"] == 1, _na["avisoDeEntrada"])
+
+    # Y el administrador, corriendo su propio código con visitas de mentira.
+    _vfalsa = json.dumps({
+        "hoy": {"gente": 40, "vistas": 52, "paginas": 137, "porPersona": 95,
+                "vistasPorPersona": 1.3, "paginasPorVisita": 2.6},
+        "ultimas": [
+            {"t": 1756150000, "ruta": "/partido/boca-vs-river-99",
+             "fuente": "Google", "region": "AR", "busco": "", "disp": "móvil",
+             "so": "Android", "pantalla": "390x844", "seg": 210, "vistas": 5,
+             "vio": ["/lpf", "/laliga", "/jugador/enzo-fernandez"]},
+            {"t": 1756149000, "ruta": "/", "fuente": "directo", "region": "ES",
+             "busco": "", "disp": "escritorio", "so": "macOS",
+             "pantalla": "1440x900", "seg": 12, "vistas": 1, "vio": []},
+            {"t": 1756148000, "ruta": "/lpf", "fuente": "X / Twitter",
+             "region": "AR", "busco": "", "disp": "móvil", "so": "iOS",
+             "pantalla": "430x932", "seg": 600, "vistas": 30,
+             "vio": ["/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h", "/i",
+                     "/j", "/k", "/l"]}]})
+    _cola = ("""
+const v = __V__;
+const hoy = visitasHoy(v), ult = ultimas(v);
+console.log(JSON.stringify({
+  dosCajas: hoy.indexOf('Visitas') >= 0 && hoy.indexOf('Páginas vistas') >= 0,
+  visitas: hoy.indexOf('>52<') >= 0,
+  paginas: hoy.indexOf('>137<') >= 0,
+  porVisita: hoy.indexOf('2.6 por visita') >= 0,
+  pasos: (ult.match(/class="paso"/g) || []).length,
+  seFueDeAhi: ult.indexOf('se fue de ahí') >= 0,
+  loQueNoEntro: ult.indexOf('+17') >= 0}));
+""").replace("__V__", _vfalsa)
+    _jadm = re.findall(r"<script>(.*?)</script>", _ADM, re.S)[-1]
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write("globalThis.location={search:'',hash:''};\n"
+                 + _jadm.split("/* ── armar todo")[0] + _cola)
+        _rv = _f.name
+    _pv2 = _sub.run(["node", _rv], capture_output=True, text=True, timeout=60)
+    os.unlink(_rv)
+    _av = json.loads(_pv2.stdout) if _pv2.returncode == 0 and _pv2.stdout else None
+    chequear("el administrador dibuja las visitas", _av is not None,
+             _pv2.stderr.strip().splitlines()[:2])
+    if _av:
+        # Antes había un solo número y decía las dos cosas mal.
+        chequear("visitas y páginas son dos números distintos",
+                 _av["dosCajas"] and _av["visitas"] and _av["paginas"]
+                 and _av["porVisita"], _av)
+        # Doce pasos de la larga, tres de la primera, ninguno de la que se fue.
+        chequear("y debajo de cada visita, por dónde siguió",
+                 _av["pasos"] == 15, _av["pasos"])
+        chequear("el que se fue de la primera pantalla se nota",
+                 _av["seFueDeAhi"])
+        # 30 páginas y 12 guardadas: quedan 17 sin detalle, pero contadas.
+        chequear("y las que no entraron en el detalle igual se cuentan",
+                 _av["loQueNoEntro"], _av)
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

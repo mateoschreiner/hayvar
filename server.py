@@ -3499,7 +3499,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · el repechaje de agosto de Champions y Europa ya no se confunde con el play-off de febrero, que la fuente llama igual"
+VERSION_APP = "2026-08-25 · el administrador ya no ve sólo por dónde entró cada uno: ahora sabe qué pantallas miró después y cuántas"
 
 
 def reparar_recorridos():
@@ -8853,7 +8853,15 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 v = (q.get("v") or [""])[0][:40]
                 if v:
-                    visitas.latir(v, (q.get("seg") or ["0"])[0])
+                    # Con `r` es una pantalla más de la misma visita; con
+                    # `seg`, el latido que cuenta el tiempo. Pueden venir
+                    # los dos: al cambiar de pantalla conviene aprovechar
+                    # el viaje y actualizar el reloj de una.
+                    ruta = (q.get("r") or [""])[0][:120]
+                    if ruta:
+                        visitas.mirar(v, ruta)
+                    if q.get("seg"):
+                        visitas.latir(v, (q.get("seg") or ["0"])[0])
                     return self._json({"ok": True})
                 return self._json(anotar_visita(self, q))
             except Exception:

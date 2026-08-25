@@ -287,7 +287,8 @@ BUSCADORES = {"Google", "Bing", "DuckDuckGo", "Yahoo"}
 
 
 def _resumen_vacio(dia):
-    return {"dia": dia, "vistas": 0, "gente": [], "segundos": 0,
+    return {"dia": dia, "vistas": 0, "paginasVistas": 0, "gente": [],
+            "segundos": 0,
             "fuentes": {}, "paginas": {}, "dispositivos": {}, "sistemas": {},
             "navegadores": {}, "regiones": {}, "pantallas": {},
             "busquedas": {}, "intenciones": {}, "aterrizajes": {}}
@@ -323,6 +324,7 @@ def anotar(datos):
     r = r or _resumen_vacio(dia)
 
     r["vistas"] += 1
+    r["paginasVistas"] = r.get("paginasVistas", 0) + 1
     # La lista de huellas es lo que permite contar personas y no visitas.
     # Se guarda como lista y no como número porque hay que poder preguntar
     # "¿ya vino hoy?". Con el tope de abajo no se desborda.
@@ -370,9 +372,67 @@ def anotar(datos):
                 "pantalla": datos.get("pantalla", ""),
                 "region": datos.get("region", ""),
                 "quiere": datos.get("intencion", ""),
+                # Por dónde entró ya cuenta como una pantalla vista; las que
+                # siguen las agrega `mirar`.
+                "vistas": 1, "vio": [],
                 "seg": 0})
     almacen.guardar("vis:ultimas", ult[-ULTIMAS:])
     return vid
+
+
+# Cuántas pantallas del recorrido de una visita se guardan enteras. El
+# número total se cuenta siempre; lo que tiene tope es el detalle de por
+# dónde anduvo, que es lo único que puede crecer sin freno. Con doce se ve
+# de sobra si entró por un partido y se quedó dando vueltas por el torneo.
+PANTALLAS_POR_VISITA = 12
+
+
+def mirar(vid, ruta):
+    """
+    Otra pantalla mirada dentro de la misma visita.
+
+    Hasta acá se anotaba nada más por dónde entró cada uno. Eso contesta
+    "de dónde vienen" pero no "qué miran", que es la mitad que faltaba: la
+    página no recarga al cambiar de pantalla —cada torneo, cada partido y
+    cada jugador tienen su dirección pero es el mismo documento—, así que
+    si el navegador no avisa, el servidor no se entera de nada.
+
+    Se saltean dos casos a propósito: la pantalla de entrada, que ya quedó
+    anotada al abrir, y volver a la misma en la que ya se estaba, que pasa
+    seguido con el botón de atrás y no es una pantalla nueva.
+    """
+    if not vid or not ruta:
+        return False
+    ult, _ = almacen.leer("vis:ultimas")
+    ult = ult or []
+    for v in reversed(ult):
+        if v.get("id") != vid:
+            continue
+        camino = v.get("vio") or []
+        ultima = camino[-1] if camino else v.get("ruta")
+        if ruta == ultima:
+            return False
+        if len(camino) < PANTALLAS_POR_VISITA:
+            camino.append(ruta)
+            v["vio"] = camino
+        # El total se cuenta igual, aunque el detalle ya no entre: una
+        # visita de treinta pantallas tiene que poder distinguirse de una
+        # de doce.
+        v["vistas"] = v.get("vistas", 1) + 1
+        almacen.guardar("vis:ultimas", ult)
+        break
+    else:
+        return False        # una visita que ya se cayó del anillo
+
+    dia = vid.rsplit("-", 1)[0]
+    clave = "vis:dia:%s" % dia
+    r, _ = almacen.leer(clave)
+    if not r:
+        return True
+    r["paginasVistas"] = r.get("paginasVistas", 0) + 1
+    _sumar(r["paginas"], ruta, tope=80)
+    almacen.guardar(clave, r)
+    return True
 
 
 def latir(vid, segundos):
@@ -462,6 +522,16 @@ def resumen(dias=14):
             "porPersona": round(hoyr.get("segundos", 0) / gente) if gente else 0,
             "vistasPorPersona": (round(hoyr.get("vistas", 0) / gente, 1)
                                  if gente else 0),
+            # Páginas miradas, que no es lo mismo que visitas: alguien que
+            # entra por un partido y después recorre cuatro torneos es una
+            # visita y cinco páginas. Los días viejos no lo tienen —se
+            # guardaron antes de que se contara— y ahí cae en las visitas,
+            # que es lo que valía entonces.
+            "paginas": hoyr.get("paginasVistas", hoyr.get("vistas", 0)),
+            "paginasPorVisita": (round(hoyr.get("paginasVistas",
+                                                hoyr.get("vistas", 0))
+                                       / hoyr["vistas"], 1)
+                                 if hoyr.get("vistas") else 0),
         },
         "fuentes": top(hoyr.get("fuentes")),
         "paginas": top(hoyr.get("paginas"), 12),

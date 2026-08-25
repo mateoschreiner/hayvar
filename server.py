@@ -1983,6 +1983,14 @@ def api_match(q):
         for p in banco[key]:
             anotar_paso(p["name"], club, liga_id, lado.get("logo"))
     anotar_jugadores(liga_id, gid, filas_jug)
+    # Y la formación, del mismo paquete que ya está abierto.
+    #
+    # Sin esto, las tablas sólo se llenaban con lo que pasa el recolector, y
+    # el recolector no vuelve a abrir un partido cuyos goles ya resolvió:
+    # las formaciones de todo lo ya jugado no se capturaban nunca. Acá, en
+    # cambio, cada partido que alguien mira deja las suyas — que además es
+    # el criterio correcto, porque son justo los que a alguien le importan.
+    anotar_formacion(liga_id, gid, g)
 
     # colores del club, para pintar la cancha
     for key, lado in (("home", out["home"]), ("away", out["away"])):
@@ -3511,7 +3519,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · las formaciones y las estadísticas de cada jugador ya quedan en tablas, en los diez torneos que se miran"
+VERSION_APP = "2026-08-25 · formaciones y estadísticas en tablas: las deja el recolector al pasar y también cada partido que alguien abre"
 
 
 def reparar_recorridos():

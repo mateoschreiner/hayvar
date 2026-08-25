@@ -4487,6 +4487,15 @@ if _fo:
     chequear("y cuánto promedia en una estadística",
              _fo["remates"]["promedio"] == 5 and _fo["remates"]["partidos"] == 1,
              _fo["remates"])
+# El recolector no vuelve a abrir un partido cuyos goles ya resolvió, así
+# que sólo con él las formaciones de todo lo ya jugado no se capturaban
+# nunca. La ficha de un partido pide el mismo paquete: que también deje las
+# suyas, y así cada partido que alguien mira queda guardado — que además es
+# el criterio correcto, porque son justo los que a alguien le importan.
+chequear("la ficha de un partido también deja su formación",
+         "anotar_formacion(liga_id, gid, g)" in _SRV)
+chequear("y las dos puertas usan la misma función",
+         _SRV.count("anotar_formacion(") == 3)   # la definición y las dos
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

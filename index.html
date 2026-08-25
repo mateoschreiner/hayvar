@@ -1222,8 +1222,9 @@ const App=(()=>{
       // fecha que estabas mirando, sin volver a bajarla
       // Salvo que no haya fondo, porque se entró directo por el link: ahí
       // se arma al menos el armazón, para que el menú del costado exista
-      // y se pueda seguir a otra cosa desde ahí.
-      if(!S.fondo){ shell(); drawSide(); }
+      // y se pueda seguir a otra cosa desde ahí. El partido no entra acá:
+      // él se arma su propia página, con la tabla del torneo al costado.
+      if(!S.fondo && d.t!=='partido'){ shell(); drawSide(); }
       S.modal=d;
       if(d.t==='partido') return openMatch(d);
       if(d.t==='jugador') return openPlayer(d);
@@ -1540,8 +1541,19 @@ const App=(()=>{
         CLUBES.push(c);
         CLUBES_PAG.set(claveClub(c.name), c.name);
       });
-      // los escudos ya dibujados todavía no saben que ahora se puede
-      // entrar: se redibuja lo que esté en pantalla
+      /* Los escudos ya dibujados todavía no saben que ahora se puede
+         entrar al club, así que se redibuja lo que esté en pantalla.
+
+         Pero sólo si lo que hay en pantalla es una lista de partidos. Si
+         hay un partido o un jugador abierto —y sobre todo si se entró
+         directo a su dirección— redibujar la portada acá es taparle a la
+         persona justo lo que vino a ver. Pasaba: abrías el link de un
+         partido en una pestaña nueva, veías la portada, y el partido
+         aparecía recién si lo volvías a elegir de la lista.
+
+         El pedido de clubes tarda más que el del partido, así que llegaba
+         siempre segundo y siempre ganaba. */
+      if(S.modal) return;
       if(S.liga==='home') loadHome(); else if(S.liga!=='club') loadAll(false);
     }catch(e){}
   }

@@ -2733,6 +2733,63 @@ App.init();
         chequear("con los dos equipos del partido resaltados",
                  _pag["resaltados"] == 2, _pag["resaltados"])
 
+    # La carrera que rompía todo: al arrancar se piden varias cosas a la
+    # vez, y la lista de clubes —que llega tarde— redibujaba la portada
+    # encima de lo que estuviera en pantalla. Abrías el link de un partido
+    # en una pestaña nueva, veías la portada, y el partido aparecía recién
+    # si lo volvías a elegir de la lista.
+    _tarde = ("""
+process.on('unhandledRejection',()=>{});
+const eq=n=>({name:n, canon:n, logo:null, short:''});
+const demora=n=>new Promise(r=>{ let i=0;
+  const t=()=>{ if(++i>n) r(); else setImmediate(t); }; t(); });
+const RESP={
+ '/api/match': {id:4633355, liga:'lpf', ligaNombre:'Liga Profesional',
+   torneo:'Clausura 2026', round:6, interzonal:true, zone:null,
+   home:eq('Talleres (C)'), away:eq('Rosario Central'), gh:2, ga:2,
+   status:'FIN', start:'2026-08-24T21:15:00-03:00', events:[], stats:[],
+   lineups:{home:[],away:[]}, banco:{home:[],away:[]}},
+ '/api/standings': {zones:[{name:'Zona A', rows:[{pos:15,
+    canon:'Talleres (C)', team:eq('Talleres (C)'), pts:4, pj:6, dif:-4}]}]},
+ '/api/annual': {rows:[]}, '/api/promedios': {rows:[]}, '/api/ligas': {ligas:[]},
+ '/api/clubes': {clubes:[{name:'Talleres (C)', primary:'#fff', accent:'#000'}]},
+ '/api/home': {total:1, live:0, bloques:[{liga:'lpf', nombre:'Liga Profesional',
+    games:[{id:'z', status:'FIN', home:eq('A'), away:eq('B'), gh:0, ga:0}]}]}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).find(x=>u.startsWith(x));
+  if(!k) throw new Error('sin ruta');
+  if(k==='/api/clubes') await demora(25);   // llega tarde, como en la vida real
+  return {ok:true, status:200, json:async()=>RESP[k]};
+};
+loc.pathname='/partido/talleres-c-vs-rosario-central-4633355';
+App.init();
+(async()=>{
+  for(let i=0;i<80;i++) await new Promise(r=>setImmediate(r));
+  const medio=doc.querySelector('#matches').innerHTML||'';
+  console.log(JSON.stringify({partido: medio.includes('2 - 2'),
+    tapado: medio.includes('ver torneo'),
+    calendario: !!(doc.querySelector('#days').innerHTML)}));
+})();
+""")
+    _g2 = (open(_DOMSITO, encoding="utf-8").read()
+           + "\nglobalThis.document=doc; globalThis.window=win;"
+             "\nglobalThis.location=loc; globalThis.history=historial;"
+             "\nglobalThis.localStorage=almacenLocal;"
+             "\nglobalThis.MutationObserver=MutationObserver;"
+             "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+             "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+           + _app.replace("const App=(()=>{", "App=(()=>{") + _tarde)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_g2); _rt = _f.name
+    _pt = _sub.run(["node", _rt], capture_output=True, text=True, timeout=60)
+    os.unlink(_rt)
+    _tr = json.loads(_pt.stdout) if _pt.returncode == 0 and _pt.stdout else None
+    chequear("abrir el link en una pestaña nueva muestra el partido",
+             _tr and _tr["partido"] is True, _tr)
+    chequear("y no se lo tapa la portada cuando llega la lista de clubes",
+             _tr and _tr["tapado"] is False and _tr["calendario"] is False, _tr)
+
 
 print("\n── \"lo que viene\" no es la lista de al lado otra vez ──")
 # Mostraba los seis primeros partidos del día: a las diez de la mañana, eso

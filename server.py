@@ -709,6 +709,9 @@ LIGAS = {
         "nombre": "Champions League", "torneo": "Temporada 2026-27",
         "base": None, "pages": {}, "propia": False, "sc": 572,
         "pais": "Europa", "anual": False, "copa": True,
+        # Se cruzan clubes de países distintos: al lado de cada
+        # escudo va la bandera de dónde es el club.
+        "internacional": True,
         "zonas_de": {"avanza": (1, 8), "repechaje": (9, 24),
                      "afuera": (25, 36)},
         # La fase de liga va en la lista aunque todavía no tenga partidos: se
@@ -736,6 +739,9 @@ LIGAS = {
         "nombre": "Europa League", "torneo": "Temporada 2026-27",
         "base": None, "pages": {}, "propia": False, "sc": 573,
         "pais": "Europa", "anual": False, "copa": True,
+        # Se cruzan clubes de países distintos: al lado de cada
+        # escudo va la bandera de dónde es el club.
+        "internacional": True,
         "zonas_de": {"avanza": (1, 8), "repechaje": (9, 24),
                      "afuera": (25, 36)},
         "etapas_extra": ["Fase de liga", "Octavos de final", "Cuartos de final",
@@ -754,6 +760,7 @@ LIGAS = {
         "nombre": "Copa Libertadores", "torneo": "Edición 2026",
         "base": None, "pages": {}, "propia": False, "sc": 102,
         "pais": "Sudamérica", "anual": False, "copa": True,
+        "internacional": True,
         # Fase de grupos: pasan los dos primeros de cada zona a octavos, y
         # el tercero no queda afuera del todo: se va a los pre octavos de la
         # Sudamericana, contra los que salieron segundos allá.
@@ -770,6 +777,7 @@ LIGAS = {
         "nombre": "Copa Sudamericana", "torneo": "Edición 2026",
         "base": None, "pages": {}, "propia": False, "sc": 389,
         "pais": "Sudamérica", "anual": False, "copa": True,
+        "internacional": True,
         # acá pasa sólo el primero; el segundo juega el repechaje contra los
         # terceros de la Libertadores
         "zonas_de": {"avanza": (1, 1), "repechaje": (2, 2)},
@@ -1916,6 +1924,28 @@ def api_match(q):
         # el cuerpo técnico va siempre, lo marque como lo marque la fuente
         banco[key] = elegidos + [f for r, f in clasificados if r == "dt"]
 
+    # De dónde es cada uno, para la banderita al lado del nombre.
+    #
+    # Es el mismo mecanismo del plantel de un club: se piden todos juntos y
+    # se guardan por jugador para siempre —la nacionalidad no cambia—, así
+    # que un partido cuesta un pedido la primera vez y ninguno después. Y
+    # como los jugadores se repiten fecha a fecha, a la segunda semana ya
+    # está casi todo guardado.
+    #
+    # Si la fuente no contesta, el partido se muestra igual: lo que falta
+    # es la banderita, no la formación.
+    try:
+        todos = [f.get("id") for k in ("home", "away")
+                 for f in (lineups[k] + banco[k])]
+        paises = nacionalidades(todos)
+        for k in ("home", "away"):
+            for f in lineups[k] + banco[k]:
+                p = paises.get(str(f.get("id") or ""))
+                if p:
+                    f["pais"], f["bandera"] = p.get("pais"), p.get("bandera")
+    except Exception:
+        pass
+
     ofic = [o.get("name") if isinstance(o, dict) else str(o) for o in (g.get("officials") or [])]
     venue = g.get("venue") or {}
     for s in ("home", "away"):
@@ -1960,6 +1990,17 @@ def api_match(q):
     # En una copa la fecha no dice nada: lo que ubica al partido es la
     # instancia. Un Boca–Flamengo es de octavos, no de la "fecha 2".
     out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"))
+
+    # Y en un torneo internacional, de qué país es cada club. En la
+    # Libertadores hay clubes que se llaman igual —Nacional es el de
+    # Uruguay y también el de Potosí, hay una Universidad Católica en Chile
+    # y otra en Ecuador— así que la bandera no es un adorno: a veces es lo
+    # único que los distingue. El país ya viene con cada equipo; acá sólo
+    # se lo convierte en imagen.
+    if (LIGAS.get(liga_id) or {}).get("internacional"):
+        for lado in (out["home"], out["away"]):
+            if lado.get("pais"):
+                lado["bandera"] = bandera_url(lado["pais"])
     out.update({"events": events, "stats": stats, "lineups": lineups,
                 "banco": banco, "confirmada": confirmada,
                 "bancoReal": banco_real,
@@ -3436,7 +3477,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · en las copas la página del partido dice qué instancia se juega, y la Sudamericana ya nunca aparece arriba de la Libertadores"
+VERSION_APP = "2026-08-25 · la instancia de cada partido de copa, la bandera de cada jugador en las formaciones y la del país del club en los torneos internacionales"
 
 
 def reparar_recorridos():

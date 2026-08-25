@@ -2871,6 +2871,95 @@ App.init();
         chequear("cada cruce lleva a su partido", _oct["linkAlOtro"], _oct)
         chequear("y se pidió sólo las llaves, no el calendario entero",
                  _oct["soloLlaves"] and not _oct["calendarioEntero"], _oct)
+    print("\n── de dónde es cada uno ──")
+    # La nacionalidad ya se pedía para el plantel de un club: se piden todos
+    # juntos y se guardan por jugador para siempre. Acá se engancha lo mismo
+    # a las formaciones, así que un partido cuesta un pedido la primera vez
+    # y ninguno después.
+    chequear("las formaciones piden la nacionalidad en una sola tanda",
+             "paises = nacionalidades(todos)" in _SRV
+             and "for f in lineups[k] + banco[k]:" in _SRV)
+    chequear("y si la fuente no contesta, la formación se muestra igual",
+             _SRV.count("except Exception:\n        pass\n\n    ofic =") == 1)
+    # La bandera del club va sólo donde dice algo. En la Liga Profesional
+    # los treinta son argentinos y sería una columna de banderas iguales.
+    chequear("el torneo internacional está marcado, y sólo los cuatro",
+             [l for l in server.LIGAS if server.LIGAS[l].get("internacional")]
+             == ["champions", "europa", "lib", "sud"],
+             [l for l in server.LIGAS if server.LIGAS[l].get("internacional")])
+
+    _BAND = ("https://imagecache.365scores.com/image/upload/"
+             "v1/Countries/Round/")
+    _XI = ("lineups:{home:[{n:1,name:'Sergio Romero',id:'1',pais:'Argentina',"
+           "bandera:'%s10'},{n:5,name:'Ander Herrera',id:'2',pais:'España',"
+           "bandera:'%s3'},{n:9,name:'Sin Bandera',id:'3'}],"
+           "away:[{n:1,name:'Rossi',id:'4',pais:'Brasil',bandera:'%s21'}]},"
+           "banco:{home:[],away:[]}, confirmada:{home:true,away:true},"
+           "bancoReal:{home:true,away:true},"
+           "formation:{home:'4-3-3',away:'4-4-2'}") % (_BAND, _BAND, _BAND)
+
+    def _banderas(match):
+        _js = ("""
+process.on('unhandledRejection',()=>{});
+const RESP={'/api/match': %s,
+ '/api/liga/games': {llaves:[]}, '/api/liga': {id:'lib', nombre:'x', zonas:[]}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='/partido/boca-juniors-vs-flamengo-99';
+App.init();
+(async()=>{
+  for(let i=0;i<70;i++) await new Promise(r=>setImmediate(r));
+  App.mtab('xi');
+  for(let i=0;i<20;i++) await new Promise(r=>setImmediate(r));
+  const m=doc.querySelector('#matches').innerHTML||'';
+  console.log(JSON.stringify({
+    lugares:(m.match(/xi-pais/g)||[]).length,
+    conBandera:(m.match(/xi-pais"><img/g)||[]).length,
+    club:(m.match(/club-pais/g)||[]).length}));
+})();
+""" % match)
+        _gg = (open(_DOMSITO, encoding="utf-8").read()
+               + "\nglobalThis.document=doc; globalThis.window=win;"
+                 "\nglobalThis.location=loc; globalThis.history=historial;"
+                 "\nglobalThis.localStorage=almacenLocal;"
+                 "\nglobalThis.MutationObserver=MutationObserver;"
+                 "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+                 "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+               + _app.replace("const App=(()=>{", "App=(()=>{") + _js)
+        with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as _f:
+            _f.write(_gg); _rb = _f.name
+        _pb = _sub.run(["node", _rb], capture_output=True, text=True, timeout=60)
+        os.unlink(_rb)
+        return json.loads(_pb.stdout) if _pb.returncode == 0 and _pb.stdout else None
+
+    _int = _banderas("""{id:'99', liveId:'99', liga:'lib',
+  ligaNombre:'Copa Libertadores', torneo:'2026', etapa:'Octavos de final',
+  round:null, status:'FIN', gh:2, ga:1, start:'2026-08-25T21:30:00Z',
+  events:[], stats:[], tv:[],
+  home:{name:'Boca Juniors',canon:'Boca Juniors',pais:11,bandera:'%s11'},
+  away:{name:'Flamengo',canon:'Flamengo',pais:21,bandera:'%s21'}, %s}"""
+                      % (_BAND, _BAND, _XI))
+    _loc = _banderas("""{id:'99', liveId:'99', liga:'lpf',
+  ligaNombre:'Liga Profesional', torneo:'Clausura 2026', round:5,
+  status:'FIN', gh:2, ga:1, start:'2026-08-25T21:30:00Z',
+  events:[], stats:[], tv:[],
+  home:{name:'Boca Juniors',canon:'Boca Juniors'},
+  away:{name:'River Plate',canon:'River Plate'}, %s}""" % _XI)
+    chequear("en la formación va la bandera de cada jugador",
+             _int and _int["conBandera"] == 3, _int)
+    # El que no la tiene igual ocupa el lugar: sin eso los nombres bailan
+    # entre el que tiene bandera y el que no.
+    chequear("y el que no la tiene ocupa el lugar igual",
+             _int and _int["lugares"] == 4, _int)
+    chequear("en un torneo internacional, la bandera del país de cada club",
+             _int and _int["club"] == 2, _int)
+    # En la Liga Profesional los treinta son argentinos: serían treinta
+    # banderas iguales diciendo nada.
+    chequear("y en uno local no aparece ninguna",
+             _loc and _loc["club"] == 0 and _loc["conBandera"] == 3, _loc)
+
     if _gru:
         chequear("en la fase de grupos sigue yendo la tabla del grupo",
                  _gru["hayTabla"] and _gru["cajas"] == 0, _gru)

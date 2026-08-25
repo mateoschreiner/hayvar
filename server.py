@@ -1923,7 +1923,14 @@ def api_match(q):
 
     # Cada formación que vemos alimenta la trayectoria y el conteo de
     # partidos. Es la única fuente propia que tenemos de eso.
-    liga_id = (q.get("liga") or ["lpf"])[0]
+    #
+    # De qué torneo es: la página lo dice cuando viene de adentro, pero el
+    # que entra por el link no lo sabe, así que se busca por el id del
+    # partido. Antes acá había un "lpf" por defecto, y eso significaba que
+    # cada visita en frío a un partido de la Champions anotaba a sus
+    # jugadores como si hubieran jugado en la Liga Profesional.
+    pedida = (q.get("liga") or [""])[0]
+    liga_id = pedida if pedida in LIGAS else (liga_de_partido(str(gid)) or "lpf")
     for key, lado in (("home", out["home"]), ("away", out["away"])):
         club = lado.get("canon") or lado.get("name")
         for p in lineups[key]:
@@ -1945,6 +1952,11 @@ def api_match(q):
     # titulares) para que la página no publique un banco que todavía no es.
     confirmada = {k: len(v) >= 11 for k, v in lineups.items()}
 
+    # Y se lo devolvemos a la página, que lo necesita para saber qué tabla
+    # de posiciones poner al costado.
+    out["liga"] = liga_id
+    out["ligaNombre"] = (LIGAS.get(liga_id) or {}).get("nombre") or ""
+    out["torneo"] = (LIGAS.get(liga_id) or {}).get("torneo") or ""
     out.update({"events": events, "stats": stats, "lineups": lineups,
                 "banco": banco, "confirmada": confirmada,
                 "bancoReal": banco_real,
@@ -3421,7 +3433,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · arreglado el filtro de en vivo en la portada; los paneles dicen de qué torneo es cada partido"
+VERSION_APP = "2026-08-25 · la página de un partido es una página: menú, marcador fijo y la tabla del torneo al costado"
 
 
 def reparar_recorridos():
@@ -8036,6 +8048,28 @@ def aligerar(html):
 #
 # Se anota la página, no las llamadas de la página: si se contara cada
 # /api/ que hace el javascript, una visita parecerían veinte.
+def liga_de_partido(gid):
+    """
+    De qué torneo es un partido, buscando por su id en lo que guardamos.
+
+    No hay una tabla que lo diga: los partidos se guardan por torneo, así
+    que se pregunta torneo por torneo. Son dieciséis lecturas de la base,
+    que al lado de servir una página no es nada.
+
+    Lo usa la página del partido para saber qué tabla de posiciones
+    mostrar al costado, y el registro de visitas para saber a qué venía
+    alguien que cayó ahí desde un buscador.
+    """
+    if not gid:
+        return ""
+    for lid in LIGAS:
+        if almacen.leer("goles:%s:%s" % (lid, gid))[0] is not None:
+            return lid
+        if almacen.leer("tv:%s:%s" % (lid, gid))[0] is not None:
+            return lid
+    return ""
+
+
 def que_venia_a_ver(ruta):
     """
     Qué torneo le interesa a quien aterrizó en esta página.
@@ -8062,16 +8096,7 @@ def que_venia_a_ver(ruta):
 
     if partes[0] == "partido" and len(partes) == 2:
         m = re.search(r"(\d+)$", partes[1])
-        if m:
-            gid = m.group(1)
-            for lid in LIGAS:
-                dato, _ = almacen.leer("goles:%s:%s" % (lid, gid))
-                if dato is not None:
-                    return lid
-                tv, _ = almacen.leer("tv:%s:%s" % (lid, gid))
-                if tv is not None:
-                    return lid
-        return ""
+        return liga_de_partido(m.group(1)) if m else ""
 
     # Buscó un jugador por su nombre y cayó en su ficha. Es de los casos más
     # comunes que manda un buscador, y hasta acá lo estábamos tirando: el

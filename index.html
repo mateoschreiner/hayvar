@@ -605,15 +605,20 @@ td.l{text-align:left;padding-left:8px}
 /* Arranca abajo del encabezado a propósito: el que llega por el link tiene
    que ver dónde cayó, poder buscar y poder entrar a lo demás. Un partido
    solo, sin nada alrededor, es una página muerta. */
-.pantalla-partido .ov{background:var(--bg);backdrop-filter:none;
-  inset:var(--enc,56px) 0 0 0;padding:0;overflow-y:auto}
-.pantalla-partido .modal{max-width:720px;max-height:none;border-radius:0;
-  min-height:100%;box-shadow:none}
-.pantalla-partido .mbody{overflow:visible}
-@media(min-width:760px){
-  .pantalla-partido .ov{padding:22px 14px}
-  .pantalla-partido .modal{min-height:0;border-radius:12px}
-}
+/* El partido dibujado como página, no como pop-up: el que entra por el
+   link no tiene nada atrás, así que va en la columna del medio de la
+   página normal, con el menú a la izquierda y la tabla del torneo a la
+   derecha. Estas reglas lo acomodan adentro de esa columna.
+
+   El encabezado con los escudos y el resultado queda pegado arriba. Uno
+   baja a leer los goles y el marcador se iba de pantalla, que es justo el
+   dato que uno quiere tener a la vista todo el tiempo. Las pestañas
+   quedan pegadas debajo de él por la misma razón. */
+#matches > .mhead{position:sticky;top:var(--enc,56px);z-index:5;
+  border-radius:12px 12px 0 0}
+#matches > .tabs{position:sticky;top:calc(var(--enc,56px) + 116px);z-index:4;
+  background:var(--card)}
+#matches > .mbody{overflow:visible;padding:14px}
 .mhead{background:var(--nav);color:#fff;padding:16px;flex:none}
 .modal>.tabs{flex:none;background:var(--card)}
 .mhead .top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:rgba(255,255,255,.65);margin-bottom:12px;gap:8px}
@@ -1430,7 +1435,7 @@ const App=(()=>{
       <div class="shell">
         <aside id="side"></aside>
         <main>
-          ${quiere==='club' ? '' : quiere==='portada'
+          ${(quiere==='club'||quiere==='partido') ? '' : quiere==='portada'
             ? `<div class="calbar">
                  <div class="calhead"><div class="mth" id="calMonth">—</div>
                    <div class="navs"><button onclick="App.homeWeek(-1)">‹</button>
@@ -3588,14 +3593,28 @@ const App=(()=>{
 
   // `entero` es el caso del que llegó por el link: no hay nada atrás, así
   // que el pop-up se despliega y ocupa la página.
-  function abrirCapa(entero){
-    document.body.classList.toggle('pantalla-partido',!!entero);
+  /* Abrir el pop-up. Ya no hay variante "entera": el que llega por el link
+     no ve un pop-up estirado sino una página de verdad, y de eso se
+     encarga `openMatch`. Acá quedó lo de siempre. */
+  function abrirCapa(){
+    document.body.classList.remove('pantalla-partido');
     $('#ov').classList.add('show');
-    document.body.style.overflow=entero?'':'hidden';
+    document.body.style.overflow='hidden';
   }
 
-  /* ── modal de partido ── */
-  let mTab='res', mData=null, mBase=null;
+  /* ── el partido ───────────────────────────────────────────────────────
+     Se dibuja igual en los dos lados, y lo único que cambia es dónde cae:
+
+       · desde adentro del sitio → en el pop-up, encima de lo que estabas
+         mirando, porque cerrarlo te tiene que devolver ahí
+       · entrando por el link → en la columna del medio de una página
+         normal, con el menú a la izquierda y la tabla del torneo a la
+         derecha, porque no hay nada atrás y una ventanita flotando sobre
+         un fondo vacío no es una página
+
+     Un solo dibujante para los dos: si fueran dos, el día que se agregue
+     algo al partido habría que acordarse de agregarlo dos veces.        */
+  let mTab='res', mData=null, mBase=null, dondeVaElPartido='#modalBox';
   // `d` es {t:'partido', id, slug}. `id` es el de 365scores, que es el que
   // sirve para pedir el detalle aunque no tengamos la lista cargada.
   async function openMatch(d){
@@ -3606,8 +3625,23 @@ const App=(()=>{
     const cg=S.clubGames||{};
     const igual=m=>m&&(String(m.liveId)===String(id)||String(m.id)===String(id));
     mBase=S.games.find(igual)||[cg.envivo,cg.ultimo,cg.proximo].find(igual)||null;
-    const frio=!mBase;     // se entró por el link, sin la lista atrás
-    abrirCapa(frio);
+
+    /* Pop-up o página. La pregunta no es si tenemos el partido a mano sino
+       si hay algo atrás: el que llegó por el link no tiene a dónde volver,
+       así que para él esto es una página y no una ventana. */
+    const comoPagina=!S.fondo;
+    if(comoPagina){
+      dondeVaElPartido='#matches';
+      cerrarCapa();
+      shell(false,'partido'); drawSide();
+      $('.tag').textContent='Partido';
+      $('#tabs').innerHTML='';
+      $('#right').innerHTML='<div class="skel"></div><div class="skel"></div>';
+    } else {
+      dondeVaElPartido='#modalBox';
+      abrirCapa(false);
+    }
+
     if(mBase){
       medir.evento('abrir_partido',{
         liga:S.liga,
@@ -3619,8 +3653,8 @@ const App=(()=>{
       // el detalle sale de 365scores; sólo existe para los de su ventana
       if(!mBase.liveId){ mData={sinDetalle:true}; return drawModal(mBase,false); }
     } else {
-      $('#modalBox').innerHTML=`<div class="mhead" style="padding:16px">
-        <div class="top"><span>Partido</span>${botonesModal()}</div></div>
+      $(dondeVaElPartido).innerHTML=`<div class="mhead" style="padding:16px">
+        <div class="top"><span>Partido</span>${comoPagina?'':botonesModal()}</div></div>
         <div class="mbody"><div class="skel"></div><div class="skel"></div>
         <div class="skel" style="width:60%"></div></div>`;
     }
@@ -3632,6 +3666,86 @@ const App=(()=>{
     mData=dato;
     if(!mBase) mBase=(dato&&dato.id)?dato:{home:{},away:{}};
     drawModal(current(),false);
+    if(comoPagina) panelDelTorneo(current());
+  }
+
+  /* ── La columna de la derecha en la página de un partido ──────────────
+
+     Qué se muestra depende de la competencia, que es lo que uno querría
+     saber estando ahí:
+
+       · Liga Profesional → su zona, y las pestañas de Anual y Promedios,
+         que son las tres tablas que importan en el Clausura
+       · otra liga        → su tabla de posiciones
+       · una copa         → la tabla del grupo, si está en fase de grupos;
+         si ya es eliminación directa no hay tabla que mostrar y se dice
+
+     En todas, los dos equipos del partido van resaltados: la tabla existe
+     para ubicarlos, no para leerla entera.                              */
+  async function panelDelTorneo(m){
+    const el=$('#right'); if(!el) return;
+    const lid=m&&m.liga;
+    if(!lid){ el.innerHTML=''; $('#tabs').innerHTML=''; return; }
+    const nombres=[m.home&&(m.home.canon||m.home.name),
+                   m.away&&(m.away.canon||m.away.name)].filter(Boolean);
+    try{
+      if(lid==='lpf'){
+        const [st,an,pr]=await Promise.all([
+          get('/api/standings').catch(()=>null),
+          get('/api/annual').catch(()=>null),
+          get('/api/promedios').catch(()=>null)]);
+        S.standings=st||S.standings; S.annual=an||S.annual;
+        S.promedios=pr||S.promedios;
+        S.destacar=nombres;
+        // la zona donde juegan, no la primera de la lista
+        const z=(st&&st.zones||[]).find(x=>(x.rows||[]).some(
+          r=>nombres.some(n=>mismoNombre(n,r.canon||r.team.name))));
+        S.tab=z?(z.name.endsWith('B')?'B':'A'):'A';
+        $('#tabs').innerHTML=[['A','Zona A'],['B','Zona B'],['anual','Anual'],
+                              ['prom','Promedios']]
+          .map(([k,n])=>`<button data-t="${k}" class="${S.tab===k?'on':''}"
+             onclick="App.tab('${k}')">${n}</button>`).join('');
+        return drawRight();
+      }
+      const d=await get('/api/liga?id='+encodeURIComponent(lid));
+      S.destacar=nombres;
+      const zonas=d.zonas||[];
+      const z=zonas.find(x=>(x.rows||x.filas||[]).some(
+        r=>nombres.some(n=>mismoNombre(n,r.canon||(r.team||{}).name))))||zonas[0];
+      $('#tabs').innerHTML='';
+      el.innerHTML=z
+        ? `<div class="cuadro-et" style="padding:12px 14px 0">${esc(z.name||z.nombre||d.nombre||'')}</div>`
+          + tablaSimple(z.rows||z.filas||[],nombres)
+        : `<div class="empty" style="padding:26px 18px">
+             ${esc(d.nombre||'')} está en eliminación directa: no hay tabla de
+             posiciones para mostrar.</div>`;
+    }catch(e){
+      el.innerHTML='<div class="empty" style="padding:22px">No se pudo cargar la tabla.</div>';
+    }
+  }
+
+  // comparar nombres de club sin volverse loco con acentos y paréntesis
+  const mismoNombre=(a,b)=>claveClub(a)===claveClub(b);
+
+  /* Una tabla de posiciones al hueso, para el costado del partido. No usa
+     la de los torneos porque ésa trae franjas de colores por destino
+     —clasifica, desciende— que acá no vienen al caso y distraen de lo
+     único que importa: dónde están estos dos. */
+  function tablaSimple(filas,destacar){
+    if(!filas.length) return '<div class="empty" style="padding:22px">Sin tabla.</div>';
+    return `<div class="tablewrap"><table><thead><tr>
+      <th style="width:26px"></th><th class="l">Equipo</th>
+      <th>Pts</th><th>PJ</th><th>DIF</th></tr></thead><tbody>${
+      filas.map((r,i)=>{
+        const nom=r.canon||(r.team||{}).name||'';
+        const suyo=(destacar||[]).some(n=>mismoNombre(n,nom));
+        return `<tr style="${suyo?'background:rgba(47,111,237,.08);font-weight:700':''}">
+          <td class="pos">${r.pos??i+1}</td>
+          <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(nom)}</span></div></td>
+          <td class="pts">${r.pts??''}</td>
+          <td style="color:var(--txt2)">${r.pj??''}</td>
+          <td>${r.dif>0?'+':''}${r.dif??''}</td></tr>`;
+      }).join('')}</tbody></table></div>`;
   }
   const current=()=>(mData&&mData.id)?Object.assign({},mBase,mData):mBase;
 
@@ -4048,10 +4162,23 @@ const App=(()=>{
         ${col(lu.away,bc.away,fm.away,m.away.canon||m.away.name,conf.away!==false,real.away!==false)}</div>`;
     }
 
-    $('#modalBox').innerHTML=`
+    /* De qué torneo es. Estaba escrito a mano —"Clausura 2026"— y salía en
+       todos los partidos: un Bayern–Inter decía que era del Clausura. El
+       servidor ahora manda el torneo con el partido. La segunda parte
+       sigue siendo la fecha y la zona en la Liga Profesional, y la etapa
+       en las copas, que es lo que corresponde en cada caso. */
+    const dondeJuega=[
+      [m.ligaNombre, m.torneo].filter(Boolean).join(' ') || 'Partido',
+      m.round!=null ? 'Fecha '+m.round : '',
+      m.interzonal ? 'Interzonal'
+        : (m.zone!=null&&m.zone!=='' ? 'Zona '+m.zone
+          : (m.stage ? etapaCorta(m.stage) : '')),
+    ].filter(Boolean).join(' · ');
+
+    $(dondeVaElPartido).innerHTML=`
       <div class="mhead">
         <div class="top">
-          <span>Clausura 2026 · Fecha ${m.round??''} · ${m.interzonal?'Interzonal':'Zona '+(m.zone??'')}</span>
+          <span>${esc(dondeJuega)}</span>
           <span>${esc(fechaLarga)} · ${hhmm(m.start)} hs</span>
           ${botonesModal()}
         </div>

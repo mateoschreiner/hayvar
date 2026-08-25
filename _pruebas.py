@@ -1827,15 +1827,22 @@ chequear("el clic con ctrl, con command o con el del medio no se ataja",
 chequear("y el enlace no queda azul y subrayado adentro de la tabla",
          "a.match,a.brk,a.serie-p{display:block;color:inherit;text-decoration:none}" in HTML)
 
-# El que llega por el link no tiene nada atrás: el pop-up se despliega y
-# ocupa la página, pero abajo del encabezado, para que pueda seguir a otra
-# cosa desde ahí.
-chequear("el partido abierto en frío ocupa la página",
-         ".pantalla-partido .modal{max-width:720px;max-height:none" in HTML
-         and "inset:var(--enc,56px) 0 0 0" in HTML)
-chequear("y desde adentro de la página sigue siendo un pop-up",
-         "const frio=!mBase;" in HTML
-         and "abrirCapa(frio);" in HTML)
+# El que llega por el link no tiene nada atrás, así que el partido no es un
+# pop-up sobre nada: es una página, con el menú a la izquierda y la tabla
+# del torneo a la derecha.
+chequear("lo que decide es si hay algo atrás, no si tenemos el partido a mano",
+         "const comoPagina=!S.fondo;" in HTML)
+chequear("como página usa el armazón de tres columnas del resto del sitio",
+         "shell(false,'partido'); drawSide();" in HTML
+         and "(quiere==='club'||quiere==='partido') ? ''" in HTML)
+chequear("y el mismo dibujante sirve para el pop-up y para la página",
+         "let mTab='res', mData=null, mBase=null, dondeVaElPartido='#modalBox';" in HTML
+         and "$(dondeVaElPartido).innerHTML=`" in HTML)
+# Uno baja a leer los goles y el marcador se le iba de pantalla, que es
+# justo el dato que quiere tener a la vista todo el tiempo.
+chequear("el marcador queda fijo al desplazarse",
+         "#matches > .mhead{position:sticky;top:var(--enc,56px)" in HTML
+         and "#matches > .tabs{position:sticky" in HTML)
 
 # La ficha de un jugador abierta por el link llega sin el nombre: sólo con
 # el slug. El servidor tiene que poder devolver el nombre bien escrito.
@@ -1978,16 +1985,21 @@ console.log(JSON.stringify(salida));
     _frio = _correr("""
 loc.pathname='/partido/olimpia-vs-vasco-4798160';
 App.init();
-const entera=[...doc.body.classList._s].includes('pantalla-partido');
+// como página, el partido va en la columna del medio y el pop-up
+// queda sin usar; y el menú del costado tiene que estar dibujado
+const salida={enLaPagina: (doc.querySelector('#matches').innerHTML||'').includes('mhead'),
+              enElPopUp:  (doc.querySelector('#modalBox').innerHTML||'').includes('mhead'),
+              hayMenu:    (doc.querySelector('#side').innerHTML||'').includes('Liga Profesional')};
 App.closeModal();
-console.log(JSON.stringify({entera, alCerrar:loc.pathname,
-  quedoLimpio:[...doc.body.classList._s]}));
+salida.alCerrar=loc.pathname;
+console.log(JSON.stringify(salida));
 """)
-    chequear("entrando por el link, el partido ocupa la página",
-             _frio and _frio["entera"], _frio)
-    chequear("y cerrarlo lleva a la portada, no fuera del sitio",
-             _frio and _frio["alCerrar"] == "/" and not _frio["quedoLimpio"],
-             _frio)
+    chequear("entrando por el link, el partido se dibuja como página",
+             _frio and _frio["enLaPagina"] and not _frio["enElPopUp"], _frio)
+    chequear("y con el menú del sitio al costado",
+             _frio and _frio["hayMenu"], _frio)
+    chequear("cerrarlo lleva a la portada, no fuera del sitio",
+             _frio and _frio["alCerrar"] == "/", _frio)
 
     # Lo que de verdad demuestra que el recorte no rompió nada: hacer
     # navegar la versión aligerada y comprobar que da paso por paso lo
@@ -2025,11 +2037,11 @@ App.S.games=[{id:'a', liveId:4798160, home:{name:'Olimpia'}, away:{name:'Vasco'}
           status:'FIN', gh:1, ga:4}];
 App.openMatch('a');
 console.log(JSON.stringify({ruta:loc.pathname,
-  entera:[...doc.body.classList._s].includes('pantalla-partido')}));
+  enElPopUp: (doc.querySelector('#modalBox').innerHTML||'').includes('mhead')}));
 """)
     chequear("y desde adentro el mismo partido es un pop-up, no la página",
              _tibio and _tibio["ruta"] == "/partido/olimpia-vs-vasco-4798160"
-             and not _tibio["entera"], _tibio)
+             and _tibio["enElPopUp"], _tibio)
 else:
     print("  · sin node: el enrutador de la página no se probó")
 
@@ -2619,6 +2631,107 @@ chequear("y se puede probar sin encenderlo",
 chequear("si el aviso llega tarde, se reordena sin quedar dando vueltas",
          "if(S.liga==='home' && S.home && ordenarPortada(S.home.bloques))" in HTML
          and "loadHome();" in HTML)
+
+
+print("\n── la columna del torneo en la página de un partido ──")
+# El servidor tiene que decir de qué torneo es el partido: la página lo
+# necesita para saber qué tabla poner al costado, y el que entra por el
+# link no puede saberlo solo.
+server.almacen.guardar("tv:champions:5551111", ["ESPN"])
+chequear("el servidor sabe de qué torneo es un partido",
+         server.liga_de_partido("5551111") == "champions"
+         and server.liga_de_partido("999999") == ""
+         and server.liga_de_partido("") == "")
+chequear("y se lo manda a la página con el partido",
+         'out["liga"] = liga_id' in _SRV
+         and 'out["ligaNombre"]' in _SRV and 'out["torneo"]' in _SRV)
+# Y esto estaba mal desde antes: sin torneo, `api_match` daba "lpf" por
+# defecto, así que cada visita en frío a un partido de la Champions anotaba
+# a sus jugadores como si hubieran jugado en la Liga Profesional.
+chequear("y ya no se anota a cualquiera como jugador de Primera",
+         'liga_id = pedida if pedida in LIGAS else (liga_de_partido(str(gid)) or "lpf")'
+         in _SRV)
+chequear("la columna elige qué mostrar según la competencia",
+         "if(lid==='lpf'){" in HTML and "async function panelDelTorneo(m)" in HTML)
+chequear("en la Liga Profesional van la zona, el anual y los promedios",
+         "['anual','Anual'],\n                              ['prom','Promedios']" in HTML)
+chequear("y si es eliminación directa lo dice, en vez de mostrar una tabla vacía",
+         "está en eliminación directa" in HTML)
+chequear("los dos equipos del partido van resaltados en la tabla",
+         "const suyo=(destacar||[]).some(n=>mismoNombre(n,nom));" in HTML)
+# El encabezado decía "Clausura 2026" en todos los partidos, también en un
+# Bayern-Inter.
+chequear("el encabezado dice el torneo de verdad y no siempre el Clausura",
+         "const dondeJuega=[" in HTML
+         and "'Clausura 2026 · Fecha '" not in HTML
+         and "[m.ligaNombre, m.torneo].filter(Boolean).join(' ')" in HTML)
+
+# Y la prueba que vale: abrir el link de un partido de la Champions con el
+# navegador de mentira y mirar qué quedó dibujado en cada columna.
+if _sh.which("node"):
+    _pg = ("""
+process.on('unhandledRejection',()=>{});
+const eq=n=>({name:n, canon:n, logo:null, short:''});
+const RESP={
+ '/api/match': {id:4738312, liga:'champions', ligaNombre:'Champions League',
+   torneo:'Temporada 2026-27', stage:'Fase de liga', round:null, zone:null,
+   home:eq('Bayern'), away:eq('Inter'), gh:2, ga:1, status:'FIN',
+   start:'2026-08-24T21:00:00-03:00', events:[], stats:[],
+   lineups:{home:[],away:[]}, banco:{home:[],away:[]}},
+ '/api/liga': {id:'champions', nombre:'Champions League', zonas:[
+   {name:'Fase de liga', rows:[
+     {pos:1, team:eq('Inter'),  pts:9, pj:4, dif:5},
+     {pos:2, team:eq('Bayern'), pts:7, pj:4, dif:3},
+     {pos:3, team:eq('Arsenal'),pts:4, pj:4, dif:0}]}]}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).find(x=>u.startsWith(x));
+  if(!k) throw new Error('sin ruta');
+  return {ok:true, status:200, json:async()=>RESP[k]};
+};
+loc.pathname='/partido/bayern-vs-inter-4738312';
+App.init();
+(async()=>{
+  // se esperan unas vueltas del bucle para que terminen los pedidos; el
+  // setTimeout del DOM de mentira no sirve acá porque está anulado
+  for(let i=0;i<40;i++) await new Promise(r=>setImmediate(r));
+  const medio=doc.querySelector('#matches').innerHTML||'';
+  const der=doc.querySelector('#right').innerHTML||'';
+  const menu=doc.querySelector('#side').innerHTML||'';
+  const m=medio.match(/<span>([^<]*Champions[^<]*)<\\/span>/);
+  console.log(JSON.stringify({
+    encabezado: m?m[1].trim():'',
+    marcador: medio.includes('2 - 1'),
+    hayMenu: menu.includes('Liga Profesional'),
+    tabla: der.includes('Arsenal'),
+    resaltados: (der.match(/rgba\\(47,111,237,\\.08\\)/g)||[]).length}));
+})();
+""")
+    _g = (open(_DOMSITO, encoding="utf-8").read()
+          + "\nglobalThis.document=doc; globalThis.window=win;"
+            "\nglobalThis.location=loc; globalThis.history=historial;"
+            "\nglobalThis.localStorage=almacenLocal;"
+            "\nglobalThis.MutationObserver=MutationObserver;"
+            "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+            "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+          + _app.replace("const App=(()=>{", "App=(()=>{") + _pg)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_g); _rp = _f.name
+    _pp = _sub.run(["node", _rp], capture_output=True, text=True, timeout=60)
+    os.unlink(_rp)
+    _pag = json.loads(_pp.stdout) if _pp.returncode == 0 and _pp.stdout else None
+    chequear("la página de un partido se arma entera", _pag is not None,
+             _pp.stderr.strip().splitlines()[:2])
+    if _pag:
+        chequear("el encabezado dice de qué torneo y de qué etapa es",
+                 _pag["encabezado"] == "Champions League Temporada 2026-27 · Fase de liga",
+                 _pag["encabezado"])
+        chequear("el marcador está donde tiene que estar",
+                 _pag["marcador"] is True)
+        chequear("el menú del sitio queda a la izquierda", _pag["hayMenu"] is True)
+        chequear("y la tabla del torneo a la derecha", _pag["tabla"] is True)
+        chequear("con los dos equipos del partido resaltados",
+                 _pag["resaltados"] == 2, _pag["resaltados"])
 
 
 print("\n── \"lo que viene\" no es la lista de al lado otra vez ──")

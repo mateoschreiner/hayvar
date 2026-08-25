@@ -617,18 +617,18 @@ td.l{text-align:left;padding-left:8px}
 /* La fila de los dos equipos del partido, en la tabla del costado. Un
    fondo suave y negrita: se encuentra de un vistazo sin gritar. */
 tr.fila-destacada > td{background:rgba(47,111,237,.10);font-weight:700}
-.partido-pagina{background:var(--card);border:1px solid var(--line);
+.ficha-pagina{background:var(--card);border:1px solid var(--line);
   border-radius:12px;box-shadow:var(--shadow);margin-bottom:14px}
-.partido-pagina > .mhead{position:sticky;top:var(--enc,56px);z-index:5;
+.ficha-pagina > .mhead{position:sticky;top:var(--enc,56px);z-index:5;
   border-radius:11px 11px 0 0}
 /* Las pestañas se pegan justo abajo del marcador. La altura del marcador
    no es fija —cambia con el minuto en un partido en curso, y en el celular
    es otra— así que se mide y se guarda en --cab, en vez de clavar un
    número que iba a quedar mal en la mitad de los casos. */
-.partido-pagina > .tabs{position:sticky;
+.ficha-pagina > .tabs{position:sticky;
   top:calc(var(--enc,56px) + var(--cab,118px));z-index:4;
   background:var(--card);border-bottom:1px solid var(--line)}
-.partido-pagina > .mbody{overflow:visible;padding:14px;
+.ficha-pagina > .mbody{overflow:visible;padding:14px;
   border-radius:0 0 11px 11px}
 .mhead{background:var(--nav);color:#fff;padding:16px;flex:none}
 .modal>.tabs{flex:none;background:var(--card)}
@@ -1448,7 +1448,7 @@ const App=(()=>{
       <div class="shell">
         <aside id="side"></aside>
         <main>
-          ${(quiere==='club'||quiere==='partido') ? '' : quiere==='portada'
+          ${(quiere==='club'||quiere==='ficha') ? '' : quiere==='portada'
             ? `<div class="calbar">
                  <div class="calhead"><div class="mth" id="calMonth">—</div>
                    <div class="navs"><button onclick="App.homeWeek(-1)">‹</button>
@@ -1456,12 +1456,12 @@ const App=(()=>{
                      <button onclick="App.homeWeek(1)">›</button></div></div>
                  <div class="days" id="days"></div></div>`
             : `<div class="card"><div class="rounds" id="rounds"><span class="lb">Fecha</span></div></div>`}
-          ${quiere==='partido'
+          ${quiere==='ficha'
             /* El partido no va adentro de una caja: se arma la caja él
                mismo. Es por el `overflow:hidden` de .card, que anula el
                position:sticky de todo lo que tenga adentro — o sea que el
                marcador no se podía fijar mientras estuviera ahí dentro. */
-            ? `<div class="partido-pagina" id="matches"></div>`
+            ? `<div class="ficha-pagina" id="matches"></div>`
             : `<div class="card"><div id="matches"><div class="skel" style="width:55%"></div><div class="skel"></div><div class="skel" style="width:75%"></div></div></div>`}
         </main>
         <div>
@@ -3518,13 +3518,35 @@ const App=(()=>{
   // nombre y el equipo vienen cuando se entró desde adentro de la página;
   // si se abrió el link directo no están, y el servidor los resuelve solo
   // a partir del slug.
+  /* De "enzo-fernandez" a "Enzo Fernandez". Se usa mientras se espera la
+     respuesta del servidor: el nombre sale de la dirección, que va toda en
+     minúscula, y "enzo fernandez" en el título de una ficha se lee como un
+     error. Los acentos no están —una dirección no los lleva— y eso lo
+     arregla el servidor cuando contesta con el nombre de verdad. */
+  const nombreDeSlug=s=>String(s||'').split('-').filter(Boolean)
+    .map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(' ');
+
   async function openPlayer(d){
-    const nombre=d.nombre||d.slug.replace(/-/g,' '), equipo=d.equipo||'';
+    const nombre=d.nombre||nombreDeSlug(d.slug), equipo=d.equipo||'';
     const atletaId=d.atleta;
     medir.evento('ver_jugador',{liga:S.liga, jugador:nombre, equipo:equipo});
-    abrirCapa();
-    $('#modalBox').innerHTML=`<div class="mhead" style="padding:16px">
-      <div class="top"><span>Jugador</span>${botonesModal()}</div>
+
+    // Igual que el partido: si no hay nada atrás, esto es una página y no
+    // una ventana. Ver el comentario de `openMatch`.
+    const comoPagina=!S.fondo;
+    if(comoPagina){
+      dondeVaLaFicha='#matches';
+      cerrarCapa();
+      shell(false,'ficha'); drawSide();
+      $('.tag').textContent='Jugador';
+      $('#tabs').innerHTML='';
+      $('#right').innerHTML='<div class="skel"></div><div class="skel"></div>';
+    } else {
+      dondeVaLaFicha='#modalBox';
+      abrirCapa();
+    }
+    $(dondeVaLaFicha).innerHTML=`<div class="mhead" style="padding:16px">
+      <div class="top"><span>Jugador</span>${comoPagina?'':botonesModal()}</div>
       <b style="font-size:17px">${esc(nombre)}</b></div>
       <div class="mbody"><div class="skel"></div><div class="skel"></div></div>`;
     let p;
@@ -3540,10 +3562,10 @@ const App=(()=>{
 
     const tipos=[['De jugada',p.jugada],['De cabeza',p.cabeza],['De tiro libre',p.tiroLibre],['De penal',p.pens]];
     const total=p.goals||0;
-    $('#modalBox').innerHTML=`
+    $(dondeVaLaFicha).innerHTML=`
       <div class="mhead" style="padding:16px">
         <div class="top"><span>Ficha de jugador</span>
-          ${botonesModal()}</div>
+          ${comoPagina?'':botonesModal()}</div>
         <div style="display:flex;align-items:center;gap:14px">
           ${p.foto?`<img src="${esc(p.foto)}" alt="" style="width:56px;height:56px;border-radius:50%;
              object-fit:cover;background:rgba(255,255,255,.12)" onerror="this.remove()">`:''}
@@ -3592,6 +3614,7 @@ const App=(()=>{
         </div>
 `}
       </div>`;
+    if(comoPagina){ medirCabecera(); panelDelJugador(p); }
   }
 
   function drawRight(){
@@ -3651,7 +3674,7 @@ const App=(()=>{
 
      Un solo dibujante para los dos: si fueran dos, el día que se agregue
      algo al partido habría que acordarse de agregarlo dos veces.        */
-  let mTab='res', mData=null, mBase=null, dondeVaElPartido='#modalBox';
+  let mTab='res', mData=null, mBase=null, dondeVaLaFicha='#modalBox';
   // `d` es {t:'partido', id, slug}. `id` es el de 365scores, que es el que
   // sirve para pedir el detalle aunque no tengamos la lista cargada.
   async function openMatch(d){
@@ -3668,14 +3691,14 @@ const App=(()=>{
        así que para él esto es una página y no una ventana. */
     const comoPagina=!S.fondo;
     if(comoPagina){
-      dondeVaElPartido='#matches';
+      dondeVaLaFicha='#matches';
       cerrarCapa();
-      shell(false,'partido'); drawSide();
+      shell(false,'ficha'); drawSide();
       $('.tag').textContent='Partido';
       $('#tabs').innerHTML='';
       $('#right').innerHTML='<div class="skel"></div><div class="skel"></div>';
     } else {
-      dondeVaElPartido='#modalBox';
+      dondeVaLaFicha='#modalBox';
       abrirCapa(false);
     }
 
@@ -3690,7 +3713,7 @@ const App=(()=>{
       // el detalle sale de 365scores; sólo existe para los de su ventana
       if(!mBase.liveId){ mData={sinDetalle:true}; return drawModal(mBase,false); }
     } else {
-      $(dondeVaElPartido).innerHTML=`<div class="mhead" style="padding:16px">
+      $(dondeVaLaFicha).innerHTML=`<div class="mhead" style="padding:16px">
         <div class="top"><span>Partido</span>${comoPagina?'':botonesModal()}</div></div>
         <div class="mbody"><div class="skel"></div><div class="skel"></div>
         <div class="skel" style="width:60%"></div></div>`;
@@ -3711,7 +3734,7 @@ const App=(()=>{
      el celular es otro. Se mide y se sigue midiendo. */
   let observaCab=null;
   function medirCabecera(){
-    const cab=document.querySelector('.partido-pagina > .mhead');
+    const cab=document.querySelector(".ficha-pagina > .mhead");
     if(!cab) return;
     const poner=()=>document.documentElement.style
       .setProperty('--cab', cab.offsetHeight+'px');
@@ -3721,6 +3744,65 @@ const App=(()=>{
       observaCab=new ResizeObserver(poner);
       observaCab.observe(cab);
     }
+  }
+
+  /* ── La columna de la derecha en la página de un jugador ──────────────
+
+     La misma idea que en el partido: al costado va la tabla donde uno lo
+     buscaría, con él marcado.
+
+       · si convirtió → la de goleadores del torneo, que es donde importa
+       · si no        → la de posiciones, con su club marcado
+
+     Un defensor sin goles en la tabla de goleadores no dice nada; su club
+     en la tabla, sí.                                                    */
+  async function panelDelJugador(p){
+    const el=$('#right'); if(!el) return;
+    const lid=p&&p.liga;
+    $('#tabs').innerHTML='';
+    if(!lid){ el.innerHTML=''; return; }
+    try{
+      if(p.rank){
+        const d=lid==='lpf' ? await get('/api/scorers')
+                            : await get('/api/liga?id='+encodeURIComponent(lid));
+        const filas=d.rows||d.goleadores||[];
+        S.destacar=[p.name];
+        el.innerHTML=`<div class="cuadro-et" style="padding:12px 14px 0">Goleadores</div>`
+          + tablaGoleadores(filas,[p.name]);
+        return;
+      }
+      // sin goles: su club en la tabla del torneo
+      const club=p.team;
+      if(!club){ el.innerHTML=''; return; }
+      const d=lid==='lpf' ? await get('/api/standings')
+                          : await get('/api/liga?id='+encodeURIComponent(lid));
+      const zonas=d.zones||d.zonas||[];
+      const z=zonas.find(x=>(x.rows||x.filas||[]).some(
+        r=>mismoNombre(club,r.canon||(r.team||{}).name)))||zonas[0];
+      S.destacar=[club];
+      el.innerHTML=z
+        ? `<div class="cuadro-et" style="padding:12px 14px 0">${esc(z.name||z.nombre||'')}</div>`
+          + tablaSimple(z.rows||z.filas||[],[club])
+        : '';
+    }catch(e){
+      el.innerHTML='<div class="empty" style="padding:22px">No se pudo cargar la tabla.</div>';
+    }
+  }
+
+  function tablaGoleadores(filas,destacar){
+    if(!filas.length) return '<div class="empty" style="padding:22px">Todavía no hay tabla de goleadores.</div>';
+    return `<div class="tablewrap"><table><thead><tr>
+      <th style="width:26px"></th><th class="l">Jugador</th><th>Goles</th>
+      </tr></thead><tbody>${filas.slice(0,25).map((r,i)=>{
+        const suyo=(destacar||[]).some(n=>mismoNombre(n,r.name));
+        return `<tr class="${suyo?'fila-destacada':''}">
+          <td class="pos">${r.rank??i+1}</td>
+          <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">
+            <b style="font-weight:600">${esc(r.name)}</b>
+            <span style="color:var(--txt2);font-size:11px;display:block;line-height:1.1">${esc((r.team||{}).name||'')}</span>
+          </span></div></td>
+          <td class="pts">${r.goals}</td></tr>`;
+      }).join('')}</tbody></table></div>`;
   }
 
   /* ── La columna de la derecha en la página de un partido ──────────────
@@ -3793,7 +3875,7 @@ const App=(()=>{
       filas.map((r,i)=>{
         const nom=r.canon||(r.team||{}).name||'';
         const suyo=(destacar||[]).some(n=>mismoNombre(n,nom));
-        return `<tr style="${suyo?'background:rgba(47,111,237,.08);font-weight:700':''}">
+        return `<tr class="${suyo?'fila-destacada':''}">
           <td class="pos">${r.pos??i+1}</td>
           <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(nom)}</span></div></td>
           <td class="pts">${r.pts??''}</td>
@@ -4229,7 +4311,7 @@ const App=(()=>{
           : (m.stage ? etapaCorta(m.stage) : '')),
     ].filter(Boolean).join(' · ');
 
-    $(dondeVaElPartido).innerHTML=`
+    $(dondeVaLaFicha).innerHTML=`
       <div class="mhead">
         <div class="top">
           <span>${esc(dondeJuega)}</span>

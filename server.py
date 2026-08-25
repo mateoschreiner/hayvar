@@ -3433,7 +3433,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la página del partido: marcador fijo, pestañas que responden y los dos equipos marcados en la tabla"
+VERSION_APP = "2026-08-25 · la ficha del jugador también es una página: menú al costado, la tabla donde uno lo buscaría y el nombre bien escrito"
 
 
 def reparar_recorridos():
@@ -6006,7 +6006,11 @@ def _nombre_de_slug(slug, lid):
                 return v["nombre"]
     except Exception:
         pass
-    return slug.replace("-", " ")
+    # No lo conocemos: se arma el nombre desde la dirección. Va con las
+    # iniciales en mayúscula, que es como se escribe el nombre de una
+    # persona; sin esto la ficha decía "enzo fernandez", todo junto y en
+    # minúscula, que se lee como un error y no como un nombre.
+    return " ".join(p.capitalize() for p in slug.split("-") if p)
 
 
 def liga_del_jugador(nombre, pedida=None):

@@ -1273,9 +1273,11 @@ chequear("cerrar un pop-up con dirección propia también vuelve",
          "if(S.modal) return api.volverModal();" in HTML)
 chequear("el botón de volver aparece sólo si hay a dónde volver",
          "const botonesModal=()=>`${S.pasos>0" in HTML)
+# Las fichas que son también página escriben `${comoPagina?'':botonesModal()}`:
+# de página no llevan cruz ni "‹", porque para eso está el navegador.
 chequear("ninguna cruz quedó suelta fuera del botón compartido",
          'class="x" onclick="App.closeModal()">×' not in HTML
-         and HTML.count("${botonesModal()}") >= 5)
+         and HTML.count("botonesModal()}") >= 5)
 # El encabezado no se pega con `sticky` sino que se arma en tres piezas y el
 # unico que se desplaza es el cuerpo. Con sticky se declaraba fijo y no lo
 # era: la cancha de las formaciones se le asomaba por arriba.
@@ -1296,7 +1298,7 @@ chequear("el pop-up sigue sin depender de sticky",
                  or l.strip().startswith(".mbody") for l in _STICKY),
          _STICKY)
 chequear("y lo único que se fija en el partido es su página",
-         sum(1 for l in _STICKY if ".partido-pagina" in l) == 2, _STICKY)
+         sum(1 for l in _STICKY if ".ficha-pagina" in l) == 2, _STICKY)
 # La barra lateral arrancaba catorce pixeles mas abajo que las otras dos
 # columnas: el encabezado mide 56 sin la barrita de estado y 84 con ella, y
 # el tope estaba clavado en 84.
@@ -1843,11 +1845,11 @@ chequear("y el enlace no queda azul y subrayado adentro de la tabla",
 chequear("lo que decide es si hay algo atrás, no si tenemos el partido a mano",
          "const comoPagina=!S.fondo;" in HTML)
 chequear("como página usa el armazón de tres columnas del resto del sitio",
-         "shell(false,'partido'); drawSide();" in HTML
-         and "(quiere==='club'||quiere==='partido') ? ''" in HTML)
+         "shell(false,'ficha'); drawSide();" in HTML
+         and "(quiere==='club'||quiere==='ficha') ? ''" in HTML)
 chequear("y el mismo dibujante sirve para el pop-up y para la página",
-         "let mTab='res', mData=null, mBase=null, dondeVaElPartido='#modalBox';" in HTML
-         and "$(dondeVaElPartido).innerHTML=`" in HTML)
+         "let mTab='res', mData=null, mBase=null, dondeVaLaFicha='#modalBox';" in HTML
+         and "$(dondeVaLaFicha).innerHTML=`" in HTML)
 # Uno baja a leer los goles y el marcador se le iba de pantalla, que es
 # justo el dato que quiere tener a la vista todo el tiempo.
 # El marcador no se fijaba, y el motivo no era la regla de sticky sino que
@@ -1855,11 +1857,11 @@ chequear("y el mismo dibujante sirve para el pop-up y para la página",
 # Por eso el partido no va adentro de una caja: se arma la suya.
 chequear("el partido no va adentro de .card, que anularía el fijado",
          ".card{" in HTML and "overflow:hidden" in HTML
-         and "? `<div class=\"partido-pagina\" id=\"matches\"></div>`" in HTML
-         and ".partido-pagina{background:var(--card)" in HTML)
+         and "? `<div class=\"ficha-pagina\" id=\"matches\"></div>`" in HTML
+         and ".ficha-pagina{background:var(--card)" in HTML)
 chequear("el marcador y las pestañas quedan fijos al desplazarse",
-         ".partido-pagina > .mhead{position:sticky;top:var(--enc,56px)" in HTML
-         and ".partido-pagina > .tabs{position:sticky" in HTML)
+         ".ficha-pagina > .mhead{position:sticky;top:var(--enc,56px)" in HTML
+         and ".ficha-pagina > .tabs{position:sticky" in HTML)
 # La altura del marcador no es fija: cambia con el minuto en un partido en
 # curso y en el celular es otra. Se mide en vez de clavar un número.
 chequear("y las pestañas se pegan a la altura de verdad del marcador",
@@ -1872,7 +1874,13 @@ chequear("y las pestañas se pegan a la altura de verdad del marcador",
 server.almacen.guardar("jugidx:lpf", None)
 _real = server._nombre_de_slug("no-existe-nadie", "lpf")
 chequear("un slug desconocido igual sirve para buscar",
-         _real == "no existe nadie", _real)
+         server.norm(_real) == "no existe nadie", _real)
+# Y se lee como un nombre: "enzo fernandez" en el título de una ficha
+# parece un error de la página, no el nombre de una persona.
+chequear("y se escribe con las iniciales en mayúscula",
+         _real == "No Existe Nadie"
+         and server._nombre_de_slug("enzo-fernandez", "lpf") == "Enzo Fernandez",
+         _real)
 chequear("y api_atleta acepta el slug de la dirección",
          "slug = (q.get(\"slug\") or [\"\"])[0].strip()" in _SRV)
 
@@ -2726,7 +2734,7 @@ App.init();
     marcador: medio.includes('2 - 1'),
     hayMenu: menu.includes('Liga Profesional'),
     tabla: der.includes('Arsenal'),
-    resaltados: (der.match(/rgba\\(47,111,237,\\.08\\)/g)||[]).length}));
+    resaltados: (der.match(/fila-destacada/g)||[]).length}));
 })();
 """)
     _g = (open(_DOMSITO, encoding="utf-8").read()
@@ -2885,6 +2893,81 @@ const esperar=async()=>{ for(let i=0;i<30;i++) await new Promise(r=>setImmediate
                  _lp["prom"] and _lp["promMarca"], _lp)
         chequear("y en la zona donde no juegan no marca a nadie",
                  _lp["zonaB"] and _lp["zonaBsinMarca"], _lp)
+
+    # La ficha de un jugador, con la misma idea: página cuando se llega por
+    # el link, y al costado la tabla donde uno lo buscaría.
+    def _jugador(quien, ruta):
+        _js = ("""
+process.on('unhandledRejection',()=>{});
+const eq=n=>({name:n, canon:n, logo:null, short:''});
+const fila=(pos,n)=>({pos, canon:n, team:eq(n), pts:10-pos, pj:6, g:3, e:1,
+  p:2, gf:8, gc:6, dif:2, form:['G'], live:false});
+const RESP={
+ '/api/atleta': %s,
+ '/api/scorers': {rows:[
+   {rank:1, name:'Adrián Martínez', team:eq('Racing'), goals:9},
+   {rank:2, name:'Enzo Fernandez',  team:eq('River Plate'), goals:7}]},
+ '/api/standings': {zones:[{name:'Zona A', rows:[fila(1,'Instituto'),
+   fila(7,'River Plate')]}]},
+ '/api/ligas':{ligas:[]}, '/api/clubes':{clubes:[]}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).find(x=>u.startsWith(x));
+  if(!k) throw new Error('sin ruta');
+  return {ok:true, status:200, json:async()=>RESP[k]};
+};
+loc.pathname='%s';
+App.init();
+(async()=>{
+  for(let i=0;i<60;i++) await new Promise(r=>setImmediate(r));
+  const medio=doc.querySelector('#matches').innerHTML||'';
+  const der=doc.querySelector('#right').innerHTML||'';
+  console.log(JSON.stringify({
+    enLaPagina: medio.includes('Ficha de jugador'),
+    enElPopUp: (doc.querySelector('#modalBox').innerHTML||'').includes('Ficha'),
+    hayMenu: (doc.querySelector('#side').innerHTML||'').includes('Liga Profesional'),
+    panel: der.includes('Goleadores') ? 'goleadores'
+         : der.includes('Zona A') ? 'posiciones' : '',
+    marcados: (der.match(/fila-destacada/g)||[]).length}));
+})();
+""" % (quien, ruta))
+        _gg = (open(_DOMSITO, encoding="utf-8").read()
+               + "\nglobalThis.document=doc; globalThis.window=win;"
+                 "\nglobalThis.location=loc; globalThis.history=historial;"
+                 "\nglobalThis.localStorage=almacenLocal;"
+                 "\nglobalThis.MutationObserver=MutationObserver;"
+                 "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+                 "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+               + _app.replace("const App=(()=>{", "App=(()=>{") + _js)
+        with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as _f:
+            _f.write(_gg); _rj = _f.name
+        _pj2 = _sub.run(["node", _rj], capture_output=True, text=True, timeout=60)
+        os.unlink(_rj)
+        return json.loads(_pj2.stdout) if _pj2.returncode == 0 and _pj2.stdout else None
+
+    _gol = _jugador("{name:'Enzo Fernandez', liga:'lpf', team:'River Plate',"
+                    " goals:7, rank:2, pj:12, carrera:[], transfermarkt:'http://x'}",
+                    "/jugador/enzo-fernandez")
+    _def = _jugador("{name:'Marcos Rojo', liga:'lpf', team:'River Plate',"
+                    " pj:12, carrera:[], transfermarkt:'http://x'}",
+                    "/jugador/marcos-rojo")
+    chequear("la ficha de un jugador también se arma como página",
+             _gol and _gol["enLaPagina"] and not _gol["enElPopUp"]
+             and _gol["hayMenu"], _gol)
+    chequear("al goleador se le pone la tabla de goleadores, con él marcado",
+             _gol and _gol["panel"] == "goleadores" and _gol["marcados"] == 1,
+             _gol)
+    # Un defensor sin goles en la tabla de goleadores no dice nada; su club
+    # en la tabla de posiciones, sí.
+    chequear("y al que no convirtió, la de posiciones con su club marcado",
+             _def and _def["panel"] == "posiciones" and _def["marcados"] == 1,
+             _def)
+# La página también arma el nombre desde la dirección mientras espera la
+# respuesta, así que tiene que escribirlo igual que el servidor.
+chequear("y la página lo escribe igual mientras espera la respuesta",
+         "const nombreDeSlug=s=>" in HTML
+         and "p.charAt(0).toUpperCase()+p.slice(1)" in HTML
+         and "d.nombre||nombreDeSlug(d.slug)" in HTML)
 
 
 print("\n── \"lo que viene\" no es la lista de al lado otra vez ──")

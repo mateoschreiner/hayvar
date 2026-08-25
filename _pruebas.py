@@ -4349,6 +4349,145 @@ chequear("el almacén presta su conexión en vez de abrir otra",
          and "with almacen.conexion() as c:" in open(
              os.path.join(AQUI, "tablas.py"), encoding="utf-8").read())
 
+print("\n── las formaciones y las estadísticas, de los diez que se miran ──")
+# El detalle de cada partido ya se pide para buscarle los goles, y hasta
+# ahora lo único que se sacaba de ahí eran los goles. Las formaciones y las
+# estadísticas vienen en el mismo paquete: sacarlas no cuesta un pedido más.
+chequear("son los diez torneos elegidos, ni uno más",
+         sorted(server.LIGAS_EN_DETALLE) ==
+         sorted(["lpf", "ca", "lib", "sud", "champions", "europa",
+                 "laliga", "premier", "seriea", "bundesliga"]),
+         server.LIGAS_EN_DETALLE)
+# Los que quedan afuera son los de ascenso y el femenino: son treinta filas
+# por partido y cuatro mil partidos por temporada.
+chequear("y los que quedan afuera quedan afuera",
+         not (set(server.LIGAS_EN_DETALLE)
+              & {"nacional", "pbm", "fa", "fem"}))
+chequear("se sacan del partido que ya está abierto, sin pedir de nuevo",
+         "anotar_formacion(liga, game_id, g)" in _SRV
+         and "fetch(" not in _SRV.split("def anotar_formacion")[1]
+                                 .split("\ndef ")[0])
+
+_guion5 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import server, tablas
+
+    def m(i, st, pos, dor, rank=None, stats=None, x=None, y=None):
+        d = {"id": i, "status": st, "jerseyNumber": dor,
+             "position": {"name": pos}, "ranking": rank,
+             "yardFormation": {"fieldSide": x, "fieldLine": y}}
+        if stats:
+            d["stats"] = [{"name": k, "value": v} for k, v in stats.items()]
+        return d
+
+    G = {"game": {"id": 99, "statusText": "Finalizado",
+        "gameTimeAndStatusDisplayType": 2, "startTime": "2026-08-25T20:00:00",
+        "members": [{"id": 10, "name": "Sergio Romero"},
+                    {"id": 11, "name": "Marcos Rojo"},
+                    {"id": 12, "name": "Miguel Merentiel"},
+                    {"id": 13, "name": "Suplente Uno"},
+                    {"id": 14, "name": "Miguel Russo"},
+                    {"id": 20, "name": "Franco Armani"}],
+        "homeCompetitor": {"id": 1, "name": "Boca Juniors", "score": 2,
+          "lineups": {"formation": "4-3-3", "members": [
+            m(10, 1, "Arquero", 1, 7.2, {"Atajadas": "4", "Toques": "31"}, 50, 5),
+            m(11, 1, "Defensor central", 6, 6.8, {"Despejes": "7"}, 35, 20),
+            m(12, 1, "Centrodelantero", 9, 8.1, {"Goles": "2", "Remates": "5"}, 50, 85),
+            m(13, 2, "Volante central", 23),
+            m(14, None, "", -1)]}},
+        "awayCompetitor": {"id": 2, "name": "River Plate", "score": 1,
+          "lineups": {"formation": "4-4-2", "members": [
+            m(20, 1, "Arquero", 1, 6.5, {"Atajadas": "2"}, 50, 5)]}},
+        "events": [], "tvNetworks": []}}
+
+    class F:
+        def read(self): return json.dumps(G).encode()
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    n = [0]
+    server.urlopen = lambda req, timeout=None: (n.__setitem__(0, n[0] + 1), F())[1]
+
+    server.detalle_liviano("99", en_juego=False, liga="lpf")
+    pedidos = n[0]
+    e1 = tablas.estado()
+    once = tablas.once_de(99, "h")
+    # volver a pasar el mismo partido no puede duplicar nada
+    server.detalle_liviano("99", en_juego=False, liga="lpf")
+    e2 = tablas.estado()
+    # y uno de un torneo que no está en la lista
+    G["game"]["id"] = 100
+    server.detalle_liviano("100", en_juego=False, liga="fa")
+    e3 = tablas.estado()
+
+    print(json.dumps({
+        "pedidos": pedidos,
+        "formaciones": e1["formaciones"], "conDibujo": e1["conFormacion"],
+        "estadisticas": e1["estadisticas"],
+        "dibujo": once["dibujo"], "confirmada": once["confirmada"],
+        "roles": [(p["jugador"], p["rol"], p["puesto"], p["dorsal"],
+                   p["puntaje"]) for p in once["gente"]],
+        "trasRepetir": [e2["formaciones"], e2["estadisticas"]],
+        "trasElDeAfuera": [e3["formaciones"], e3["estadisticas"]],
+        "comoJuega": tablas.como_juega("Miguel Merentiel"),
+        "remates": tablas.promedio_de("Miguel Merentiel", "remates"),
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion5); _gp7 = _f.name
+_db5 = os.path.join(_tp2.gettempdir(), "hayvar_form_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db5 + _ext):
+        os.unlink(_db5 + _ext)
+_pf2 = _sb2.run([sys.executable, _gp7, _db5, AQUI],
+                capture_output=True, text=True, timeout=120)
+os.unlink(_gp7)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db5 + _ext):
+        os.unlink(_db5 + _ext)
+_fo = None
+for _linea in _pf2.stdout.splitlines():
+    if _linea.startswith("{"):
+        _fo = json.loads(_linea)
+chequear("la extracción corre entera", _fo is not None,
+         (_pf2.stdout[-200:], _pf2.stderr[-400:]))
+if _fo:
+    # Lo importante: el mismo pedido de siempre. Si esto costara uno más,
+    # multiplicaría la cuenta de la fuente por dos.
+    chequear("no cuesta ni un pedido más a la fuente", _fo["pedidos"] == 1,
+             _fo["pedidos"])
+    chequear("queda el dibujo de cada equipo",
+             _fo["dibujo"] == "4-3-3" and _fo["conDibujo"] == 1, _fo)
+    # Cinco de Boca y uno de River. El técnico también: 365scores le pone
+    # el dorsal -1 y es parte de la formación.
+    chequear("y quién estuvo, con su rol y su puesto",
+             _fo["formaciones"] == 6, _fo["formaciones"])
+    chequear("el titular, el suplente y el técnico se distinguen",
+             [r[1] for r in _fo["roles"]] ==
+             ["titular", "titular", "titular", "suplente", "dt"], _fo["roles"])
+    # Con cuatro titulares de once, la formación no está confirmada: la
+    # fuente manda el plantel entero hasta poco antes del partido.
+    chequear("y una formación a medias no se da por confirmada",
+             _fo["confirmada"] is False)
+    chequear("las estadísticas quedan una por fila",
+             _fo["estadisticas"] == 6, _fo["estadisticas"])
+    chequear("volver a pasar el mismo partido no duplica nada",
+             _fo["trasRepetir"] == [6, 6], _fo["trasRepetir"])
+    # La regla que pidió Mateo: sólo los diez torneos que se miran.
+    chequear("y un torneo que no está en la lista no deja nada",
+             _fo["trasElDeAfuera"] == [6, 6], _fo["trasElDeAfuera"])
+    # De qué juega alguien sale de sus formaciones, no de su ficha: la
+    # ficha dice un puesto solo aunque haya jugado en tres.
+    chequear("se puede preguntar de qué juega alguien",
+             _fo["comoJuega"] == [{"puesto": "Centrodelantero",
+                                   "rol": "titular", "veces": 1,
+                                   "puntaje": 8.1}], _fo["comoJuega"])
+    chequear("y cuánto promedia en una estadística",
+             _fo["remates"]["promedio"] == 5 and _fo["remates"]["partidos"] == 1,
+             _fo["remates"])
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

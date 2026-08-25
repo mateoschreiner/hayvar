@@ -389,6 +389,9 @@ function tablaDePartidos(base){
     ${caja('ok', 'Quién jugó qué', miles(t.participaciones || 0),
            `${miles(t.jugadores || 0)} jugadores · ${miles(t.goles || 0)} goles
             con autor y minuto`)}
+    ${caja('ok', 'Formaciones', miles(t.conFormacion || 0),
+           `partidos con el once y el dibujo · ${miles(t.formaciones || 0)}
+            jugadores · ${miles(t.estadisticas || 0)} estadísticas`)}
     ${caja('ok', 'Leídos de los bloques', miles((c || {}).leidos || 0),
       (c || {}).leidos && (c || {}).leidos !== t.filas
         ? `${miles(((c || {}).leidos || 0) - t.partidos)} repetidos, unificados`

@@ -116,6 +116,55 @@ CREATE TABLE IF NOT EXISTS goles (
 );
 CREATE INDEX IF NOT EXISTS ix_goles_jugador ON goles(jugador);
 CREATE INDEX IF NOT EXISTS ix_goles_partido ON goles(partido);
+
+-- El dibujo de cada equipo en cada partido: "4-3-3". Va aparte y no en la
+-- tabla de partidos porque son dos por partido, uno por lado.
+CREATE TABLE IF NOT EXISTS alineaciones (
+    partido    INTEGER NOT NULL,
+    lado       TEXT    NOT NULL,          -- h o a
+    equipo     TEXT,
+    dibujo     TEXT,
+    confirmada INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (partido, lado)
+);
+
+-- Quién estuvo en cada partido y cómo: titular, en el banco o dirigiendo,
+-- en qué puesto, con qué número y dónde paraba en la cancha.
+--
+-- Es distinto de `participaciones`, que dice nada más si jugó: eso se sabe
+-- de todos los torneos y esto sólo de los diez que valen la pena guardar
+-- en detalle. Se separan para que la carrera de un jugador siga estando
+-- completa aunque su formación en el Federal A no se guarde.
+CREATE TABLE IF NOT EXISTS formaciones (
+    partido  INTEGER NOT NULL,
+    jugador  TEXT    NOT NULL,
+    equipo   TEXT,
+    lado     TEXT,
+    rol      TEXT,                        -- titular, suplente o dt
+    puesto   TEXT,
+    dorsal   INTEGER,
+    puntaje  REAL,
+    x        REAL,
+    y        REAL,
+    PRIMARY KEY (partido, jugador)
+);
+CREATE INDEX IF NOT EXISTS ix_form_jugador ON formaciones(jugador);
+CREATE INDEX IF NOT EXISTS ix_form_partido ON formaciones(partido);
+
+-- Las estadísticas de un jugador en un partido, una por fila.
+--
+-- Van así y no como columnas porque la fuente publica unas cuarenta
+-- distintas y no las mismas para todos: un arquero tiene atajadas y un
+-- delantero no. Con columnas, cada estadística nueva sería una migración;
+-- así, entra sola.
+CREATE TABLE IF NOT EXISTS estadisticas (
+    partido  INTEGER NOT NULL,
+    jugador  TEXT    NOT NULL,
+    clave    TEXT    NOT NULL,
+    valor    REAL,
+    PRIMARY KEY (partido, jugador, clave)
+);
+CREATE INDEX IF NOT EXISTS ix_est_jugador ON estadisticas(jugador, clave);
 """
 
 _CAMPOS = ("id", "liga", "comp", "principal", "temporada", "ronda", "etapa",
@@ -217,6 +266,51 @@ def guardar_goles(filas):
         return 0
 
 
+def _meter(tabla, columnas, filas):
+    """Mete filas pisando lo que hubiera con la misma clave."""
+    if not filas:
+        return 0
+    sql = ("INSERT OR REPLACE INTO %s (%s) VALUES (%s)"
+           % (tabla, ",".join(columnas), ",".join("?" * len(columnas))))
+    try:
+        with almacen.conexion() as c:
+            c.executemany(sql, filas)
+            c.commit()
+        return len(filas)
+    except sqlite3.Error:
+        return 0
+
+
+def guardar_formacion(partido, lados, gente, stats=()):
+    """
+    Todo lo de un partido de una vez: el dibujo de cada equipo, quién estuvo
+    y con qué rol, y las estadísticas de cada uno.
+
+    Se escribe entero o no se escribe: si a mitad de camino algo falla, es
+    preferible que el partido quede sin formación a que quede a medias y
+    parezca completa.
+
+      lados  (lado, equipo, dibujo, confirmada)
+      gente  (jugador, equipo, lado, rol, puesto, dorsal, puntaje, x, y)
+      stats  (jugador, clave, valor)
+    """
+    if not partido:
+        return {"alineaciones": 0, "formaciones": 0, "estadisticas": 0}
+    p = int(partido)
+    return {
+        "alineaciones": _meter(
+            "alineaciones", ("partido", "lado", "equipo", "dibujo", "confirmada"),
+            [(p, l, e, d, 1 if c else 0) for l, e, d, c in lados if l]),
+        "formaciones": _meter(
+            "formaciones", ("partido", "jugador", "equipo", "lado", "rol",
+                            "puesto", "dorsal", "puntaje", "x", "y"),
+            [(p,) + tuple(f) for f in gente if f and f[0]]),
+        "estadisticas": _meter(
+            "estadisticas", ("partido", "jugador", "clave", "valor"),
+            [(p, j, k, v) for j, k, v in stats if j and k and v is not None]),
+    }
+
+
 def borrar_liga(liga):
     """Todos los partidos de un torneo. Para poder rearmarlo de cero."""
     try:
@@ -316,6 +410,52 @@ def goleadores(liga=None, temporada=None, tope=20):
     return _filas(sql, p)
 
 
+def como_juega(jugador, tope=60):
+    """
+    De qué jugó y cuántas veces, mirando sus formaciones. Es la respuesta a
+    "¿es lateral o volante?" que hasta ahora salía de la ficha del jugador,
+    que dice uno solo aunque haya jugado en tres puestos distintos.
+    """
+    return _filas(
+        "SELECT puesto, rol, COUNT(*) AS veces, AVG(puntaje) AS puntaje "
+        "  FROM formaciones WHERE jugador=? AND puesto IS NOT NULL "
+        " GROUP BY puesto, rol ORDER BY veces DESC LIMIT ?", (jugador, tope))
+
+
+def promedio_de(jugador, clave, liga=None, temporada=None):
+    """Cuánto promedia un jugador en una estadística, y en cuántos partidos."""
+    # El cruce con los partidos va sólo si hace falta acotar por torneo o
+    # temporada. Sin él, un partido cuyo detalle llegó antes que el
+    # calendario igual cuenta, que es lo correcto: la estadística existe.
+    acota = bool(liga) or temporada is not None
+    sql = ("SELECT AVG(e.valor) AS promedio, SUM(e.valor) AS total, "
+           "       COUNT(*) AS partidos FROM estadisticas e "
+           + ("JOIN partidos p ON p.id=e.partido " if acota else "")
+           + " WHERE e.jugador=? AND e.clave=?")
+    p = [jugador, clave]
+    if liga:
+        sql += " AND p.liga=?"
+        p.append(liga)
+    if temporada is not None:
+        sql += " AND p.temporada=?"
+        p.append(temporada)
+    f = _filas(sql, p)
+    return f[0] if f else {"promedio": None, "total": None, "partidos": 0}
+
+
+def once_de(partido, lado):
+    """El once de un equipo en un partido, con su dibujo."""
+    dib = _filas("SELECT dibujo, confirmada FROM alineaciones "
+                 " WHERE partido=? AND lado=?", (partido, lado))
+    return {"dibujo": dib[0]["dibujo"] if dib else None,
+            "confirmada": bool(dib[0]["confirmada"]) if dib else False,
+            "gente": _filas(
+                "SELECT jugador, rol, puesto, dorsal, puntaje, x, y "
+                "  FROM formaciones WHERE partido=? AND lado=? "
+                " ORDER BY CASE rol WHEN 'titular' THEN 0 WHEN 'suplente' "
+                "                   THEN 1 ELSE 2 END, dorsal", (partido, lado))}
+
+
 def estado():
     """Qué hay adentro, para poder mirarlo desde el administrador."""
     resumen = _filas(
@@ -328,10 +468,23 @@ def estado():
     otras = _filas(
         "SELECT (SELECT COUNT(*) FROM participaciones) AS participaciones, "
         "       (SELECT COUNT(DISTINCT jugador) FROM participaciones) AS jugadores, "
-        "       (SELECT COUNT(*) FROM goles) AS goles")
+        "       (SELECT COUNT(*) FROM goles) AS goles, "
+        "       (SELECT COUNT(*) FROM formaciones) AS formaciones, "
+        "       (SELECT COUNT(DISTINCT partido) FROM alineaciones) AS conFormacion, "
+        "       (SELECT COUNT(*) FROM estadisticas) AS estadisticas")
+    d = otras[0] if otras else {}
     return {"porLiga": resumen,
             "partidos": (total[0]["partidos"] if total else 0),
             "equipos": (total[0]["equipos"] if total else 0),
-            "participaciones": (otras[0]["participaciones"] if otras else 0),
-            "jugadores": (otras[0]["jugadores"] if otras else 0),
-            "goles": (otras[0]["goles"] if otras else 0)}
+            "participaciones": d.get("participaciones", 0),
+            "jugadores": d.get("jugadores", 0),
+            "goles": d.get("goles", 0),
+            "formaciones": d.get("formaciones", 0),
+            "conFormacion": d.get("conFormacion", 0),
+            "estadisticas": d.get("estadisticas", 0)}
+
+
+# Igual que el almacén: las tablas se crean al importar el módulo. Sin esto,
+# lo primero que quisiera escribir se encontraría con que no existen y
+# fallaría en silencio — que fue exactamente lo que pasó la primera vez.
+iniciar()

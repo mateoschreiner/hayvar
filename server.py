@@ -3511,7 +3511,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · las tablas se actualizan al momento, y ahora también guardan quién jugó cada partido y quién hizo cada gol"
+VERSION_APP = "2026-08-25 · las formaciones y las estadísticas de cada jugador ya quedan en tablas, en los diez torneos que se miran"
 
 
 def reparar_recorridos():
@@ -3774,6 +3774,10 @@ def detalle_liviano(game_id, en_juego=False, liga="lpf"):
                     (m.get("athleteId") for m in g["members"]
                      if m.get("id") == mm.get("id")), None)),
             }, titular, (g.get("startTime") or "")[:10])
+    # Y ya que está abierto, cómo se pararon y qué hizo cada uno. Sólo de
+    # los torneos elegidos, y sin un pedido más: es este mismo.
+    anotar_formacion(liga, game_id, g)
+
     goles = []
     for e in (g.get("events") or []):
         et = e.get("eventType") or {}
@@ -5895,6 +5899,84 @@ def anotar_plantel(club, ficha, titular, dia):
         "ultimo": max(dia or "", viejo.get("ultimo") or ""),
     }
     almacen.guardar(clave, plantel)
+
+
+# De qué torneos se guarda el partido en detalle: la formación de cada
+# equipo, quién fue titular y quién al banco, y las estadísticas de cada
+# jugador.
+#
+# No de todos, a propósito. Son unas treinta filas por partido y cuatro mil
+# partidos por temporada: guardarlo de los catorce torneos es multiplicar
+# la base por algo que casi nadie mira. Estos diez son los que se miran.
+#
+# Lo que sí se guarda de todos es quién jugó, que es una fila por jugador y
+# hace a la carrera de cada uno.
+LIGAS_EN_DETALLE = ("lpf", "ca",
+                    "lib", "sud", "champions", "europa",
+                    "laliga", "premier", "seriea", "bundesliga")
+
+# Cómo se llama cada rol, para no repetir el texto en tres lados.
+_TITULAR = ("titular", "starting", "starter", "titulares")
+_SUPLENTE = ("suplente", "suplentes", "substitute", "sub", "banco", "bench")
+
+
+def _rol_de(mm):
+    """Titular, suplente o director técnico. La fuente lo dice de dos formas."""
+    if str(mm.get("jerseyNumber")) == "-1":
+        return "dt"
+    st, txt = mm.get("status"), norm(mm.get("statusText"))
+    if st == 1 or txt in _TITULAR:
+        return "titular"
+    if st == 2 or txt in _SUPLENTE:
+        return "suplente"
+    return ""
+
+
+def anotar_formacion(liga, game_id, g):
+    """
+    Guarda en tablas cómo se pararon los dos equipos y qué hizo cada uno.
+
+    Se llama desde donde el partido ya está abierto: no cuesta un pedido
+    más. Ese es todo el truco —el detalle de cada partido ya se pide para
+    buscarle los goles, y hasta ahora lo único que se sacaba de ahí eran
+    los goles—.
+    """
+    if liga not in LIGAS_EN_DETALLE or not game_id:
+        return None
+    quien = {m.get("id"): (m.get("name") or m.get("shortName") or "")
+             for m in (g.get("members") or [])}
+    lados, gente, stats = [], [], []
+    for ck, lado in (("homeCompetitor", "h"), ("awayCompetitor", "a")):
+        comp = g.get(ck) or {}
+        lu = comp.get("lineups") or {}
+        miembros = lu.get("members") or []
+        if not miembros:
+            continue
+        titulares = sum(1 for mm in miembros if _rol_de(mm) == "titular")
+        lados.append((lado, comp.get("name") or "", lu.get("formation") or "",
+                      titulares >= 11))
+        for mm in miembros:
+            nom = quien.get(mm.get("id"))
+            if not nom:
+                continue
+            yf = mm.get("yardFormation") or {}
+            gente.append((nom, comp.get("name") or "", lado, _rol_de(mm),
+                          puesto_ar((mm.get("position") or {}).get("name")),
+                          mm.get("jerseyNumber"), mm.get("ranking"),
+                          yf.get("fieldSide"), yf.get("fieldLine")))
+            for s in (mm.get("stats") or []):
+                cn = norm(s.get("name"))
+                if cn not in _CLAVES_JUGADOR:
+                    continue
+                v = _num_jug(s.get("value"))
+                if v is not None:
+                    stats.append((nom, cn, v))
+    if not gente:
+        return None
+    try:
+        return tablas.guardar_formacion(game_id, lados, gente, stats)
+    except Exception:
+        return None
 
 
 _LIGA_DE_COMP = {}

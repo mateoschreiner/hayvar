@@ -686,6 +686,8 @@ tr.fila-destacada > td{background:rgba(47,111,237,.10);font-weight:700}
    y no como otro escudo. */
 .club-pais{width:13px;height:13px;border-radius:50%;vertical-align:-1px;
   margin-right:5px;display:inline-block}
+/* La del local, del otro lado del nombre: la fila es un espejo. */
+.club-pais.der{margin-right:0;margin-left:5px}
 
 /* ── gráfico de estadísticas clave ── */
 .clave{background:var(--bg);border-radius:10px;padding:12px 14px 6px;margin-bottom:16px}
@@ -2748,12 +2750,20 @@ const App=(()=>{
     const enEuropa  = cont === 'europa'  || (!cont && PAISES_EUROPA.has(pais));
 
     let lista, alFinal = [];
-    if(pais === 'AR')                    lista = ['lpf','lib','champions','nacional','sud'];
-    else if(enAmerica)                   lista = ['lib','lpf','champions','nacional','sud'];
+    if(pais === 'AR')                    lista = ['lpf','lib','champions','nacional'];
+    else if(enAmerica)                   lista = ['lib','lpf','champions','nacional'];
     else if(LIGA_DEL_PAIS[pais])         lista = [LIGA_DEL_PAIS[pais],'champions','lib','lpf'];
     else if(enEuropa){                   lista = ['champions','lpf','lib'];
                                          alFinal = ['nacional']; }
     else                                 lista = [];   // el orden de siempre
+
+    /* La Sudamericana va pegada abajo de la Libertadores, en todas las
+       listas. Se inserta acá en vez de escribirla una vez por lista: así
+       la regla vive en un solo lugar y no se pierde el día que alguna
+       lista cambie. Va antes del club y de lo que vino a ver, que siguen
+       mandando por encima de cualquier jerarquía entre torneos. */
+    const iLib = lista.indexOf('lib');
+    if(iLib >= 0) lista.splice(iLib + 1, 0, 'sud');
 
     // Lo que dijo al entrar y lo que eligió alguna vez van adelante de
     // todo, en ese orden: uno es de ahora y el otro es de siempre.
@@ -3338,7 +3348,10 @@ const App=(()=>{
     return `<${r?'a':'div'} class="match ${changed?'flash':''}" data-id="${esc(m.id)}"${abre}>
       <div class="m-fila">
         ${htmlTiempo(m)}
-        <div class="${claseLado(m,true)}">${crest(m.home)}<span class="tn">${paisDelClub(m.home)}${esc(m.home.canon||m.home.name)}</span></div>
+        ${/* La fila es un espejo: el local va escudo–nombre–bandera y el
+              visitante bandera–nombre–escudo, así las dos banderas quedan
+              mirando al marcador y no una pegada al escudo y la otra no. */''}
+        <div class="${claseLado(m,true)}">${crest(m.home)}<span class="tn">${esc(m.home.canon||m.home.name)}${paisDelClub(m.home,true)}</span></div>
         ${htmlMarcador(m)}
         <div class="${claseLado(m,false)}">${crest(m.away)}<span class="tn">${paisDelClub(m.away)}${esc(m.away.canon||m.away.name)}</span></div>
       </div>
@@ -3996,9 +4009,9 @@ const App=(()=>{
      No es un adorno: en la Libertadores hay clubes que se llaman igual.
      Nacional es el de Uruguay y también el de Potosí, y hay una
      Universidad Católica en Chile y otra en Ecuador. */
-  const paisDelClub=t=>(t&&t.bandera)
-    ? `<img class="club-pais" src="${esc(t.bandera)}" alt="${esc(t.pais||'')}"
-         title="${esc(t.pais||'')}" loading="lazy">` : '';
+  const paisDelClub=(t,alFinal)=>(t&&t.bandera)
+    ? `<img class="club-pais${alFinal?' der':''}" src="${esc(t.bandera)}"
+         alt="${esc(t.pais||'')}" title="${esc(t.pais||'')}" loading="lazy">` : '';
 
   const rutaPartido=m=>{
     const id=m&&m.liveId;

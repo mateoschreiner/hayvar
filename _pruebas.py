@@ -2598,30 +2598,30 @@ console.log(JSON.stringify(out));
         _T = "ca sud europa laliga premier seriea bundesliga"   # la cola
         _esperado = {
             # las cuatro reglas, tal como quedaron dichas
-            "argentina":     "lpf lib champions nacional sud ca europa laliga premier seriea bundesliga",
-            "america":       "lib lpf champions nacional sud ca europa laliga premier seriea bundesliga",
-            "europaConLiga": "laliga champions lib lpf nacional ca sud europa premier seriea bundesliga",
+            "argentina":     "lpf lib sud champions nacional ca europa laliga premier seriea bundesliga",
+            "america":       "lib sud lpf champions nacional ca europa laliga premier seriea bundesliga",
+            "europaConLiga": "laliga champions lib sud lpf nacional ca europa premier seriea bundesliga",
             # sin país europeo identificado, Primera Nacional se va al final
-            "europaSinLiga": "champions lpf lib ca sud europa laliga premier seriea bundesliga nacional",
+            "europaSinLiga": "champions lpf lib sud ca europa laliga premier seriea bundesliga nacional",
             # el club elegido manda aunque esté leyendo desde Madrid
-            "europaMasClub": "lpf laliga champions lib nacional ca sud europa premier seriea bundesliga",
+            "europaMasClub": "lpf laliga champions lib sud nacional ca europa premier seriea bundesliga",
             # de donde no sabemos, el orden de siempre
             "restoDelMundo": "lpf nacional ca lib sud champions europa laliga premier seriea bundesliga",
             "sinPais":       "lpf nacional ca lib sud champions europa laliga premier seriea bundesliga",
             # lo que vino a ver le gana a de dónde es. Ojo con la cola: sin
             # nada en vivo, las europeas que sobran quedan en el orden de
             # siempre y no se reacomodan.
-            "quiereGana":    "premier laliga champions lib lpf nacional ca sud europa seriea bundesliga",
+            "quiereGana":    "premier laliga champions lib sud lpf nacional ca europa seriea bundesliga",
             # y con las tres juntas: lo que buscó, después el club que
             # eligió, y recién después la lista de su región
             "buscoLuegoClubLuegoPais":
-                "premier lpf laliga champions lib nacional ca sud europa seriea bundesliga",
+                "premier lpf laliga champions lib sud nacional ca europa seriea bundesliga",
             # el "en vivo" sólo desempata entre europeas, sin mover al grupo
-            "vivoDesempata": "champions lpf lib ca sud seriea europa laliga premier bundesliga nacional",
+            "vivoDesempata": "champions lpf lib sud ca seriea europa laliga premier bundesliga nacional",
             # y nunca le pisa el puesto a la liga del propio visitante
-            "vivoNoPisaLaPropia": "laliga champions lib lpf nacional ca sud premier seriea europa bundesliga",
+            "vivoNoPisaLaPropia": "laliga champions lib sud lpf nacional ca premier seriea europa bundesliga",
             # ni sube un torneo a la cabeza sólo por estar rodando
-            "vivoNoSubeSolo": "lpf lib champions nacional sud ca laliga europa premier seriea bundesliga",
+            "vivoNoSubeSolo": "lpf lib sud champions nacional ca laliga europa premier seriea bundesliga",
             # Un español un día sin LaLiga ni Champions: las dos primeras de
             # su lista no existen, así que no se inventan. Baja a la
             # siguiente que sí está —Libertadores— y después la Liga
@@ -3004,9 +3004,69 @@ App.init();
              "games = con_banderas(games, lid)" in _SRV)
     chequear("y la portada las hereda de ahí, sin pedir nada más",
              'api_liga_games({"id": [lid]}).get("games", [])' in _SRV)
-    chequear("las filas de partido las dibujan, en la portada y en el fixture",
-             "${paisDelClub(m.home)}${esc(m.home.canon||m.home.name)}" in HTML
-             and HTML.count("paisDelClub(m.home)") == 2)
+    # Y la prueba que vale: dibujar la portada con un partido de un torneo
+    # internacional al lado de uno local, y mirar la fila que quedó.
+    _pt = ("""
+process.on('unhandledRejection',()=>{});
+const eq=(n,p)=>p?{name:n,canon:n,pais:'X',bandera:'/Countries/Round/'+p}
+                 :{name:n,canon:n};
+const pg=(i,h,a,p)=>({id:i, liveId:i, start:'2026-08-25T21:30:00Z',
+  status:'FIN', gh:1, ga:0, round:3, interzonal:false,
+  home:eq(h,p&&11), away:eq(a,p&&21)});
+const RESP={
+ '/api/home': {date:'2026-08-25', total:2, live:0, partidazo:null, partidazos:{},
+   bloques:[
+    {liga:'lib', nombre:'Copa Libertadores', torneo:'2026',
+     games:[pg('1','Boca Juniors','Flamengo',true)]},
+    {liga:'lpf', nombre:'Liga Profesional', torneo:'Clausura',
+     games:[pg('2','Aldosivi','Unión',false)]}]},
+ '/api/detalles': {}, '/api/ligas':{ligas:[]}, '/api/clubes':{clubes:[]},
+ '/api/visita':{}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='/';
+App.init();
+(async()=>{
+  for(let i=0;i<70;i++) await new Promise(r=>setImmediate(r));
+  const p=doc.querySelector('#matches').innerHTML||'';
+  const filas=p.split('class="match').slice(1);
+  const inter=filas.find(f=>f.indexOf('Boca')>=0)||'';
+  const local=filas.find(f=>f.indexOf('Aldosivi')>=0)||'';
+  // en cada mitad, ¿la bandera va antes o después del nombre?
+  const mitad=inter.indexOf('m-score');
+  const izq=inter.slice(0,mitad), der=inter.slice(mitad);
+  console.log(JSON.stringify({
+    filas: filas.length,
+    banderas: (inter.match(/club-pais/g)||[]).length,
+    enElLocal: (local.match(/club-pais/g)||[]).length,
+    localBanderaDespues: izq.indexOf('Boca Juniors') < izq.indexOf('club-pais'),
+    visitaBanderaAntes:  der.indexOf('club-pais') < der.indexOf('Flamengo')}));
+})();
+""")
+    _gp = (open(_DOMSITO, encoding="utf-8").read()
+           + "\nglobalThis.document=doc; globalThis.window=win;"
+             "\nglobalThis.location=loc; globalThis.history=historial;"
+             "\nglobalThis.localStorage=almacenLocal;"
+             "\nglobalThis.MutationObserver=MutationObserver;"
+             "\nglobalThis.URL=URL2; globalThis.requestAnimationFrame=f=>0;"
+             "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+           + _app.replace("const App=(()=>{", "App=(()=>{") + _pt)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gp); _rp2 = _f.name
+    _pp2 = _sub.run(["node", _rp2], capture_output=True, text=True, timeout=60)
+    os.unlink(_rp2)
+    _por = json.loads(_pp2.stdout) if _pp2.returncode == 0 and _pp2.stdout else None
+    chequear("la portada dibuja las banderas del torneo internacional",
+             _por and _por["filas"] == 2 and _por["banderas"] == 2, _por)
+    chequear("y en la fila del torneo local no pone ninguna",
+             _por and _por["enElLocal"] == 0, _por)
+    # La fila es un espejo: si las dos banderas van antes del nombre, la del
+    # local queda pegada al escudo y la del visitante suelta en el medio.
+    chequear("la fila queda en espejo: local nombre–bandera, visitante bandera–nombre",
+             _por and _por["localBanderaDespues"] and _por["visitaBanderaAntes"],
+             _por)
 
     if _gru:
         chequear("en la fase de grupos sigue yendo la tabla del grupo",

@@ -369,8 +369,10 @@ async function cargar(){
         <div><h2 style="margin-top:0">Con qué entran</h2>${listado('', vis.dispositivos)}</div>
         <div><h2 style="margin-top:0">Sistema</h2>${listado('', vis.sistemas)}</div>
         <div><h2 style="margin-top:0">Resolución</h2>${listado('', vis.pantallas)}</div>
-        <div><h2 style="margin-top:0">Qué buscaron</h2>${listado('', vis.busquedas,
-          'Google borra los términos de búsqueda desde 2011. Acá sólo aparecen los buscadores que todavía los mandan. Los de Google están en Search Console.')}</div>
+        <div><h2 style="margin-top:0">A qué llegan desde un buscador</h2>${listado('', vis.aterrizajes,
+          'Todavía no llegó nadie por Google. Cuando lleguen, acá se ve a qué página los mandó: es lo más cerca que se puede estar de saber qué escribieron.')}</div>
+        <div><h2 style="margin-top:0">Palabras que sí llegaron</h2>${listado('', vis.busquedas,
+          'Google borra los términos de búsqueda desde 2011: nunca van a aparecer los suyos. Acá salen los pocos buscadores que todavía los mandan. Las palabras exactas de Google están en Search Console, gratis.')}</div>
         <div><h2 style="margin-top:0">Qué torneo venían a ver</h2>${listado('', vis.intenciones,
           'Se deduce de la página en la que aterrizan. Es lo que puede ordenar la portada cuando lo enciendas.')}</div>
       </div>

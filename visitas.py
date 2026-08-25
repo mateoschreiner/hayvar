@@ -235,11 +235,14 @@ def region(idiomas):
 
 
 # ── Guardar ──────────────────────────────────────────────────────────────
+BUSCADORES = {"Google", "Bing", "DuckDuckGo", "Yahoo"}
+
+
 def _resumen_vacio(dia):
     return {"dia": dia, "vistas": 0, "gente": [], "segundos": 0,
             "fuentes": {}, "paginas": {}, "dispositivos": {}, "sistemas": {},
             "navegadores": {}, "regiones": {}, "pantallas": {},
-            "busquedas": {}, "intenciones": {}}
+            "busquedas": {}, "intenciones": {}, "aterrizajes": {}}
 
 
 def _sumar(d, clave, cuanto=1, tope=60):
@@ -289,6 +292,12 @@ def anotar(datos):
     _sumar(r["pantallas"], datos.get("pantalla"), tope=30)
     _sumar(r["busquedas"], datos.get("busco"), tope=40)
     _sumar(r["intenciones"], datos.get("intencion"), tope=30)
+    # A qué página llegó el que vino de un buscador. Es lo más parecido a
+    # saber qué escribió: Google no manda las palabras, pero manda a la
+    # persona al lugar exacto que contestaba su búsqueda. Si aterrizan
+    # veinte por día en Aldosivi–Unión, eso buscaban.
+    if datos.get("fuente") in BUSCADORES:
+        _sumar(r.setdefault("aterrizajes", {}), datos.get("ruta"), tope=60)
     almacen.guardar(clave, r)
 
     # Y el detalle, en el anillo.
@@ -414,6 +423,7 @@ def resumen(dias=14):
         "regiones": top(hoyr.get("regiones"), 10),
         "pantallas": top(hoyr.get("pantallas"), 10),
         "busquedas": top(hoyr.get("busquedas"), 10),
+        "aterrizajes": top(hoyr.get("aterrizajes"), 12),
         "intenciones": top(hoyr.get("intenciones"), 10),
         "ultimas": list(reversed(ult or []))[:60],
         "comoSeCuenta": ("Se cuenta gente con una huella que mezcla la IP y "

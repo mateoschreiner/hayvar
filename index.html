@@ -2635,65 +2635,106 @@ const App=(()=>{
 
   /* ── Qué torneo va primero en la portada ──────────────────────────────
 
-     La pregunta difícil no es qué hacer con el que llega buscando algo:
-     ése lo dijo solo. Es qué hacer con el que entra por la puerta grande
-     sin decir nada, que son casi todos.
+     No es un puntaje: es una lista por región, que es como se piensa de
+     verdad. Un argentino quiere ver la Liga Profesional arriba, se esté
+     jugando en ese momento o no. Un europeo quiere su liga, y después la
+     Champions. Eso no se deduce de una fórmula, se escribe.
 
-     Para ése hay cuatro señales más, y no valen lo mismo. Se le pone
-     puntaje a cada bloque y se ordena por eso. Sin ninguna señal el
-     puntaje es cero para todos y queda el orden de siempre, que es el que
-     está pensado a mano y sigue siendo un buen orden.
+     El orden de la izquierda manda; lo que no está en la lista queda
+     detrás, en el orden de siempre.
 
-       lo que venía a ver     100  lo dijo al entrar, no hay nada mejor
-       el club que eligió      50  lo dijo explícitamente alguna vez
-       lo que se juega ahora   40  esto no es sobre él, es sobre el
-                                   partido: un torneo con algo rodando
-                                   vale más que uno terminado, para
-                                   cualquiera
-       el país del navegador   10  la más floja de todas, pero para el
-                                   que entra de afuera es la diferencia
-                                   entre encontrar lo suyo o rebotar
+     Dos cosas que NO hace, a propósito:
 
-     Dos cuidados. Sólo se ordenan los bloques que ya vinieron, así que
-     nunca se sube uno vacío. Y el orden es estable: entre dos bloques con
-     el mismo puntaje gana el que ya venía primero.                      */
+     · No sube los partidos en vivo. Para eso ya está el botón de arriba,
+       y mover la portada por algo que la persona puede pedir con un clic
+       es hacerle lugar a algo que no pidió. Lo único que hace el "en
+       vivo" es desempatar entre las ligas europeas —que son cuatro y
+       compiten entre ellas—, y ahí la Champions queda afuera del sorteo:
+       está por encima.
+
+     · No sube un torneo que ese día no tiene partidos. Subir un bloque
+       vacío es peor que no hacer nada.                                  */
 
   // El interruptor. En false la portada es igual para todo el mundo.
   // Se puede probar sin encenderlo agregando ?ver=laliga a la dirección.
   const PORTADA_SEGUN_VISITA = false;
 
-  // De qué torneo es probable que quiera saber alguien según el país que
-  // tiene configurado el navegador. Sólo los casos donde no hay duda.
-  const TORNEO_DEL_PAIS = {AR:'lpf', ES:'laliga', GB:'premier', UK:'premier',
-                           IT:'seriea', DE:'bundesliga', AT:'bundesliga',
-                           BR:'lib'};
+  // La liga de cada país europeo. Sólo los cuatro que tenemos: para el
+  // resto de Europa no hay liga propia que ofrecer y va la de "sin país".
+  const LIGA_DEL_PAIS = {ES:'laliga', GB:'premier', UK:'premier',
+                         IT:'seriea', DE:'bundesliga', AT:'bundesliga'};
 
-  function puntajeDelBloque(b, quiere, delClub, delPais){
-    let p = 0;
-    if(quiere && b.liga === quiere) p += 100;
-    if(delClub && b.liga === delClub) p += 50;
-    if((b.games || []).some(m => m.status === 'LIVE')) p += 40;
-    if(delPais && b.liga === delPais) p += 10;
-    return p;
-  }
+  const PAISES_AMERICA = new Set(['UY','CL','PY','BO','PE','EC','CO','VE',
+    'BR','MX','US','CA','CR','PA','GT','HN','NI','SV','DO','CU','PR']);
+  const PAISES_EUROPA = new Set(['ES','GB','UK','IT','DE','AT','FR','PT',
+    'NL','BE','CH','IE','SE','NO','DK','FI','PL','GR','RU','TR','UA','RO',
+    'CZ','HU','HR','RS','BG','SK','SI','IS','LT','LV','EE','AL','MK','BA',
+    'ME','LU','MT','CY','BY','MD','GE','AM']);
 
-  function ordenarPortada(bloques){
-    if(!bloques || bloques.length < 2) return false;
+  // Las que se desempatan entre sí por partidos en vivo. La Champions no
+  // está: no compite con las ligas nacionales, está arriba de ellas.
+  const EUROPEAS = ['laliga','premier','seriea','bundesliga','europa'];
+
+  /* La lista de prioridades para esta visita. Vacía quiere decir "no
+     toques nada". */
+  function ordenDeseado(){
     const forzado = new URLSearchParams(location.search).get('ver');
     const v = S.visita || {};
     // El forzado anda siempre, aunque el interruptor esté apagado: es un
     // pedido explícito y sirve para probar esto sin encenderlo para todos.
     const quiere = forzado || (PORTADA_SEGUN_VISITA ? (v.quiere || '') : '');
-    const delPais = PORTADA_SEGUN_VISITA
-      ? (TORNEO_DEL_PAIS[v.region] || '') : '';
-    // El club elegido es del propio visitante y no depende del registro de
-    // visitas, así que se respeta con el interruptor apagado también.
-    const delClub = S.club ? 'lpf' : '';
+    // El club elegido lo dijo el propio visitante y no sale del registro
+    // de visitas, así que se respeta con el interruptor apagado también.
+    // Todos los clubes con ficha son de Primera: si eligió uno, quiere la
+    // Liga Profesional arriba aunque esté leyendo desde Madrid.
+    const club = S.club ? 'lpf' : '';
+    const pais = PORTADA_SEGUN_VISITA ? (v.region || '') : '';
+
+    let lista, alFinal = [];
+    if(pais === 'AR')                    lista = ['lpf','lib','champions','nacional','sud'];
+    else if(PAISES_AMERICA.has(pais))    lista = ['lib','lpf','champions','nacional','sud'];
+    else if(LIGA_DEL_PAIS[pais])         lista = [LIGA_DEL_PAIS[pais],'champions','lib','lpf'];
+    else if(PAISES_EUROPA.has(pais)){    lista = ['champions','lpf','lib'];
+                                         alFinal = ['nacional']; }
+    else                                 lista = [];   // el orden de siempre
+
+    // Lo que dijo al entrar y lo que eligió alguna vez van adelante de
+    // todo, en ese orden: uno es de ahora y el otro es de siempre.
+    if(club) lista = [club].concat(lista.filter(x => x !== club));
+    if(quiere) lista = [quiere].concat(lista.filter(x => x !== quiere));
+    return {lista, alFinal};
+  }
+
+  function ordenarPortada(bloques){
+    if(!bloques || bloques.length < 2) return false;
+    const {lista, alFinal} = ordenDeseado();
+    if(!lista.length && !alFinal.length) return false;
 
     const antes = bloques.map(b => b.liga).join('|');
-    bloques.forEach((b, i) => { b._orden = i;
-      b._punta = puntajeDelBloque(b, quiere, delClub, delPais); });
-    bloques.sort((a, b) => (b._punta - a._punta) || (a._orden - b._orden));
+    const lugar = l => alFinal.indexOf(l) >= 0 ? 999
+                     : (lista.indexOf(l) < 0 ? 500 : lista.indexOf(l));
+    bloques.forEach((b, i) => { b._orden = i; });
+    bloques.sort((a, b) => (lugar(a.liga) - lugar(b.liga)) || (a._orden - b._orden));
+
+    /* Y el desempate entre las europeas: la que tenga algo rodando primero,
+       sin mover al grupo de lugar. Se toman los puestos que ocupan, se
+       ordenan sus ligas entre sí, y se vuelven a poner en esos mismos
+       puestos: lo de al lado no se entera.
+
+       Queda afuera del sorteo todo lo que ya tiene lugar asignado: la liga
+       del país del visitante, lo que venía a ver, el club que eligió. Sin
+       esto, a un español con la Premier en vivo le poníamos la Premier
+       arriba de LaLiga, que es exactamente lo contrario de lo que quiere. */
+    const compiten = EUROPEAS.filter(l => lista.indexOf(l) < 0);
+    const puestos = [];
+    bloques.forEach((b, i) => { if(compiten.indexOf(b.liga) >= 0) puestos.push(i); });
+    if(puestos.length > 1){
+      const enVivo = b => (b.games || []).some(m => m.status === 'LIVE') ? 0 : 1;
+      const grupo = puestos.map(i => bloques[i]);
+      grupo.forEach((b, k) => { b._g = k; });   // por dónde venía cada una
+      grupo.sort((a, b) => (enVivo(a) - enVivo(b)) || (a._g - b._g));
+      puestos.forEach((p, k) => { bloques[p] = grupo[k]; });
+    }
     return bloques.map(b => b.liga).join('|') !== antes;
   }
 
@@ -2790,7 +2831,15 @@ const App=(()=>{
     // El partidazo lo elige el servidor: el partido de Primera con el equipo
     // mejor ubicado en la tabla, salvo la fecha de los interzonales, donde
     // manda el clásico. Si por lo que sea no vino, se cae al que tuvo más goles.
-    const golazo=S.games.find(m=>String(m.id)===String(h.partidazo))
+    // Y va con la misma idea que el orden de los bloques: si al visitante
+    // le estamos poniendo LaLiga arriba, el partidazo tiene que ser de
+    // LaLiga y no de un torneo que no vino a ver. El servidor manda uno
+    // por torneo, calculado con los mismos criterios, así que acá sólo hay
+    // que elegir el del bloque que quedó primero.
+    const arriba=(h.bloques&&h.bloques[0])?h.bloques[0].liga:null;
+    const suyo=(h.partidazos||{})[arriba];
+    const elegido=suyo||h.partidazo;
+    const golazo=S.games.find(m=>String(m.id)===String(elegido))
       || finalizados.slice().sort((a,b)=>((b.gh+b.ga)-(a.gh+a.ga)))[0];
     $('#tabs').innerHTML='';
     // En la portada cada bloque va en su propio globito, separado del resto.

@@ -3421,7 +3421,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-24 · la portada se ordena según quién entra (apagada de fábrica: se prueba con ?ver=)"
+VERSION_APP = "2026-08-24 · la portada se ordena por lo que buscó, el club elegido y la región (apagada: se prueba con ?ver=)"
 
 
 def reparar_recorridos():
@@ -6138,8 +6138,16 @@ def armar_home(date):
         vivos += sum(1 for m in ms if m.get("status") == "LIVE")
 
     total = sum(len(b["games"]) for b in bloques)
+    # El partidazo del día sale con los mismos criterios de siempre. Y
+    # además se calcula uno por torneo, con esos mismos criterios aplicados
+    # a un solo bloque: la página elige cuál mostrar según a quién le está
+    # hablando. Se calculan todos acá para que la respuesta siga siendo
+    # igual para todo el mundo y pueda seguir guardándose armada; si
+    # dependiera de quién pregunta, habría que rearmarla en cada visita.
     return {"date": date, "bloques": bloques, "total": total, "live": vivos,
-            "partidazo": partidazo_del_dia(bloques)}
+            "partidazo": partidazo_del_dia(bloques),
+            "partidazos": {b["liga"]: partidazo_del_dia([b])
+                           for b in bloques}}
 
 
 def api_home(q):
@@ -8064,6 +8072,17 @@ def que_venia_a_ver(ruta):
                 if tv is not None:
                     return lid
         return ""
+
+    # Buscó un jugador por su nombre y cayó en su ficha. Es de los casos más
+    # comunes que manda un buscador, y hasta acá lo estábamos tirando: el
+    # torneo sale de dónde estuvo jugando, que es lo mismo que ya se usa
+    # para armarle la ficha.
+    if partes[0] == "jugador" and len(partes) == 2:
+        nombre = re.sub(r"-\d+$", "", partes[1]).replace("-", " ")
+        lid = liga_del_jugador(nombre)
+        # `liga_del_jugador` cae en "lpf" cuando no sabe nada del jugador, y
+        # eso acá sería inventar una intención que nadie expresó.
+        return lid if almacen.leer("pj:%s:%s" % (lid, norm(nombre)))[0] else ""
 
     if len(partes) == 1 and partes[0] in RUTAS_CLUB:
         # los treinta de Primera son los que tienen ficha con colores

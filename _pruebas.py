@@ -2409,17 +2409,45 @@ chequear("en lo guardado no hay ninguna IP",
                            server.almacen.leer("vis:ultimas")[0])))
 server.almacen.borrar_prefijo("vis:")
 
-# Qué venía a ver: es el dato que después puede ordenar la portada.
+# Qué venía a ver. Es el dato que más pesa de todos, porque es lo único que
+# la persona dijo: el buscador la mandó justo ahí. Las palabras exactas no
+# llegan —Google las borra— pero el destino dice lo mismo.
 server.almacen.guardar("tv:lib:4798160", ["ESPN 2"])
+server.almacen.guardar("pj:laliga:enzo fernandez", {"n": 12, "ids": ["1"] * 12})
 chequear("de un torneo se deduce el torneo",
          server.que_venia_a_ver("/laliga") == "laliga")
+chequear("de una fecha suelta, también",
+         server.que_venia_a_ver("/liga-profesional/fecha-6") == "lpf")
 chequear("de un partido, mirando de cuál torneo es",
          server.que_venia_a_ver("/partido/olimpia-vs-vasco-4798160") == "lib")
 chequear("de un club de Primera, la Liga Profesional",
          server.que_venia_a_ver("/belgrano") == "lpf")
+chequear("y de un jugador, el torneo donde estuvo jugando",
+         server.que_venia_a_ver("/jugador/enzo-fernandez") == "laliga")
+chequear("de un jugador del que no sabemos nada, no se inventa",
+         server.que_venia_a_ver("/jugador/nadie-conocido") == "")
 chequear("y de la portada, nada: no dijo qué quiere",
          server.que_venia_a_ver("/") == ""
          and server.que_venia_a_ver("/partido/no-existe-999") == "")
+
+# Lo más cerca que se puede estar de saber qué escribieron en el buscador.
+server.almacen.borrar_prefijo("vis:")
+def _vb(ruta, ref):
+    f, d = visitas.de_donde(ref, "hayvar.com.ar")
+    visitas.anotar({"huella": visitas.huella(ruta, ref), "ruta": ruta,
+        "fuente": f, "dominio": d, "busco": "", "dispositivo": "móvil",
+        "sistema": "iOS", "navegador": "Safari", "region": "AR",
+        "pantalla": "390x844", "intencion": ""})
+_vb("/partido/aldosivi-vs-union-4728056", "https://www.google.com/")
+_vb("/partido/aldosivi-vs-union-4728056", "https://www.google.com/")
+_vb("/jugador/enzo-fernandez", "https://www.bing.com/")
+_vb("/laliga", "https://www.instagram.com/")     # una red social no es búsqueda
+_vb("/", "")                                     # ni el que escribió la dirección
+_at = {x["que"]: x["cuantas"] for x in visitas.resumen()["aterrizajes"]}
+chequear("se ve a qué página llega el que viene de un buscador",
+         _at == {"/partido/aldosivi-vs-union-4728056": 2,
+                 "/jugador/enzo-fernandez": 1}, _at)
+server.almacen.borrar_prefijo("vis:")
 
 # La que anota tiene que estar abierta —la usa la propia página— y la que
 # muestra lo juntado, cerrada.
@@ -2452,26 +2480,32 @@ if _sh.which("node"):
 const L=(l,v)=>({liga:l, games: v?[{status:'LIVE'}]:[{status:'FIN'}]});
 const orden=b=>b.map(x=>x.liga).join(' ');
 const out={};
+// un día cargado, con partidos de todos los torneos
+const todo=(v)=>['lpf','nacional','ca','lib','sud','champions','europa',
+  'laliga','premier','seriea','bundesliga'].map(l=>L(l,(v||[]).includes(l)));
 function caso(n, visita, club, bloques, search){
   S={visita:visita||{}, club:club?{name:'x'}:null};
   location.search=search||'';
-  ordenarPortada(bloques); out[n]=orden(bloques);
+  const b=bloques||todo(); ordenarPortada(b); out[n]=orden(b);
 }
-const cinco=()=>[L('lpf'),L('nacional'),L('lib'),L('laliga'),L('premier')];
-caso('nada', {}, false, cinco());
-caso('quiere', {quiere:'laliga'}, false, cinco());
-caso('quiereQueNoJuega', {quiere:'sud'}, false, cinco());
-caso('pais', {region:'IT'}, false, [L('lpf'),L('lib'),L('seriea'),L('laliga')]);
-caso('paisVsQuiere', {quiere:'premier',region:'IT'}, false, cinco());
-caso('club', {}, true, [L('lib'),L('laliga'),L('lpf'),L('premier')]);
-caso('vivo', {}, false, [L('lpf'),L('nacional'),L('lib',true),L('laliga')]);
-caso('quiereVsVivo', {quiere:'laliga'}, false,
-     [L('lpf'),L('nacional'),L('lib',true),L('laliga')]);
-caso('clubVsVivo', {}, true, [L('lib',true),L('laliga'),L('lpf')]);
-caso('vivoVsPais', {region:'ES'}, false, [L('lib',true),L('laliga'),L('lpf')]);
+caso('argentina', {region:'AR'});
+caso('america', {region:'CL'});
+caso('europaConLiga', {region:'ES'});
+caso('europaSinLiga', {region:'FR'});
+caso('europaMasClub', {region:'ES'}, true);
+caso('restoDelMundo', {region:'JP'});
+caso('sinPais', {});
+caso('quiereGana', {region:'ES', quiere:'premier'});
+// el orden de prioridades, con las tres señales a la vez
+caso('buscoLuegoClubLuegoPais', {region:'ES', quiere:'premier'}, true);
+caso('vivoDesempata', {region:'FR'}, false, todo(['seriea']));
+caso('vivoNoPisaLaPropia', {region:'ES'}, false, todo(['premier','seriea']));
+caso('vivoNoSubeSolo', {region:'AR'}, false, todo(['laliga']));
+caso('noSubeUnoQueNoJuega', {region:'ES'}, false,
+     [L('lpf'),L('nacional'),L('lib')]);
 PORTADA_SEGUN_VISITA=false;
-caso('apagado', {quiere:'laliga', region:'IT'}, false, cinco());
-caso('forzado', {}, false, cinco(), '?ver=premier');
+caso('apagado', {region:'ES', quiere:'premier'});
+caso('forzado', {}, false, todo(), '?ver=premier');
 console.log(JSON.stringify(out));
 """)
     with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
@@ -2484,30 +2518,75 @@ console.log(JSON.stringify(out));
     chequear("la función de ordenar corre", _o is not None,
              _po.stderr.strip().splitlines()[:2])
     if _o:
+        _T = "ca sud europa laliga premier seriea bundesliga"   # la cola
         _esperado = {
-            # sin señales no se toca nada: el orden a mano sigue mandando
-            "nada": "lpf nacional lib laliga premier",
-            "quiere": "laliga lpf nacional lib premier",
-            # nunca se sube un torneo que hoy no tiene partidos
-            "quiereQueNoJuega": "lpf nacional lib laliga premier",
-            "pais": "seriea lpf lib laliga",
-            # lo que dijo al entrar le gana a de dónde es
-            "paisVsQuiere": "premier lpf nacional lib laliga",
-            "club": "lpf lib laliga premier",
-            "vivo": "lib lpf nacional laliga",
-            # y lo que dijo al entrar le gana también a lo que está rodando
-            "quiereVsVivo": "laliga lib lpf nacional",
-            "clubVsVivo": "lpf lib laliga",
-            "vivoVsPais": "lib laliga lpf",
+            # las cuatro reglas, tal como quedaron dichas
+            "argentina":     "lpf lib champions nacional sud ca europa laliga premier seriea bundesliga",
+            "america":       "lib lpf champions nacional sud ca europa laliga premier seriea bundesliga",
+            "europaConLiga": "laliga champions lib lpf nacional ca sud europa premier seriea bundesliga",
+            # sin país europeo identificado, Primera Nacional se va al final
+            "europaSinLiga": "champions lpf lib ca sud europa laliga premier seriea bundesliga nacional",
+            # el club elegido manda aunque esté leyendo desde Madrid
+            "europaMasClub": "lpf laliga champions lib nacional ca sud europa premier seriea bundesliga",
+            # de donde no sabemos, el orden de siempre
+            "restoDelMundo": "lpf nacional ca lib sud champions europa laliga premier seriea bundesliga",
+            "sinPais":       "lpf nacional ca lib sud champions europa laliga premier seriea bundesliga",
+            # lo que vino a ver le gana a de dónde es. Ojo con la cola: sin
+            # nada en vivo, las europeas que sobran quedan en el orden de
+            # siempre y no se reacomodan.
+            "quiereGana":    "premier laliga champions lib lpf nacional ca sud europa seriea bundesliga",
+            # y con las tres juntas: lo que buscó, después el club que
+            # eligió, y recién después la lista de su región
+            "buscoLuegoClubLuegoPais":
+                "premier lpf laliga champions lib nacional ca sud europa seriea bundesliga",
+            # el "en vivo" sólo desempata entre europeas, sin mover al grupo
+            "vivoDesempata": "champions lpf lib ca sud seriea europa laliga premier bundesliga nacional",
+            # y nunca le pisa el puesto a la liga del propio visitante
+            "vivoNoPisaLaPropia": "laliga champions lib lpf nacional ca sud premier seriea europa bundesliga",
+            # ni sube un torneo a la cabeza sólo por estar rodando
+            "vivoNoSubeSolo": "lpf lib champions nacional sud ca laliga europa premier seriea bundesliga",
+            # Un español un día sin LaLiga ni Champions: las dos primeras de
+            # su lista no existen, así que no se inventan. Baja a la
+            # siguiente que sí está —Libertadores— y después la Liga
+            # Profesional, que es lo que su lista dice.
+            "noSubeUnoQueNoJuega": "lib lpf nacional",
             # con el interruptor apagado la portada es igual para todos
-            "apagado": "lpf nacional lib laliga premier",
+            "apagado":       "lpf nacional ca lib sud champions europa laliga premier seriea bundesliga",
             # pero ?ver= anda igual, para poder probarlo sin encenderlo
-            "forzado": "premier lpf nacional lib laliga",
+            "forzado":       "premier lpf nacional ca lib sud champions europa laliga seriea bundesliga",
         }
         _malos = {k: (v, _o.get(k)) for k, v in _esperado.items()
                   if _o.get(k) != v}
-        chequear("las cinco señales ordenan como corresponde",
+        chequear("la portada se ordena como quedó dicho, caso por caso",
                  not _malos, _malos)
+# Y el partidazo del día acompaña: no puede quedar uno de un torneo que
+# esta persona no vino a ver, con su torneo puesto arriba.
+chequear("el servidor manda un partidazo por torneo",
+         '"partidazos": {b["liga"]: partidazo_del_dia([b])' in _SRV)
+chequear("y la página elige el del torneo que quedó primero",
+         "const suyo=(h.partidazos||{})[arriba];" in HTML
+         and "const elegido=suyo||h.partidazo;" in HTML)
+# Elegir el partidazo de un solo torneo es un uso nuevo de una función que
+# hasta ahora siempre recibía la portada entera: hay que probar que no se
+# rompa ni devuelva cualquier cosa con un bloque suelto o vacío.
+def _pd(i, h, a, liga, **kw):
+    d = {"id": i, "liga": liga, "home": {"name": h, "canon": h},
+         "away": {"name": a, "canon": a}, "status": "FIN", "gh": 1, "ga": 0,
+         "start": "2026-08-24T20:00:00-03:00", "interzonal": False, "round": 6}
+    d.update(kw)
+    return d
+_bl = [{"liga": "lpf", "nombre": "Liga Profesional", "games": [
+            _pd("1", "Boca Juniors", "River Plate", "lpf", interzonal=True),
+            _pd("2", "Aldosivi", "Unión", "lpf")]},
+       {"liga": "laliga", "nombre": "LaLiga", "games": [
+            _pd("3", "Real Madrid", "Barcelona", "laliga"),
+            _pd("4", "Getafe", "Osasuna", "laliga")]}]
+chequear("cada torneo elige su propio partidazo",
+         [server.partidazo_del_dia([b]) for b in _bl] == ["1", "3"],
+         [server.partidazo_del_dia([b]) for b in _bl])
+chequear("y con un bloque vacío no se rompe ni inventa",
+         server.partidazo_del_dia([{"liga": "x", "games": []}]) is None
+         and server.partidazo_del_dia([]) is None)
 chequear("el interruptor viene apagado",
          "const PORTADA_SEGUN_VISITA = false;" in HTML)
 chequear("y se puede probar sin encenderlo",

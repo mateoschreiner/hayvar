@@ -1849,9 +1849,13 @@ chequear("y el enlace no queda azul y subrayado adentro de la tabla",
 # del torneo a la derecha.
 chequear("lo que decide es si hay algo atrás, no si tenemos el partido a mano",
          "const comoPagina=!S.fondo;" in HTML)
+# La ficha no lleva la barra de fechas: no es una fecha, es un partido. La
+# lista de modos que la saltean puede crecer —las secciones del torneo
+# tampoco la llevan— pero la ficha tiene que seguir estando.
 chequear("como página usa el armazón de tres columnas del resto del sitio",
          "shell(false,'ficha'); drawSide();" in HTML
-         and "(quiere==='club'||quiere==='ficha') ? ''" in HTML)
+         and "quiere==='club'||quiere==='ficha'" in HTML
+         and "quiere==='ficha'\n            /* El partido no va adentro" in HTML)
 chequear("y el mismo dibujante sirve para el pop-up y para la página",
          "let mTab='res', mData=null, mBase=null, dondeVaLaFicha='#modalBox';" in HTML
          and "$(dondeVaLaFicha).innerHTML=`" in HTML)
@@ -5159,6 +5163,315 @@ chequear("es chiquito y no cambia el alto del renglón",
 chequear("el escudo se pide una sola vez y no puede tumbar el historial",
          "escudos = _sin_reventar(_logos, {}) or {}" in _SRV
          and '"escudo": (escudos.get(rnombre) or {}).get("logo")' in _SRV)
+
+print("\n── el submenú de la Liga Profesional ──")
+# Fixture/Tablas no lleva nada en la dirección para no romper los links que
+# ya andan dando vueltas; las otras dos sí, así se comparten y el botón de
+# atrás las distingue.
+for _r, _q in (("/liga-profesional", "Liga Profesional Clausura"),
+               ("/liga-profesional/equipos", "Equipos de Liga Profesional"),
+               ("/liga-profesional/calculadora", "Calculadora de promedios")):
+    _t = server._titulo_de_ruta(_r)
+    chequear("%s tiene su propio título" % _r, _t and _q in _t[0],
+             _t and _t[0])
+# Una dirección inventada no es nuestra: no se sirve la página.
+chequear("y una sección que no existe no es una dirección nuestra",
+         server._titulo_de_ruta("/liga-profesional/cualquiera") is None)
+chequear("las secciones están declaradas en un solo lugar",
+         sorted(server.SECCIONES_LIGA) == ["calculadora", "equipos"])
+chequear("y la página conoce las mismas",
+         "calculadora:{rotulo:'Calculadora de promedios'" in HTML
+         and "equipos:{rotulo:'Equipos'" in HTML
+         and "const CON_SECCIONES={lpf:['calculadora','equipos']};" in HTML)
+# Entrar en frío a una sección tomaba el atajo de la portada de la LPF y
+# cargaba el fixture en vez de la sección.
+chequear("entrar en frío a una sección no cae en el fixture",
+         "d.id==='lpf'&&!SECCIONES[d.sec]" in HTML)
+
+if _sh.which("node"):
+    _clubes = [{"name": n, "logo": ("/img/x/%d" % i) if i else None}
+               for i, n in enumerate(["River Plate", "Boca Juniors",
+                                      "Ñublense", "Aldosivi"])]
+    _rsub = json.dumps({
+        "/api/clubes": {"clubes": _clubes}, "/api/standings": {"zones": []},
+        "/api/annual": {"rows": []}, "/api/promedios": {"rows": []},
+        "/api/scorers": {"rows": []},
+        "/api/rounds": {"rounds": [1], "current": 1},
+        "/api/games": {"games": []}, "/api/ligas": {"ligas": []},
+        "/api/visita": {"v": "x"}}, ensure_ascii=False)
+
+    def _entrar(ruta):
+        _js = ("""
+process.on('unhandledRejection',()=>{});
+const RESP=__R__;
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='__E__';
+App.init();
+(async()=>{
+  for(let i=0;i<150;i++) await new Promise(r=>setImmediate(r));
+  const sub=doc.querySelector('#subm').innerHTML||'';
+  const main=doc.querySelector('#matches').innerHTML||'';
+  console.log(JSON.stringify({
+    haySubmenu: sub.indexOf('Fixture/Tablas') >= 0,
+    opciones: (sub.match(/class="sm/g) || []).length,
+    seleccionado: (sub.match(/class="sm on"[^>]*>([^<]+)</) || [])[1] || '',
+    equipos: (main.match(/class="eq-item"/g) || []).length,
+    nombres: [...main.matchAll(/<span class="nm">([^<]+)</g)].map(m=>m[1]),
+    linkAlClub: main.indexOf('href="/boca-juniors"') >= 0}));
+})();
+""").replace("__R__", _rsub).replace("__E__", ruta)
+        _g = (open(_DOMSITO, encoding="utf-8").read()
+              + "\nglobalThis.document=doc; globalThis.window=win;"
+                "\nglobalThis.location=loc; globalThis.history=historial;"
+                "\nglobalThis.localStorage=almacenLocal;"
+                "\nglobalThis.MutationObserver=MutationObserver;"
+                "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+                "\nglobalThis.requestAnimationFrame=f=>0;"
+                "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+              + _app.replace("const App=(()=>{", "App=(()=>{") + _js)
+        with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as _f:
+            _f.write(_g); _rr = _f.name
+        _p = _sub.run(["node", _rr], capture_output=True, text=True, timeout=60)
+        os.unlink(_rr)
+        return json.loads(_p.stdout) if _p.returncode == 0 and _p.stdout else None
+
+    _s1 = _entrar("/liga-profesional")
+    _s2 = _entrar("/liga-profesional/equipos")
+    chequear("el submenú se dibuja al entrar", _s1 is not None and _s2 is not None,
+             (_s1, _s2))
+    if _s1 and _s2:
+        chequear("con las tres opciones y Fixture/Tablas ya elegida",
+                 _s1["haySubmenu"] and _s1["opciones"] == 3
+                 and _s1["seleccionado"] == "Fixture/Tablas", _s1)
+        chequear("y entrando por el link de una sección, ésa",
+                 _s2["seleccionado"] == "Equipos", _s2)
+        # El bug: por el atajo de la LPF, entrar en frío a una sección
+        # cargaba el fixture y la sección no se armaba nunca.
+        chequear("los equipos aparecen entrando en frío", _s2["equipos"] == 4,
+                 _s2["equipos"])
+        chequear("ordenados y con su escudo",
+                 _s2["nombres"] == ["Aldosivi", "Boca Juniors", "Ñublense",
+                                    "River Plate"], _s2["nombres"])
+        chequear("y cada uno lleva a su ficha", _s2["linkAlClub"], _s2)
+
+
+print("\n── los promedios: el año que viene y lo que necesita cada uno ──")
+# AFA publica los puntos de cada temporada por separado pero los partidos
+# jugados todos juntos. Para la tabla del año que viene hay que poder
+# restarle los partidos de 2024, no sólo los puntos: se deducen por
+# diferencia usando a los ascendidos, que no jugaron todas las temporadas.
+_A, _B, _C = 27, 30, 20
+
+
+def _fp(n, p24, p25, p26):
+    pts = (p24 or 0) + (p25 or 0) + p26
+    pj = (_A if p24 is not None else 0) + (_B if p25 is not None else 0) + _C
+    return {"team": {"name": n}, "p2024": p24, "p2025": p25, "p2026": p26,
+            "pts": pts, "pj": pj, "prom": round(pts / pj, 4)}
+
+
+_filasP = [_fp("Veterano", 40, 45, 30), _fp("Otro Viejo", 30, 30, 20),
+           _fp("Subio2025", None, 44, 28), _fp("Subio2026", None, None, 35),
+           _fp("Flojo", 20, 22, 12)]
+_anual = {r["team"]["name"]: _C for r in _filasP}
+_pt = server.partidos_por_temporada(_filasP, _anual)
+chequear("los partidos de cada temporada se deducen por diferencia",
+         _pt == {"2024": _A, "2025": _B, "2026": _C}, _pt)
+# Si dos clubes de la misma cohorte no coinciden, el modelo está mal —un
+# partido suspendido, un descuento de puntos— y una tabla de descensos
+# equivocada es mucho peor que no mostrarla.
+_roto = [dict(r) for r in _filasP]
+_roto[0]["pj"] += 1
+chequear("y si a algún club no le cierra, no se deduce nada",
+         server.partidos_por_temporada(_roto, _anual) is None)
+_prox = server.tabla_del_ano_que_viene(_filasP, _pt)
+chequear("la tabla del año que viene es la de hoy sin 2024",
+         [(x["team"]["name"], x["pts"], x["pj"]) for x in _prox[:2]]
+         == [("Subio2026", 35, 20), ("Veterano", 75, 50)], _prox[:2])
+# Veterano: 45+30 puntos sobre 30+20 partidos.
+chequear("con la cuenta hecha a mano",
+         abs(_prox[1]["prom"] - (45 + 30) / (30 + 20)) < 1e-9, _prox[1])
+chequear("y el que subió este año no pierde nada",
+         _prox[0]["pierde"] == 0 and _prox[0]["jugo2024"] is False, _prox[0])
+chequear("sin la deducción no se arma la tabla",
+         server.tabla_del_ano_que_viene(_filasP, None) is None)
+
+
+def _fn(n, pts, pj, rest):
+    return {"team": {"name": n}, "pts": pts, "pj": pj, "restantes": rest,
+            "prom": round(pts / pj, 4)}
+
+
+_filasN = sorted([_fn("Comodo", 90, 50, 2), _fn("Peligro", 45, 50, 2),
+                  _fn("Ultimo", 40, 50, 2)], key=lambda r: -r["prom"])
+server.puntos_para_salvarse(_filasN)
+_nec = {r["team"]["name"]: r["necesita"] for r in _filasN}
+# Peligro necesita 2: con 1 queda 46/52 = 0,88461, exactamente el mejor
+# promedio posible de Ultimo. Empatar no alcanza.
+chequear("los puntos que necesita cada uno salen bien",
+         _nec == {"Comodo": 0, "Peligro": 2, "Ultimo": None}, _nec)
+# El error que tenía: contar sólo contra "los que hoy descienden" hacía que
+# el último se quedara sin nadie a quien superar y figurara salvado.
+chequear("y el último de la tabla no figura salvado",
+         _nec["Ultimo"] is None)
+chequear("la calculadora se sirve de un solo pedido",
+         '"/api/calculadora": api_calculadora,' in _SRV
+         and "def api_calculadora(q):" in _SRV)
+# Y la tabla del año que viene vive en la principal, al lado de Promedios.
+chequear("los promedios del año que viene tienen su pestaña",
+         "['prox','Promedios 2027']" in HTML
+         and "else if(S.tab==='prox')" in HTML)
+
+if _sh.which("node"):
+    _eqp = lambda n: {"name": n, "canon": n, "logo": None, "short": ""}
+    _pprom = json.dumps({
+        "rows": [], "porTemporada": {"2024": 27, "2025": 30, "2026": 20},
+        "proximaTemporada": [
+            {"pos": 1, "team": _eqp("Subio2026"), "pts": 35, "pj": 20,
+             "prom": 1.75, "pierde": 0, "jugo2024": False,
+             "descendiendo": False},
+            {"pos": 2, "team": _eqp("Veterano"), "pts": 75, "pj": 50,
+             "prom": 1.5, "pierde": 40, "jugo2024": True,
+             "descendiendo": False},
+            {"pos": 3, "team": _eqp("Flojo"), "pts": 34, "pj": 50,
+             "prom": 0.68, "pierde": 20, "jugo2024": True,
+             "descendiendo": True}]}, ensure_ascii=False)
+    _jpx = ("""
+process.on('unhandledRejection',()=>{});
+globalThis.fetch=async()=>({ok:true, status:200, json:async()=>({})});
+S.promedios=__P__;
+const html=proxTable();
+S.promedios={};
+console.log(JSON.stringify({
+  filas: (html.match(/<tr class=/g) || []).length,
+  desciende: (html.match(/fila-desciende/g) || []).length,
+  loQuePierde: html.indexOf('−40') >= 0 && html.indexOf('>—<') >= 0,
+  explica: html.indexOf('27 en 2024') >= 0,
+  sinDeduccion: proxTable().indexOf('Todavía no se') >= 0}));
+""").replace("__P__", _pprom)
+    _gpx = (open(_DOMSITO, encoding="utf-8").read()
+            + "\nglobalThis.document=doc; globalThis.window=win;"
+              "\nglobalThis.location=loc; globalThis.history=historial;"
+              "\nglobalThis.localStorage=almacenLocal;"
+              "\nglobalThis.MutationObserver=MutationObserver;"
+              "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+              "\nglobalThis.requestAnimationFrame=f=>0;"
+              "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+            + _app.replace("const App=(()=>{", "App=(()=>{")
+                  .replace("  function proxTable(){",
+                           "  globalThis.proxTable=proxTable; globalThis.S=S;\n"
+                           "  function proxTable(){") + _jpx)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gpx); _rpx = _f.name
+    _ppx = _sub.run(["node", _rpx], capture_output=True, text=True, timeout=60)
+    os.unlink(_rpx)
+    _px = json.loads(_ppx.stdout) if _ppx.returncode == 0 and _ppx.stdout else None
+    chequear("la tabla del año que viene se dibuja", _px is not None,
+             _ppx.stderr.strip().splitlines()[:2])
+    if _px:
+        chequear("con una fila por equipo y el descenso marcado",
+                 _px["filas"] == 3 and _px["desciende"] == 1, _px)
+        chequear("y diciendo cuántos puntos pierde cada uno",
+                 _px["loQuePierde"], _px)
+        # Los partidos por temporada son deducidos, no publicados: que la
+        # pantalla lo diga en vez de presentarlos como un dato de AFA.
+        chequear("explica que los partidos por temporada son deducidos",
+                 _px["explica"], _px)
+        chequear("y si la deducción no cierra, lo dice en vez de inventar",
+                 _px["sinDeduccion"], _px)
+
+if _sh.which("node"):
+    _rcalc = json.dumps({
+        "/api/calculadora": {
+            "desciende": 1, "fuente": "AFA", "nota": "nota",
+            "equipos": [
+                {"name": "Comodo", "logo": None, "pts": 90, "pj": 50,
+                 "prom": 1.8, "restantes": 2, "necesita": 0},
+                {"name": "Peligro", "logo": None, "pts": 45, "pj": 50,
+                 "prom": 0.9, "restantes": 2, "necesita": 2},
+                {"name": "Ultimo", "logo": None, "pts": 40, "pj": 50,
+                 "prom": 0.8, "restantes": 2, "necesita": None}],
+            "faltan": [
+                {"id": "1", "ronda": 15, "dia": "2026-09-01",
+                 "local": "Peligro", "visita": "Ultimo"},
+                {"id": "2", "ronda": 15, "dia": "2026-09-01",
+                 "local": "Comodo", "visita": "Peligro"},
+                {"id": "3", "ronda": 16, "dia": "2026-09-08",
+                 "local": "Ultimo", "visita": "Comodo"}]},
+        "/api/ligas": {"ligas": []}, "/api/visita": {"v": "x"},
+        "/api/clubes": {"clubes": []}}, ensure_ascii=False)
+    _jc2 = ("""
+process.on('unhandledRejection',()=>{});
+const RESP=__R__;
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='/liga-profesional/calculadora';
+App.init();
+(async()=>{
+  const esperar=async n=>{for(let i=0;i<n;i++) await new Promise(r=>setImmediate(r));};
+  await esperar(150);
+  const der=()=>doc.querySelector('#right').innerHTML||'';
+  const izq=()=>doc.querySelector('#matches').innerHTML||'';
+  const leer=()=>[...der().matchAll(
+    /<span class="tn">([^<]+)<\\/span>[\\s\\S]*?<td class="pts[^"]*">([\\d.]+)<\\/td>\\s*<td>(\\d+)<\\/td><td>(\\d+)<\\/td>/g)]
+    .map(m=>[m[1], m[2], +m[3], +m[4]]);
+  const antes=leer();
+  const partidos=(izq().match(/class="calc-p"/g)||[]).length;
+  const fechas=(izq().match(/class="calc-fecha"/g)||[]).length;
+  App.calc('1','l'); await esperar(5); const gano=leer();
+  App.calc('2','l'); await esperar(5); const perdio=leer();
+  App.calc('2','l'); await esperar(5); const desmarcado=leer();
+  App.calcLimpiar(); await esperar(5);
+  console.log(JSON.stringify({partidos, fechas, antes, gano, perdio,
+    desmarcarVuelve: JSON.stringify(desmarcado)===JSON.stringify(gano),
+    limpiarVuelve: JSON.stringify(leer())===JSON.stringify(antes)}));
+})();
+""").replace("__R__", _rcalc)
+    _gc2 = (open(_DOMSITO, encoding="utf-8").read()
+            + "\nglobalThis.document=doc; globalThis.window=win;"
+              "\nglobalThis.location=loc; globalThis.history=historial;"
+              "\nglobalThis.localStorage=almacenLocal;"
+              "\nglobalThis.MutationObserver=MutationObserver;"
+              "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+              "\nglobalThis.requestAnimationFrame=f=>0;"
+              "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+            + _app.replace("const App=(()=>{", "App=(()=>{") + _jc2)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gc2); _rc3 = _f.name
+    _pc4 = _sub.run(["node", _rc3], capture_output=True, text=True, timeout=60)
+    os.unlink(_rc3)
+    _ca = json.loads(_pc4.stdout) if _pc4.returncode == 0 and _pc4.stdout else None
+    chequear("la calculadora se dibuja", _ca is not None,
+             _pc4.stderr.strip().splitlines()[:2])
+    if _ca:
+        chequear("con los partidos que faltan, agrupados por fecha",
+                 _ca["partidos"] == 3 and _ca["fechas"] == 2, _ca)
+        chequear("y la tabla de hoy antes de tocar nada",
+                 _ca["antes"] == [["Comodo", "1.800", 90, 50],
+                                  ["Peligro", "0.900", 45, 50],
+                                  ["Ultimo", "0.800", 40, 50]], _ca["antes"])
+        # Peligro le gana a Ultimo: 48/51 y 40/51. Los dos suman un jugado.
+        chequear("marcar un partido rehace los dos promedios",
+                 _ca["gano"] == [["Comodo", "1.800", 90, 50],
+                                 ["Peligro", "0.941", 48, 51],
+                                 ["Ultimo", "0.784", 40, 51]], _ca["gano"])
+        # Y después Comodo le gana a Peligro: 93/51 y 48/52.
+        chequear("y se van acumulando",
+                 _ca["perdio"] == [["Comodo", "1.824", 93, 51],
+                                   ["Peligro", "0.923", 48, 52],
+                                   ["Ultimo", "0.784", 40, 51]], _ca["perdio"])
+        # Tocar el mismo botón otra vez lo desmarca: es la forma de
+        # arrepentirse sin buscar un botón de borrar.
+        chequear("tocar el mismo resultado otra vez lo desmarca",
+                 _ca["desmarcarVuelve"])
+        chequear("y empezar de nuevo devuelve la tabla de hoy",
+                 _ca["limpiarVuelve"])
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

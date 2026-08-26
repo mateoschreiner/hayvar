@@ -1714,12 +1714,194 @@ def api_promedios(q):
         r["descendiendo"] = r in en_descenso
         r["salvado"] = salvado
     riesgo = [r["team"]["name"] for r in rows if r["enRiesgo"]]
+    puntos_para_salvarse(rows)
+
+    # La tabla que va a regir el año que viene: la misma sin 2024. Necesita
+    # deducir cuántos partidos se jugaron cada temporada, y si esa
+    # deducción no cierra no se manda nada.
+    porTemporada = _sin_reventar(lambda: partidos_por_temporada(
+        rows, {x["team"]["name"]: x["pj"] for x in api_annual({}).get("rows", [])}))
+    proximo = _sin_reventar(lambda: tabla_del_ano_que_viene(rows, porTemporada))
 
     return {"rows": rows, "fuente": "AFA / DataFactory", "saltadas": saltadas,
+            "porTemporada": porTemporada, "proximaTemporada": proximo,
             "enRiesgo": riesgo, "desciende": DESCIENDEN,
             "nota": ("Promedio oficial: puntos de las últimas 3 temporadas sobre "
                      "partidos jugados. En rojo el que hoy desciende; en amarillo, "
                      "los que todavía pueden ser alcanzados según los partidos que faltan.")}
+
+
+def partidos_por_temporada(rows, pj_de_este_ano):
+    """
+    Cuántos partidos jugó cada temporada, que AFA no publica.
+
+    La tabla de promedios trae los puntos de 2024, 2025 y 2026 por separado
+    pero los partidos jugados TODOS JUNTOS, en una sola columna. Y para
+    armar la tabla del año que viene —la misma sin 2024— hay que poder
+    restarle los partidos de 2024, no sólo los puntos.
+
+    Se deduce por diferencia, aprovechando que los ascendidos no jugaron
+    todas las temporadas:
+
+      · un club que subió para 2026 no tiene 2024 ni 2025, así que todos
+        sus partidos son de 2026;
+      · uno que subió para 2025 no tiene 2024: sus partidos menos los de
+        2026 son los de 2025;
+      · y con esos dos números, los de 2024 salen restando.
+
+    Lo importante es lo último: cada cohorte tiene que dar SIEMPRE el mismo
+    número. Si dos clubes que jugaron las mismas temporadas no coinciden,
+    el modelo está mal —un partido suspendido, un descuento de puntos, un
+    club que bajó y volvió— y entonces no se devuelve nada. Una tabla de
+    descensos equivocada es mucho peor que no mostrarla.
+
+    Devuelve {"2024": n, "2025": n, "2026": n} o None.
+    """
+    if not rows:
+        return None
+
+    def unico(valores):
+        """El valor si todos coinciden; None si no hay o si discrepan."""
+        v = {x for x in valores if x is not None}
+        return v.pop() if len(v) == 1 else None
+
+    # 2026: lo que dice la tabla anual, que es Apertura más Clausura.
+    c = unico(pj_de_este_ano.get(r["team"]["name"]) for r in rows)
+    if not c:
+        return None
+    # 2025: los que sólo jugaron 2025 y 2026.
+    b = unico(r["pj"] - c for r in rows
+              if r.get("p2024") is None and r.get("p2025") is not None)
+    if not b:
+        return None
+    # 2024: los que jugaron las tres.
+    a = unico(r["pj"] - b - c for r in rows
+              if r.get("p2024") is not None and r.get("p2025") is not None)
+    if not a:
+        return None
+    return {"2024": a, "2025": b, "2026": c}
+
+
+def tabla_del_ano_que_viene(rows, por_temporada):
+    """
+    La misma tabla de promedios pero sin 2024, que es la que va a regir el
+    año que viene: se cae la temporada más vieja y entra la nueva, que
+    arranca en cero y por eso no suma ni resta.
+
+    Vale para mirar quién está cómodo de verdad y quién sólo está salvado
+    por una temporada que se le va.
+    """
+    if not por_temporada:
+        return None
+    del2024 = por_temporada["2024"]
+    salida = []
+    for r in rows:
+        jugo24 = r.get("p2024") is not None
+        pts = r["pts"] - (r.get("p2024") or 0)
+        pj = r["pj"] - (del2024 if jugo24 else 0)
+        if pj <= 0:
+            return None            # algo no cierra: mejor no mostrar nada
+        salida.append({"team": r["team"], "zone": r.get("zone"),
+                       "pts": pts, "pj": pj,
+                       "prom": round(pts / pj, 4),
+                       "pierde": r.get("p2024") or 0,
+                       "jugo2024": jugo24})
+    salida.sort(key=lambda x: (-x["prom"], norm(x["team"]["name"])))
+    for i, x in enumerate(salida, 1):
+        x["pos"] = i
+        x["descendiendo"] = i > len(salida) - DESCIENDEN
+    return salida
+
+
+def puntos_para_salvarse(rows):
+    """
+    Cuántos puntos necesita cada uno para no poder ser alcanzado.
+
+    La cuenta es la misma que ya decide quién está salvado: un equipo está
+    fuera de peligro cuando su peor promedio posible —el de hoy, repartido
+    entre todos los partidos que le quedan— supera el mejor promedio al que
+    puede llegar cualquiera de los que hoy descienden.
+
+    Acá se da vuelta la pregunta: en vez de "¿está salvado?", "¿cuántos de
+    los que le quedan tiene que sumar para estarlo?". Se prueba de a un
+    punto, que son a lo sumo unas decenas de cuentas.
+    """
+    def mejor(x):
+        """El mejor promedio al que puede llegar: gana todo lo que le queda."""
+        n = x.get("restantes") or 0
+        base = x["pj"] + n
+        return (x["pts"] + 3 * n) / base if base else 0.0
+
+    techos = [(x, mejor(x)) for x in rows]
+    for r in rows:
+        n = r.get("restantes") or 0
+        base = r["pj"] + n
+        otros = [t for x, t in techos if x is not r]
+        r["necesita"] = None
+        if not base:
+            continue
+        for k in range(0, 3 * n + 1):
+            prom = (r["pts"] + k) / base
+            # Cuántos no pueden alcanzarlo ni ganando todos los suyos. Si
+            # son al menos tantos como los que descienden, él no puede
+            # quedar entre los últimos: está salvo.
+            #
+            # Primero lo había escrito al revés —"que le gane al techo de
+            # los que hoy descienden"— y con eso el último de la tabla
+            # figuraba salvado: al sacarlo de ese grupo se quedaba sin
+            # nadie a quien superar y la cuenta le daba siempre.
+            if sum(1 for t in otros if t < prom) >= DESCIENDEN:
+                r["necesita"] = k
+                break
+        # `None` quiere decir que ni ganando todo alcanza: hoy depende de
+        # que los de abajo pierdan puntos, no de lo que haga él.
+
+
+def api_calculadora(q):
+    """
+    Todo lo que necesita la calculadora de promedios, en un solo pedido.
+
+    La tabla como está hoy, cuántos puntos necesita cada uno, y la lista de
+    los partidos que faltan para que el visitante los complete a mano. La
+    cuenta de "si pasa esto, la tabla queda así" se hace en el navegador:
+    son treinta filas y una división, y hacerla acá sería un viaje de ida y
+    vuelta por cada clic.
+    """
+    base = api_promedios({"live": ["0"]})
+    if base.get("error"):
+        return base
+    # Sólo lo que la calculadora usa: la tabla entera trae escudos, formas
+    # y colores que acá no hacen falta.
+    equipos = [{"name": r["team"]["name"], "logo": r["team"].get("logo"),
+                "zone": r.get("zone"), "pts": r["pts"], "pj": r["pj"],
+                "prom": r["prom"], "restantes": r.get("restantes", 0),
+                "necesita": r.get("necesita"),
+                "p2024": r.get("p2024"), "p2025": r.get("p2025"),
+                "p2026": r.get("p2026")}
+               for r in base.get("rows", [])]
+
+    faltan = []
+    try:
+        for m in all_games(ttl=120):
+            if m["status"] == "FIN":
+                continue
+            faltan.append({"id": m.get("liveId") or m.get("id"),
+                           "ronda": m.get("round"),
+                           "dia": (m.get("start") or "")[:10],
+                           "local": m["home"]["canon"],
+                           "visita": m["away"]["canon"]})
+    except Exception:
+        pass
+    faltan.sort(key=lambda x: (x["ronda"] or 99, x["dia"] or "", x["local"]))
+
+    return {"equipos": equipos, "faltan": faltan,
+            "desciende": DESCIENDEN,
+            "porTemporada": base.get("porTemporada"),
+            "proximaTemporada": base.get("proximaTemporada"),
+            "fuente": base.get("fuente"),
+            "nota": ("Los promedios se recalculan solos con lo que marques. "
+                     "Los puntos que necesita cada uno son con la tabla de "
+                     "hoy, sin contar lo que marcaste.")}
 
 
 def api_scorers(q):
@@ -3529,7 +3711,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · el historial del club con el escudo de cada rival, y la barra con los colores de los dos"
+VERSION_APP = "2026-08-26 · la Liga Profesional con submenú: Fixture/Tablas, calculadora de promedios y equipos, más la tabla del año que viene"
 
 
 def reparar_recorridos():
@@ -8306,6 +8488,7 @@ ROUTES = {
     "/api/standings": api_standings,
     "/api/annual": api_annual,
     "/api/promedios": api_promedios,
+    "/api/calculadora": api_calculadora,
     "/api/scorers": api_scorers,
     "/api/match": api_match,
     # se resuelve al llamarla porque se define más abajo, junto al resto de
@@ -8338,6 +8521,7 @@ AL_TOQUE = {
     "/api/standings": 10,     # las tablas se mueven con los goles en curso
     "/api/annual": 20,
     "/api/promedios": 60,     # los promedios no se mueven en un partido
+    "/api/calculadora": 60,   # lo mismo: es la misma tabla más el fixture
     "/api/scorers": 60,
     "/api/liga": 30,          # tabla y goleadores de otra liga
     "/api/liga/games": 10,
@@ -8420,6 +8604,21 @@ RUTAS_LIGA = {
 
 TITULO_BASE = "HAYVAR"
 LEMA = "Resultados en vivo, tablas y estadísticas del fútbol argentino y del mundo."
+
+# Las secciones que puede tener un torneo adentro, cada una con su
+# dirección. Hoy sólo la Liga Profesional las usa —es la única con
+# promedios y con treinta equipos que valga la pena listar— pero la
+# dirección es del torneo, así que si mañana otra las necesita, ya está.
+SECCIONES_LIGA = {
+    "calculadora": lambda n: (
+        "Calculadora de promedios de %s — %s" % (n, TITULO_BASE),
+        "Simulá los partidos que faltan y mirá cómo queda la tabla de "
+        "promedios y quién desciende."),
+    "equipos": lambda n: (
+        "Equipos de %s — %s" % (n, TITULO_BASE),
+        "Todos los clubes de %s, con su plantel, su historial y cómo "
+        "juegan." % n),
+}
 
 # La página ya armada para cada dirección, con y sin comprimir. Ver _pagina.
 _PAGINAS = {}
@@ -8986,6 +9185,10 @@ def _titulo_de_ruta(path):
         if len(partes) == 3 and partes[1] == "llave":
             return ("%s — %s" % (nombre, TITULO_BASE),
                     "La llave, partido por partido, de %s." % nombre)
+        # Las secciones del torneo. Tienen dirección propia para que se
+        # puedan compartir y para que el botón de atrás las distinga.
+        if len(partes) == 2 and partes[1] in SECCIONES_LIGA:
+            return SECCIONES_LIGA[partes[1]](nombre)
         if len(partes) == 1:
             return ("%s %s — %s" % (nombre, torneo, TITULO_BASE),
                     "Resultados en vivo, tabla de posiciones y goleadores "

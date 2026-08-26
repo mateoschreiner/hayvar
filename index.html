@@ -329,6 +329,55 @@ a.hist-p:hover{color:var(--acc)}
 .hist-pie{font-size:10px;color:var(--txt3);margin-top:8px;
   text-transform:uppercase;letter-spacing:.5px}
 
+/* ── El submenú del torneo ──
+   Enlaces de verdad, no botones: se pueden abrir en otra pestaña y
+   compartir, igual que el resto del sitio. */
+.submenu{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:4px;margin-bottom:10px}
+.submenu .sm{flex:none;padding:7px 13px;border-radius:8px;font-size:12.5px;
+  font-weight:600;color:var(--txt2);text-decoration:none;white-space:nowrap}
+.submenu .sm:hover{background:var(--bg);color:var(--txt)}
+.submenu .sm.on{background:var(--acc);color:#fff}
+.submenu .sm.on:hover{background:var(--acc);color:#fff}
+
+/* ── La calculadora de promedios ── */
+.calc-top{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 16px 8px;font-size:12.5px;color:var(--txt2)}
+.calc-top b{color:var(--txt)}
+.cbtn-lim{font:inherit;font-size:11.5px;padding:5px 10px;border-radius:7px;
+  background:var(--bg);color:var(--txt2)}
+.cbtn-lim:hover:not([disabled]){background:var(--line);color:var(--txt)}
+.cbtn-lim[disabled]{opacity:.4;cursor:default}
+.calc-fecha{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt3);font-weight:800;padding:10px 16px 4px}
+.calc-p{display:grid;grid-template-columns:1fr 96px 1fr;align-items:center;
+  gap:8px;padding:5px 16px;border-top:1px solid var(--line);font-size:12.5px}
+.calc-p .eq{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calc-p .eq.der{text-align:right}
+.calc-p .botones{display:flex;gap:3px;justify-content:center}
+.cbtn3{font:inherit;font-size:11px;font-weight:700;width:28px;height:24px;
+  border-radius:6px;background:var(--bg);color:var(--txt3)}
+.cbtn3:hover{background:var(--line);color:var(--txt)}
+.cbtn3.on{background:var(--acc);color:#fff}
+/* el promedio que se movió con lo marcado, para que se vea qué cambió */
+td.pts.movio{color:var(--acc)}
+tr.fila-desciende > td{background:rgba(229,72,77,.10)}
+td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
+
+/* ── Los equipos del torneo ── */
+.eq-grilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:2px;padding:10px 10px 4px}
+.eq-item{display:flex;align-items:center;gap:9px;padding:9px 8px;
+  border-radius:9px;color:inherit;text-decoration:none;font-size:13px;
+  min-width:0}
+.eq-item:hover{background:var(--bg);color:var(--acc)}
+.eq-item img,.eq-item .eq-sin{width:26px;height:26px;flex:none;
+  object-fit:contain;display:block}
+.eq-item .eq-sin{border-radius:50%;background:var(--line)}
+.eq-item .nm{min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+
 /* ── El historial del club, un rival por fila ──
    Con <details>: abrir y cerrar lo hace el navegador solo, con el teclado
    incluido, y no hay estado propio que se pueda desincronizar. */
@@ -1244,6 +1293,18 @@ const App=(()=>{
     .toLowerCase().replace(/['´`]/g,'')
     .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 
+  /* Las secciones de un torneo. La primera no lleva nada en la dirección
+     —`/liga-profesional` es el fixture y las tablas— para no romper los
+     links que ya andan dando vueltas. Las otras dos sí, así se pueden
+     compartir y el botón de atrás las distingue. */
+  const SECCIONES={
+    calculadora:{rotulo:'Calculadora de promedios', corto:'Promedios'},
+    equipos:{rotulo:'Equipos', corto:'Equipos'},
+  };
+  // De qué torneos: los promedios son un invento argentino y treinta
+  // equipos con ficha propia sólo los tiene la Liga Profesional.
+  const CON_SECCIONES={lpf:['calculadora','equipos']};
+
   const Rutas={
     /* de una pantalla a su dirección */
     url(d){
@@ -1253,7 +1314,9 @@ const App=(()=>{
       // una dirección con "undefined" adentro
       if(d.t==='liga')     return LIGA_RUTA[d.id]
                                   ? '/'+LIGA_RUTA[d.id]
-                                    +(d.fecha!=null&&d.fecha!==''?'/fecha-'+slugTexto(String(d.fecha)):'')
+                                    +(SECCIONES[d.sec] ? '/'+d.sec
+                                      : d.fecha!=null&&d.fecha!==''
+                                        ? '/fecha-'+slugTexto(String(d.fecha)) : '')
                                   : '/';
       if(d.t==='llave')    return LIGA_RUTA[d.liga]
                                   ? '/'+LIGA_RUTA[d.liga]+'/llave/'+d.slug : '/';
@@ -1277,9 +1340,11 @@ const App=(()=>{
       }
       if(RUTA_LIGA[p[0]]){
         const id=RUTA_LIGA[p[0]];
-        if(p.length===1) return {t:'liga', id, fecha:null};
+        if(p.length===1) return {t:'liga', id, fecha:null, sec:'tablas'};
         if(p.length===2&&p[1].indexOf('fecha-')===0)
-          return {t:'liga', id, fecha:p[1].slice(6)};
+          return {t:'liga', id, fecha:p[1].slice(6), sec:'tablas'};
+        if(p.length===2&&SECCIONES[p[1]])
+          return {t:'liga', id, fecha:null, sec:p[1]};
         if(p.length===3&&p[1]==='llave') return {t:'llave', liga:id, slug:p[2]};
         return null;
       }
@@ -1304,6 +1369,182 @@ const App=(()=>{
       if(u!==location.pathname) history.replaceState({pasos:S.pasos},'',u);
     }
   };
+
+  /* El submenú del torneo: Fixture/Tablas, y lo que tenga adentro.
+
+     Son enlaces de verdad y no botones, igual que todo lo demás: se
+     pueden abrir en otra pestaña, copiar y compartir. */
+  // Cómo se llama un torneo, del mismo menú de la izquierda.
+  const nombreDeLiga=id=>{
+    for(const [,items] of LIGAS){
+      const x=items.find(i=>i[0]===id);
+      if(x) return x[1];
+    }
+    return '';
+  };
+
+  function drawSubmenu(){
+    const el=$('#subm'); if(!el) return;
+    const cuales=CON_SECCIONES[S.liga];
+    if(!cuales||!cuales.length){ el.innerHTML=''; return; }
+    const item=(sec,rotulo)=>{
+      const r={t:'liga', id:S.liga, sec:sec||'tablas'};
+      const acá=(S.sec||'tablas')===(sec||'tablas');
+      return `<a class="sm${acá?' on':''}" href="${esc(Rutas.url(r))}"
+        data-ir${acá?' aria-current="page"':''}>${esc(rotulo)}</a>`;
+    };
+    el.innerHTML=`<div class="submenu">
+      ${item(null,'Fixture/Tablas')}
+      ${cuales.map(s=>item(s,SECCIONES[s].rotulo)).join('')}
+    </div>`;
+  }
+
+  /* Abrir una sección del torneo. Cada una arma su pantalla y no toca el
+     fixture: son páginas distintas que comparten el menú de arriba. */
+  async function abrirSeccion(liga, sec){
+    shell(false,'seccion'); drawSide(); drawSubmenu();
+    $('.tag').textContent=nombreDeLiga(liga)+' · '+SECCIONES[sec].rotulo;
+    $('#tabs').innerHTML='';
+    const caja=$('#right')&&$('#right').parentElement;
+    if(caja) caja.classList.add('sin-caja');
+    if(sec==='equipos') return seccionEquipos();
+    if(sec==='calculadora') return seccionCalculadora();
+  }
+
+  /* Los equipos del torneo, con su escudo. Cada uno lleva a su ficha.
+
+     Sale de la misma lista que ya usa el modo club, así que no hay un
+     pedido nuevo: si el visitante ya eligió club alguna vez, está en
+     memoria. */
+  async function seccionEquipos(){
+    const main=$('#matches');
+    main.innerHTML='<div class="skel"></div><div class="skel"></div>';
+    $('#right').innerHTML='';
+    let clubes=S.clubes;
+    if(!clubes||!clubes.length){
+      try{ clubes=(await get('/api/clubes')).clubes||[]; S.clubes=clubes; }
+      catch(e){ clubes=[]; }
+    }
+    if(!clubes.length){
+      main.innerHTML='<div class="empty" style="padding:30px">No se pudo '
+        +'cargar la lista de equipos.</div>';
+      return;
+    }
+    const orden=clubes.slice().sort((a,b)=>
+      sinTildes(a.name).localeCompare(sinTildes(b.name),'es'));
+    main.innerHTML=`<div class="eq-grilla">${orden.map(c=>{
+      const r={t:'club', slug:slugTexto(c.name)};
+      return `<a class="eq-item" href="${esc(Rutas.url(r))}" data-ir>
+        ${c.logo?`<img src="${esc(c.logo)}" alt="" loading="lazy">`
+                :`<span class="eq-sin"></span>`}
+        <span class="nm">${esc(c.name)}</span>
+      </a>`;
+    }).join('')}</div>
+    <div class="note" style="padding:12px 16px 16px">${orden.length} equipos.
+      Tocá uno para ver su plantel, su historial y cómo juega.</div>`;
+  }
+
+  /* ── La calculadora de promedios ──────────────────────────────────────
+
+     A la izquierda los partidos que faltan, con tres botones cada uno; a
+     la derecha la tabla de promedios, que se rehace con cada clic.
+
+     La cuenta se hace acá y no en el servidor a propósito: son treinta
+     divisiones, y mandarlas a resolver afuera sería un viaje de ida y
+     vuelta por cada botón. Lo que sí viene del servidor es la tabla de
+     hoy: nada de esto inventa puntos. */
+  let calc=null;              // lo que trajo el servidor
+  const calcElegido={};       // id del partido -> 'l' | 'e' | 'v'
+
+  async function seccionCalculadora(){
+    const main=$('#matches');
+    main.innerHTML='<div class="skel"></div><div class="skel"></div>';
+    $('#right').innerHTML='<div class="skel"></div>';
+    try{ calc=await get('/api/calculadora'); }
+    catch(e){ calc=null; }
+    if(!calc||calc.error||!(calc.equipos||[]).length){
+      main.innerHTML='<div class="empty" style="padding:30px">No se pudo cargar '
+        +'la tabla de promedios.</div>';
+      $('#right').innerHTML='';
+      return;
+    }
+    for(const k of Object.keys(calcElegido)) delete calcElegido[k];
+    pintarCalculadora();
+  }
+
+  /* La tabla con lo marcado aplicado. Cada partido elegido suma tres, uno
+     o cero, y un partido jugado por más que no lo elijas igual suma uno a
+     los jugados: por eso el divisor crece siempre que se marca algo. */
+  function tablaSimulada(){
+    const por={};
+    (calc.equipos||[]).forEach(e=>{ por[e.name]={pts:e.pts, pj:e.pj, base:e}; });
+    let marcados=0;
+    (calc.faltan||[]).forEach(m=>{
+      const r=calcElegido[m.id]; if(!r) return;
+      marcados++;
+      const l=por[m.local], v=por[m.visita];
+      if(l){ l.pj++; l.pts += r==='l'?3 : r==='e'?1 : 0; }
+      if(v){ v.pj++; v.pts += r==='v'?3 : r==='e'?1 : 0; }
+    });
+    const filas=Object.keys(por).map(n=>{
+      const x=por[n];
+      return {name:n, logo:x.base.logo, pts:x.pts, pj:x.pj,
+              prom: x.pj? x.pts/x.pj : 0,
+              antes: x.base.prom, necesita: x.base.necesita,
+              movio: x.pts!==x.base.pts||x.pj!==x.base.pj};
+    });
+    filas.sort((a,b)=> b.prom-a.prom || sinTildes(a.name).localeCompare(sinTildes(b.name),'es'));
+    filas.forEach((f,i)=>{ f.pos=i+1; f.desciende = i >= filas.length-(calc.desciende||1); });
+    return {filas, marcados};
+  }
+
+  function pintarCalculadora(){
+    const {filas, marcados}=tablaSimulada();
+    const faltan=calc.faltan||[];
+    // los partidos, agrupados por fecha
+    const porFecha={};
+    faltan.forEach(m=>{ (porFecha[m.ronda||'—']=porFecha[m.ronda||'—']||[]).push(m); });
+    const rondas=Object.keys(porFecha).sort((a,b)=>Number(a)-Number(b));
+    const boton=(m,val,txt)=>`<button class="cbtn3${calcElegido[m.id]===val?' on':''}"
+      onclick="App.calc('${js(String(m.id))}','${val}')">${txt}</button>`;
+    $('#matches').innerHTML=`
+      <div class="calc-top">
+        <div><b>${faltan.length}</b> ${faltan.length===1?'partido':'partidos'}
+          por jugar${marcados?` · <b>${marcados}</b> marcado${marcados===1?'':'s'}`:''}</div>
+        <button class="cbtn-lim" onclick="App.calcLimpiar()"
+          ${marcados?'':'disabled'}>Empezar de nuevo</button>
+      </div>
+      ${faltan.length?rondas.map(r=>`
+        <div class="calc-fecha">Fecha ${esc(r)}</div>
+        ${porFecha[r].map(m=>`<div class="calc-p">
+          <span class="eq">${esc(m.local)}</span>
+          <span class="botones">${boton(m,'l','1')}${boton(m,'e','X')}${boton(m,'v','2')}</span>
+          <span class="eq der">${esc(m.visita)}</span>
+        </div>`).join('')}`).join('')
+        :'<div class="empty" style="padding:26px">No quedan partidos por jugar.</div>'}
+      <div class="note" style="padding:10px 16px 16px">${esc(calc.nota||'')}</div>`;
+    $('#right').innerHTML=`<div class="globo">
+      <div class="cl-sec">Promedios${marcados?' · simulado':''}</div>
+      <div class="tablewrap"><table><thead><tr>
+        <th style="width:22px"></th><th class="l">Equipo</th>
+        <th>Prom</th><th>Pts</th><th>PJ</th><th title="Puntos que necesita para no poder ser alcanzado">Nec.</th>
+      </tr></thead><tbody>${filas.map(f=>`<tr class="${
+          f.desciende?'fila-desciende':''}">
+        <td class="pos">${f.pos}</td>
+        <td class="l"><div class="tcell">${f.logo
+          ? `<img class="crest" src="${esc(f.logo)}" alt="">`:''}
+          <span class="tn">${esc(f.name)}</span></div></td>
+        <td class="pts ${f.movio?'movio':''}">${f.prom.toFixed(3)}</td>
+        <td>${f.pts}</td><td>${f.pj}</td>
+        <td class="nec">${f.necesita===0?'—'
+          :f.necesita==null?'<span title="Ni ganando todo depende de él">·</span>'
+          :f.necesita}</td>
+      </tr>`).join('')}</tbody></table></div>
+      <div class="note" style="padding:8px 14px 14px">Descienden
+        ${calc.desciende}. La columna <b>Nec.</b> son los puntos que necesita
+        con la tabla de hoy.</div>
+    </div>`;
+  }
 
   /* La única puerta de entrada a una pantalla. La llaman las tres cosas
      que pueden cambiarla: un clic, el botón de atrás del navegador y la
@@ -1377,12 +1618,30 @@ const App=(()=>{
       return loadClub(d.nombre||d.slug.replace(/-/g,' '));
     }
     const id=d.t==='home'?'home':d.id;
+    /* Las secciones del torneo son pantallas aparte: no cargan el fixture
+       ni las tablas, así que se atienden antes y cortan acá. Volver a
+       Fixture/Tablas cae abajo y arma la pantalla de siempre. */
+    const sec=(d.t==='liga'&&SECCIONES[d.sec])?d.sec:null;
+    if(sec||S.sec){
+      const antesSec=S.sec;
+      S.sec=sec;
+      if(sec){
+        if(S.liga!==id){ S.liga=id; S.round=null; S.scores={}; S.etapas=null; }
+        clearTimeout(S.timer); clearTimeout(S.vivoTimer);
+        drawSide(); api.menu(false);
+        medir.seccion(id+'/'+sec);
+        return abrirSeccion(id, sec);
+      }
+      // se volvió a Fixture/Tablas desde una sección: hay que rearmar la
+      // pantalla del torneo aunque el torneo no haya cambiado
+      if(antesSec) S.liga=null;
+    }
     if(S.liga!==id){
       medir.seccion(id);
       S.liga=id; S.round=null; S.tab=id==='lpf'?'A':'z0'; S.otra=null;
       S.scores={}; S.etapas=null;
       clearTimeout(S.timer); clearTimeout(S.vivoTimer);
-      drawSide(); api.menu(false);
+      drawSide(); drawSubmenu(); api.menu(false);
       if(id==='lpf') pestanasLpf();
       S.fechaPedida=(d.fecha!=null?d.fecha:null);
       return loadAll(false);
@@ -1441,7 +1700,8 @@ const App=(()=>{
   function pestanasLpf(){
     $('.tag').textContent='Liga Profesional · Clausura 2026';
     $('#tabs').innerHTML=[['A','Zona A'],['B','Zona B'],['anual','Anual'],
-                          ['prom','Promedios'],['gol','Goles']]
+                          ['prom','Promedios'],['prox','Promedios 2027'],
+                          ['gol','Goles']]
       .map(([k,n],i)=>`<button data-t="${k}" class="${i===0?'on':''}" onclick="App.tab('${k}')">${n}</button>`).join('');
   }
 
@@ -1574,7 +1834,13 @@ const App=(()=>{
       <div class="shell">
         <aside id="side"></aside>
         <main>
-          ${(quiere==='club'||quiere==='ficha') ? '' : quiere==='portada'
+          ${/* El submenú del torneo. Va arriba de todo y vive en los dos
+                modos —el fixture y las secciones— porque es el que lleva
+                de uno al otro. Vacío cuando el torneo no tiene secciones,
+                que son todos menos la Liga Profesional. */''}
+          ${(quiere==='liga'||quiere==='seccion') ? '<div id="subm"></div>' : ''}
+          ${(quiere==='club'||quiere==='ficha'||quiere==='seccion') ? ''
+            : quiere==='portada'
             ? `<div class="calbar">
                  <div class="calhead"><div class="mth" id="calMonth">—</div>
                    <div class="navs"><button onclick="App.homeWeek(-1)">‹</button>
@@ -1697,7 +1963,11 @@ const App=(()=>{
 
          El pedido de clubes tarda más que el del partido, así que llegaba
          siempre segundo y siempre ganaba. */
-      if(S.modal) return;
+      // Y lo mismo con las secciones del torneo: la calculadora y los
+      // equipos tampoco son una lista de partidos. Entrando en frío a
+      // /liga-profesional/equipos, este redibujado llegaba después y
+      // dejaba "No hay partidos para esta fecha" encima de la grilla.
+      if(S.modal||S.sec) return;
       if(S.liga==='home') loadHome(); else if(S.liga!=='club') loadAll(false);
     }catch(e){}
   }
@@ -3843,6 +4113,7 @@ const App=(()=>{
     }
     else if(S.tab==='anual') el.innerHTML=S.annual?annualTable():'';
     else if(S.tab==='prom')  el.innerHTML=S.promedios?promTable():'';
+    else if(S.tab==='prox')  el.innerHTML=S.promedios?proxTable():'';
     else if(S.tab==='gol')   el.innerHTML=S.scorers?scorersTable():'';
     /* Y en la página de un partido, el historial de vuelta abajo.
 
@@ -5499,6 +5770,40 @@ const App=(()=>{
     return (fases.length===1&&!fases[0].nombre)?[]:fases;
   }
 
+  /* La tabla de promedios que va a regir el año que viene: la misma sin
+     2024. La temporada más vieja se cae y la nueva arranca en cero, así
+     que no suma ni resta.
+
+     Sirve para ver quién está cómodo de verdad y quién está salvado nada
+     más que por una temporada que se le va. */
+  function proxTable(){
+    const p=(S.promedios||{}).proximaTemporada;
+    const pt=(S.promedios||{}).porTemporada;
+    if(!p||!p.length)
+      return `<div class="empty" style="padding:26px 18px">Todavía no se
+        puede calcular: AFA publica los partidos jugados de las tres
+        temporadas en un solo número, y para restarle los de 2024 hay que
+        poder deducirlos. Cuando la cuenta cierre, la tabla aparece.</div>`;
+    return `<div class="tablewrap"><table><thead><tr>
+      <th style="width:26px"></th><th class="l">Equipo</th>
+      <th>Prom</th><th>Pts</th><th>PJ</th>
+      <th title="Los puntos de 2024 que se le caen">Pierde</th>
+      </tr></thead><tbody>${p.map(r=>`<tr class="${
+        r.descendiendo?'fila-desciende':''}">
+      <td class="pos">${r.pos}</td>
+      <td class="l"><div class="tcell">${crest(r.team,18)}
+        <span class="tn">${esc(r.team.canon||r.team.name)}</span></div></td>
+      <td class="pts">${r.prom.toFixed(3)}</td>
+      <td>${r.pts}</td><td>${r.pj}</td>
+      <td style="color:var(--txt3)">${r.jugo2024?'−'+r.pierde:'—'}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <footer>Cómo quedarían los promedios el año que viene, cuando se caiga
+    2024 y todavía no se haya jugado nada de la nueva temporada. Los
+    partidos de cada temporada no los publica AFA${pt?`: se deducen por
+    diferencia —${pt['2024']} en 2024, ${pt['2025']} en 2025 y ${pt['2026']}
+    en lo que va de 2026— y la cuenta cierra para todos los clubes`:''}.</footer>`;
+  }
+
   function drawOtra(){
     const d=S.otra, el=$('#right'); if(!d) return;
     // fuera de la portada el panel vuelve a ser una sola caja
@@ -5861,10 +6166,14 @@ const App=(()=>{
       if(!d){ history.replaceState({pasos:0},'','/'); return void aplicar({t:'home'}); }
       // en frío la portada es la única que necesita el aviso de "primera
       // carga", que es el que muestra la pantalla de sin conexión
-      if(d.t==='home'||(d.t==='liga'&&d.id==='lpf')){
+      // Ojo con la condición: una sección del torneo también es `liga` con
+      // `id:'lpf'`, y por este camino se cargaba el fixture en vez de la
+      // sección. Sin el `!d.sec`, entrar en frío a /liga-profesional/equipos
+      // abría la fecha.
+      if(d.t==='home'||(d.t==='liga'&&d.id==='lpf'&&!SECCIONES[d.sec])){
         S.fondo=d; S.liga=d.t==='home'?'home':d.id;
         if(S.liga==='lpf'){ pestanasLpf(); S.fechaPedida=d.fecha||null; }
-        drawSide(); loadAll(true);
+        drawSide(); drawSubmenu(); loadAll(true);
       } else aplicar(d);
       api.avisar();
       cargarEmblemas();
@@ -6114,6 +6423,17 @@ const App=(()=>{
         if(document.hidden) latir();          // lo último antes de irse
       });
       return latido;
+    },
+    /* Marcar un resultado en la calculadora. Tocar el mismo botón otra vez
+       lo desmarca: es la forma de arrepentirse sin buscar un "borrar". */
+    calc(id, r){
+      if(calcElegido[id]===r) delete calcElegido[id];
+      else calcElegido[id]=r;
+      pintarCalculadora();
+    },
+    calcLimpiar(){
+      for(const k of Object.keys(calcElegido)) delete calcElegido[k];
+      pintarCalculadora();
     },
     reload(){ clearTimeout(S.timer); loadAll(false); },
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';

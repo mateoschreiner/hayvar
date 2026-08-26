@@ -459,10 +459,23 @@ def match_team(name, difusa=True):
 
     Sin el parecido, un club que no reconocemos queda sin canon: se ve, se
     puede arreglar agregando el alias, y no se funde con nadie.
+
+    Con una excepción, que es la que salvó a Newell's: cuando el nombre que
+    llega es MÁS CORTO que el nuestro, es una abreviatura y no otro club.
+    "Newell`s" es Newell's Old Boys y "Velez" es Vélez Sarsfield. El
+    peligro está sólo en el sentido contrario —el nombre que llega es más
+    largo, y esas palabras de más suelen ser justamente las que lo
+    distinguen: "de Jujuy", "Berlin", "de Santander"—. Así que el sentido
+    corto se acepta siempre, y el largo sólo con el juego cerrado.
     """
     n = norm(name)
     if n in NAME_INDEX:
         return NAME_INDEX[n]
+    # El nombre que llega es más corto que el nuestro: una abreviatura. Se
+    # exige que apunte a un solo club: "gimnasia" da dos y no resuelve.
+    cortos = {v for k, v in NAME_INDEX.items() if k.startswith(n)}
+    if len(cortos) == 1:
+        return cortos.pop()
     if not difusa:
         return None
     bare = re.sub(r"\s*\([^)]*\)\s*$", "", n).strip()
@@ -3843,7 +3856,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Los clubes del ascenso ya no se confunden con los de Primera: Gimnasia de Jujuy era Gimnasia LP, Belgrano de Paraná era Belgrano, y sus partidos iban al historial del otro"
+VERSION_APP = "2026-08-27 · Un nombre más largo que el nuestro ya no se toma por el club de Primera: Union Berlin era Unión, Racing de Santander era Racing y los tres Independiente de la Libertadores eran Independiente"
 
 
 def reparar_recorridos():

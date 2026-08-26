@@ -6211,6 +6211,39 @@ chequear("pero los de Primera que juegan la copa sí se reconocen",
               ("Boca Juniors", "Boca Juniors"),
               ("Vélez Sarsfield", "Vélez Sarsfield"),
               ("Central Córdoba SdE", "Central Córdoba (SdE)")]))
+# Y la distinción que hace que esto funcione: si el nombre que llega es más
+# CORTO que el nuestro es una abreviatura, no otro club. El peligro está
+# sólo en el sentido contrario, donde las palabras de más son justamente
+# las que distinguen: "de Jujuy", "Berlin", "de Santander".
+#
+# Salió de la medición: `Newell`s` de la Femenina estaba en la lista de
+# confundidos y era un acierto correcto —el mismo club con backtick—, así
+# que la primera versión del arreglo lo rompía.
+chequear("una abreviatura se reconoce aunque el juego no sea cerrado",
+         all(server.match_team(n, False) == c for n, c in
+             [("Newell`s", "Newell's Old Boys"), ("Velez", "Vélez Sarsfield"),
+              ("River", "River Plate"), ("Boca", "Boca Juniors")]),
+         [(n, server.match_team(n, False)) for n, c in
+          [("Newell`s", "Newell's Old Boys"), ("Velez", "Vélez Sarsfield")]
+          if server.match_team(n, False) != c])
+# Y una abreviatura ambigua no resuelve sola: "Gimnasia y Esgrima" son dos
+# clubes distintos. (Ojo: "Gimnasia" a secas SÍ resuelve, pero porque está
+# cargada como alias exacto a propósito, no por el parecido.)
+chequear("y una abreviatura ambigua no elige por su cuenta",
+         server.match_team("Gimnasia y Esgrima", False) is None
+         and server.match_team("Gimnasia y Esgrima", True) is None,
+         server.match_team("Gimnasia y Esgrima", False))
+# Los casos de verdad que apareció la medición, todos de una sola vez.
+chequear("los que aparecieron midiendo quedan todos sin fundirse",
+         all(server.match_team(n, False) is None for n in
+             ["Union Berlin", "Racing de Santander", "Independiente Medellín",
+              "Independiente Del Valle", "Independiente Santa Fe",
+              "Boca Unidos de Corrientes", "Tucumán Central", "Talleres RE",
+              "Central Norte", "Union St. Gilloise", "Gimnasia y Tiro",
+              "Racing Club Montevideo", "Sarmiento de Resistencia",
+              "Gimnasia de Concepción", "Independiente Petrolero"]),
+         [n for n in ["Union Berlin", "Racing de Santander", "Talleres RE"]
+          if server.match_team(n, False)])
 # El caso que demuestra que no se puede decidir por la forma del nombre:
 # los dos son "nombre del índice + de + lugar" y uno sí y el otro no.
 chequear("no se puede distinguir por la forma, y por eso el parámetro",

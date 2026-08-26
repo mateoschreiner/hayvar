@@ -5283,7 +5283,16 @@ if _sh.which("node"):
         "/api/club-info?name=deportivo%20madryn": {
             "club": "Deportivo Madryn", "escudo": "/img/x/9",
             "primary": "#0a7d3a", "accent": "#f2f2f2", "var": "#0a7d3a",
-            "info": {}, "historial": [], "plantel": [], "fixture": [],
+            "info": {"ciudad": "Puerto Madryn, Chubut",
+                     "division": "Primera Nacional", "capacidad": 8000,
+                     "temporadas": {"Primera Nacional": 4,
+                                    "Torneo Federal A": 9}},
+            "historial": [], "plantel": [],
+            "fixture": [{"nombre": "Copa Argentina", "copa": True,
+                         "posicion": None,
+                         "rendimiento": {"pj": 4, "g": 2, "e": 1, "p": 1,
+                                         "gf": 6, "gc": 4},
+                         "games": []}],
             "radar": None, "partidos": {}, "sitio": None, "tienda": None},
         "/api/rounds": {"rounds": [1], "current": 1},
         "/api/games": {"games": []}, "/api/ligas": {"ligas": []},
@@ -5356,7 +5365,17 @@ App.init();
     caras: (main.match(/class="cara/g) || []).length,
     proxima: main.indexOf('pivote proxima') >= 0,
     cartelito: (main.match(/class="cartelito">([^<]+)</) || [])[1] || '',
-    tagClub: (htmlDe('#app').match(/class="tag"[^>]*>([^<]*)</) || [])[1] || ''}));
+    tagClub: (htmlDe('#app').match(/class="tag"[^>]*>([^<]*)</) || [])[1] || '',
+    /* Lo que reemplaza al "cómo juega" y la trayectoria del club. */
+    /* Acotado al bloque del rendimiento: `pie` y `barra` son clases que
+       usa media ficha, y sin acotar se tomaba el "Dónde juega". */
+    rendTramos: (main.match(/class="cl-rend">[\s\S]*?<\/div>/) || [''])[0]
+      .match(/<i class="[gep]"/g)?.length || 0,
+    rendPie: ((main.match(/class="cl-rend">[\s\S]*?class="pie">([\s\S]*?)<\/div>/)
+      || ['',''])[1]).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+    categorias: [...der.matchAll(/class="nm">([^<]+)<\/span>\s*<span class="barra">/g)]
+      .map(m => m[1]),
+    catTotal: (der.match(/(\d+) temporadas en\s*total/) || [])[1] || ''}));
 })();
 """).replace("__R__", _rsub).replace("__E__", ruta)
         _g = (open(_DOMSITO, encoding="utf-8").read()
@@ -5523,9 +5542,25 @@ App.init();
         # Una sola cara: no gira, porque del otro lado no hay nada.
         chequear("que no gira, porque no hay nada del otro lado",
                  _s6["caras"] == 1, _s6["caras"])
-        # Y sin inventar datos que no tenemos.
-        chequear("y no inventa estadio ni títulos",
-                 _s6["fichaDatos"] == [], _s6["fichaDatos"])
+        # Muestra lo que hay y nada más: este club no tiene estadio
+        # cargado ni títulos, así que esas dos tarjetas no aparecen.
+        chequear("muestra lo que hay y no inventa el resto",
+                 _s6["fichaDatos"] == ["Dónde juega", "Capacidad"],
+                 _s6["fichaDatos"])
+        # La barra de ganados, empatados y perdidos, que reemplaza al
+        # gráfico de "cómo juega" en los clubes que no son de Primera.
+        chequear("la barra de rendimiento se dibuja en el torneo",
+                 _s6["rendTramos"] == 3, _s6["rendTramos"])
+        chequear("y dice cuántos ganó, empató y perdió",
+                 _s6["rendPie"] == "2 ganados 1 empatados 1 perdidos 6 : 4 goles",
+                 _s6["rendPie"])
+        # Y la trayectoria, abajo del plantel: de la categoría más alta a
+        # la más baja, no en el orden en que vino el dato.
+        chequear("y en qué categorías jugó, de la más alta a la más baja",
+                 _s6["categorias"] == ["Nacional", "Federal A"],
+                 _s6["categorias"])
+        chequear("con el total de temporadas", _s6["catTotal"] == "13",
+                 _s6["catTotal"])
 
     # Y la ficha del club, que es el otro lugar donde tenían que aparecer:
     # en la misma fila que el estadio y la capacidad.
@@ -6271,6 +6306,47 @@ chequear("es_tecnico reconoce las formas que manda la fuente",
          and not any(server.es_tecnico(x) for x in ("Delantero", "Arquero",
                                                     "", None)))
 
+print("\n── cómo le fue al club en cada torneo ──")
+#
+# Reemplaza al gráfico de "cómo juega" en los clubes que no son de
+# Primera. Ese gráfico se compara siempre contra el promedio de la Liga
+# Profesional —está fijo en el código— así que para ellos no aparece
+# nunca. Esto sale de los partidos que la ficha ya trae.
+
+
+def _pj(h, a, gh, ga, st="FIN"):
+    return {"home": {"canon": h, "name": h}, "away": {"canon": a, "name": a},
+            "gh": gh, "ga": ga, "status": st}
+
+
+_MIOS = [_pj("Deportivo Madryn", "Boca Juniors", 2, 1),      # ganó de local
+         _pj("River Plate", "Deportivo Madryn", 0, 0),       # empató afuera
+         _pj("Deportivo Madryn", "Racing", 1, 3),            # perdió de local
+         _pj("Deportivo Madryn", "Tigre", None, None, "PROG")]
+_r = server.rendimiento_en(_MIOS, "Deportivo Madryn")
+chequear("cuenta ganados, empatados y perdidos",
+         (_r["g"], _r["e"], _r["p"]) == (1, 1, 1), _r)
+# Los goles se cuentan desde el lado del club, no desde el local: de
+# visitante, los suyos son los de la derecha.
+chequear("y los goles desde el lado del club",
+         (_r["gf"], _r["gc"]) == (3, 4), _r)
+# Un partido que todavía no se jugó no es un empate.
+chequear("el que no se jugó todavía no cuenta", _r["pj"] == 3, _r)
+chequear("y los tres resultados suman los partidos",
+         _r["g"] + _r["e"] + _r["p"] == _r["pj"], _r)
+# Sin partidos terminados no hay barra, en vez de una barra en cero.
+chequear("sin partidos jugados no se muestra nada",
+         server.rendimiento_en([_pj("A", "B", None, None, "PROG")], "A") is None
+         and server.rendimiento_en([], "A") is None)
+# La pantalla: la barra va en cada torneo, no una sola de todo junto.
+chequear("la barra va en el bloque de cada competencia",
+         "${resumen}${rendimientoHtml(b.rendimiento)}" in HTML
+         and "function rendimientoHtml(r){" in HTML)
+# Un tramo de cero no se dibuja: un <i> de ancho 0% igual pinta y quedaban
+# rayitas de un color que no correspondía.
+chequear("y un resultado que no pasó nunca no pinta nada",
+         "const tramo=(n,clase,que)=>n" in HTML)
+
 print("\n── las fichas de los clubes que no son de Primera ──")
 #
 # Se buscaron en la web, una por una, con una regla: si no hay una fuente
@@ -6344,6 +6420,43 @@ chequear("y cada club nuevo tiene su propia dirección", not _sin_ruta,
 chequear("la ficha muestra dónde juega y en qué categoría",
          "${dato('Dónde juega', i.ciudad?esc(i.ciudad)" in HTML
          and "i.division?`<div class=\"pie\">${esc(i.division)}" in HTML)
+
+# La capacidad y la trayectoria salen de Wikipedia, que es una sola fuente
+# consistente: en el ascenso argentino no hay dos que coincidan, y una
+# fuente citable es mejor que el hueco.
+chequear("casi todas tienen capacidad",
+         sum(1 for f in fichas.CLUBES.values() if f.get("capacidad")) >= 33,
+         [n for n, f in fichas.CLUBES.items() if not f.get("capacidad")])
+# Sportivo Barracas no tiene cancha propia desde 1942: juega de prestado y
+# cambia de estadio entre fechas. Que no tenga capacidad es lo correcto.
+chequear("y el que no tiene cancha propia no tiene capacidad",
+         not fichas.CLUBES["Sportivo Barracas"].get("capacidad")
+         and not fichas.CLUBES["Sportivo Barracas"].get("estadio"))
+# La trampa de este dato: la "Primera B" anterior a 1986 era la Segunda
+# División de su época y NO es la Primera Nacional. Contarlas juntas le
+# sumaba a Temperley cincuenta temporadas que no existieron.
+chequear("las temporadas usan las categorías de hoy",
+         {k for f in fichas.CLUBES.values() for k in (f.get("temporadas") or {})}
+         <= {"Primera División", "Primera Nacional", "Primera B Metropolitana",
+             "Primera C", "Primera D", "Torneo Federal A"},
+         {k for f in fichas.CLUBES.values()
+          for k in (f.get("temporadas") or {})})
+chequear("y no cuentan la vieja Primera B como Primera Nacional",
+         fichas.CLUBES["Temperley"]["temporadas"]["Primera Nacional"] == 13,
+         fichas.CLUBES["Temperley"]["temporadas"])
+# Ningún cero: una categoría que el club nunca jugó no va, en vez de ir en
+# cero y dibujar una fila vacía.
+_ceros = [(n, k) for n, f in fichas.CLUBES.items()
+          for k, v in (f.get("temporadas") or {}).items() if not v]
+chequear("y una categoría que nunca jugó no aparece", not _ceros, _ceros)
+# La pantalla, abajo del plantel.
+chequear("la ficha muestra en qué categorías jugó",
+         "function temporadasHtml(t){" in HTML
+         and "${temporadasHtml(i.temporadas)}" in HTML
+         and "const ESCALERA=['Primera División','Primera Nacional'," in HTML)
+# Sin el dato no se dibuja la sección, en vez de una vacía.
+chequear("y el club sin ese dato no muestra la sección",
+         "if(!t) return '';" in HTML and "if(!filas.length) return '';" in HTML)
 
 print("\n── reconocer un club sin confundirlo con otro ──")
 #

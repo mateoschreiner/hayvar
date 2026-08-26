@@ -406,3 +406,101 @@ CLUBES = {
         "division": "Torneo Federal A",
     },
 }
+
+
+# ── Capacidad y trayectoria, de Wikipedia en español ─────────────────────
+#
+# Va aparte del bloque de arriba a propósito: son de una sola fuente, y así
+# se ve de dónde salió cada cosa. La capacidad la buscamos ahí porque en el
+# ascenso argentino no hay dos fuentes que coincidan, y una sola fuente
+# consistente y citable es mejor que el hueco.
+#
+# `temporadas` es cuántas jugó el club en cada categoría en toda su
+# historia. Tiene una trampa que hay que conocer: **la "Primera B" anterior
+# a 1986 era la Segunda División de su época y NO es la Primera Nacional**.
+# Contarlas juntas le sumaba a Temperley 50 temporadas de Primera Nacional
+# que no existieron. Todas ésas quedaron afuera. Lo mismo con el Torneo
+# Regional y el del Interior, que no equivalen a nada de lo de hoy.
+#
+# El Torneo Argentino A sí es el antecesor directo del Federal A, así que
+# se suman.
+#
+# Donde Wikipedia da un total por división sin decir de qué torneo
+# —"Tercera División: 38"— no se cargó nada: adivinar a qué categoría
+# corresponde es exactamente cómo se llena una ficha de datos falsos.
+_WIKIPEDIA = {
+    "Acassuso": (1500, {"Primera División": 2, "Primera B Metropolitana": 16,
+                        "Primera C": 16}),
+    "Agropecuario": (8000, {"Primera Nacional": 8, "Torneo Federal A": 1}),
+    "Argentino Merlo": (11000, {"Primera B Metropolitana": 3, "Primera C": 34,
+                                "Primera D": 14}),
+    "Argentino Monte Maíz": (5500, {"Torneo Federal A": 4}),
+    "Atenas Río Cuarto": (7000, {"Torneo Federal A": 2}),
+    "Atlanta": (18000, {"Primera División": 64, "Primera Nacional": 13,
+                        "Primera B Metropolitana": 28}),
+    "Atlético Rafaela": (16500, {"Primera División": 8, "Primera Nacional": 28,
+                                 "Torneo Federal A": 1}),
+    "Camioneros": (5000, {"Primera B Metropolitana": 1, "Primera C": 1,
+                          "Torneo Federal A": 6}),
+    "Chaco For Ever": (25000, {"Primera División": 8, "Primera Nacional": 12,
+                               "Torneo Federal A": 13}),
+    "Ciudad De Bolivar": (4000, {"Primera Nacional": 1, "Torneo Federal A": 5}),
+    "Claypole": (4000, {"Primera C": 15}),
+    "CSCyD Gimnasia y Esgrima (Chivilcoy)": (3000, None),
+    "Deportivo Armenio": (8000, {"Primera División": 2, "Primera Nacional": 2}),
+    "Deportivo Madryn": (8000, {"Primera Nacional": 4, "Torneo Federal A": 9}),
+    "Deportivo Maipú": (8000, {"Primera Nacional": 9}),
+    "Deportivo Morón": (32350, {"Primera División": 1, "Primera Nacional": 19,
+                                "Primera B Metropolitana": 22, "Primera C": 3}),
+    "Deportivo Rincón": (400, {"Torneo Federal A": 2}),
+    "Estudiantes": (16740, {"Primera División": 32, "Primera Nacional": 11,
+                            "Primera B Metropolitana": 30, "Primera C": 15,
+                            "Primera D": 4}),
+    "Gimnasia de Jujuy": (24000, {"Primera División": 18,
+                                  "Primera Nacional": 25}),
+    "Gimnasia y Tiro": (25000, {"Primera División": 4, "Primera Nacional": 7,
+                                "Torneo Federal A": 17}),
+    "Godoy Cruz": (24000, {"Primera División": 21, "Primera Nacional": 13}),
+    "Ituzaingó": (5470, {"Primera Nacional": 2, "Primera B Metropolitana": 8,
+                         "Primera C": 25, "Primera D": 32}),
+    # Wikipedia se contradice: el artículo del estadio quedó en 4.000 y el
+    # del club dice 11.000 después de la ampliación de 2023. Va el nuevo.
+    "Midland": (11000, {"Primera Nacional": 1, "Primera B Metropolitana": 3,
+                        "Primera C": 35, "Primera D": 29}),
+    # Sólo Primera: el resto lo da como totales por división, sin decir de
+    # qué torneo, y mezcla el Torneo del Interior con el Federal A.
+    "Olimpo": (18000, {"Primera División": 14}),
+    "Real Pilar": (10000, {"Primera B Metropolitana": 1, "Primera C": 7,
+                           "Primera D": 2}),
+    "San Martín de Formosa": (3000, None),
+    "San Martín San Juan": (19000, {"Primera División": 10,
+                                    "Primera Nacional": 25}),
+    "San Martín Tucumán": (30250, {"Primera División": 4}),
+    "San Miguel": (9044, {"Primera Nacional": 7, "Primera B Metropolitana": 20,
+                          "Primera C": 20, "Primera D": 4}),
+    "Sarmiento De La Banda": (8000, {"Torneo Federal A": 3}),
+    # Sin estadio propio desde 1942: no hay capacidad que poner.
+    "Sportivo Barracas": (None, {"Primera División": 18, "Primera C": 13,
+                                 "Primera D": 43}),
+    "Sportivo Belgrano": (15500, {"Primera Nacional": 3,
+                                  "Torneo Federal A": 14}),
+    # Acá también se contradice: la ficha del estadio dice 26.500 y su
+    # propio texto dice 18.000 "en 2026". Va el que tiene fecha.
+    "Temperley": (18000, {"Primera División": 19, "Primera Nacional": 13,
+                          "Primera B Metropolitana": 19, "Primera C": 2}),
+    "Tristan Suárez": (7500, {"Primera Nacional": 5,
+                              "Primera B Metropolitana": 27, "Primera C": 20,
+                              "Primera D": 12}),
+}
+
+# Los estadios que están en obra ahora mismo: la cifra de Wikipedia es la
+# de antes de la reforma y va a quedar corta.
+EN_OBRA = {"Godoy Cruz", "Deportivo Madryn", "Ciudad De Bolivar",
+           "Deportivo Rincón", "Sarmiento De La Banda"}
+
+for _n, (_cap, _temp) in _WIKIPEDIA.items():
+    if _cap:
+        CLUBES[_n]["capacidad"] = _cap
+    if _temp:
+        CLUBES[_n]["temporadas"] = _temp
+

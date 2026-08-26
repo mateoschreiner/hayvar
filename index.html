@@ -395,6 +395,45 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .eq-item .nm{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 
+/* ── En qué categorías jugó el club ── */
+.temporadas{padding:2px 16px 4px}
+.temporadas .fila{display:flex;align-items:center;gap:9px;padding:3px 0;
+  font-size:12px}
+.temporadas .nm{width:76px;flex:none;color:var(--txt2);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.temporadas .barra{flex:1;min-width:0;height:9px;border-radius:5px;
+  background:var(--line);overflow:hidden}
+.temporadas .barra i{display:block;height:100%;border-radius:5px}
+/* De la categoría más alta a la más baja: cuanto más arriba, más fuerte el
+   color. Se lee la escalera sin tener que mirar los rótulos. */
+.temporadas .n0{background:#1f4fd8}
+.temporadas .n1{background:#2f6fed}
+.temporadas .n2{background:#5b93f5}
+.temporadas .n3{background:#8fb6f8}
+.temporadas .n4{background:#b9d0fb}
+.temporadas .n5{background:#d8e4fd}
+.temporadas .n{width:26px;flex:none;text-align:right;font-weight:700;
+  font-variant-numeric:tabular-nums}
+
+/* ── Cómo le fue al club en cada torneo ── */
+.cl-rend{padding:2px 16px 12px}
+.cl-rend .barra{display:flex;height:8px;border-radius:4px;overflow:hidden;
+  background:var(--line)}
+.cl-rend .barra i{display:block;height:100%}
+.cl-rend .barra .g{background:#12b76a}
+.cl-rend .barra .e{background:var(--txt3)}
+.cl-rend .barra .p{background:#e5484d}
+.cl-rend .pie{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;
+  font-size:11.5px;color:var(--txt2)}
+.cl-rend .pie b{font-weight:700}
+.cl-rend .pie b.g{color:#0e9d5c}
+.cl-rend .pie b.e{color:var(--txt2)}
+.cl-rend .pie b.p{color:#d13438}
+.cl-rend .goles{margin-left:auto;font-variant-numeric:tabular-nums;
+  font-weight:700;color:var(--txt)}
+.cl-rend .goles .sep{color:var(--txt3);margin:0 1px}
+.cl-rend .goles .lb{font-weight:400;color:var(--txt2);margin-left:3px}
+
 /* ── Contra qué se compara al jugador ── */
 .radar-cual{display:flex;gap:4px;flex-wrap:wrap;padding:2px 0 10px}
 .rc{font:inherit;font-size:11.5px;font-weight:600;padding:4px 9px;
@@ -3291,6 +3330,34 @@ const App=(()=>{
   }
 
   // el fixture del club, una sección por competencia
+  /* Cómo le fue en ese torneo: una barra de tres colores y los goles.
+
+     Reemplaza al gráfico de "cómo juega" en los clubes que no son de
+     Primera, donde ese gráfico no aparece nunca. La barra es proporcional,
+     así que se lee de un vistazo sin mirar los números: un club que ganó
+     ocho de diez se ve distinto a uno que ganó tres.
+
+     Los tramos de cero no se dibujan: un `<i>` de ancho 0% igual pinta el
+     borde y quedaban rayitas de colores que no correspondían. */
+  function rendimientoHtml(r){
+    if(!r||!r.pj) return '';
+    const tramo=(n,clase,que)=>n
+      ? `<i class="${clase}" style="width:${n/r.pj*100}%"
+           title="${n} ${que}"></i>` : '';
+    return `<div class="cl-rend">
+      <div class="barra">
+        ${tramo(r.g,'g','ganados')}${tramo(r.e,'e','empatados')}${tramo(r.p,'p','perdidos')}
+      </div>
+      <div class="pie">
+        <span><b class="g">${r.g}</b> ganados</span>
+        <span><b class="e">${r.e}</b> empatados</span>
+        <span><b class="p">${r.p}</b> perdidos</span>
+        <span class="goles">${r.gf}<span class="sep">:</span>${r.gc}
+          <span class="lb">goles</span></span>
+      </div>
+    </div>`;
+  }
+
   function fixtureHtml(bloques){
     if(!bloques||!bloques.length) return '';
     return bloques.map(b=>{
@@ -3305,8 +3372,44 @@ const App=(()=>{
       return `<div class="cl-sec">${esc(b.nombre)}
         <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt3)">
           · ${b.games.length} partido${b.games.length===1?'':'s'}</span></div>
-        ${resumen}${b.games.map(matchRow).join('')}`;
+        ${resumen}${rendimientoHtml(b.rendimiento)}
+        ${b.games.map(matchRow).join('')}`;
     }).join('');
+  }
+
+  /* Cuántas temporadas jugó el club en cada categoría, en toda su historia.
+
+     Va abajo del plantel porque es lo que cuenta de dónde viene: para un
+     club del ascenso, "64 en Primera y 28 en la B" dice muchísimo más que
+     cualquier estadística de este año. El orden es de la categoría más
+     alta a la más baja, y la barra es proporcional al total, así que se ve
+     de un vistazo dónde pasó su vida el club.
+
+     Los datos son de Wikipedia y no siempre están: el club que no los
+     tenga simplemente no muestra la sección. */
+  const ESCALERA=['Primera División','Primera Nacional',
+                  'Primera B Metropolitana','Torneo Federal A',
+                  'Primera C','Primera D'];
+  const CORTO={'Primera División':'Primera','Primera Nacional':'Nacional',
+               'Primera B Metropolitana':'Primera B',
+               'Torneo Federal A':'Federal A','Primera C':'Primera C',
+               'Primera D':'Primera D'};
+
+  function temporadasHtml(t){
+    if(!t) return '';
+    const filas=ESCALERA.filter(c=>t[c]).map(c=>[c,t[c]]);
+    if(!filas.length) return '';
+    const total=filas.reduce((a,[,n])=>a+n,0);
+    return `<div class="globo"><div class="cl-sec">En qué categorías jugó</div>
+      <div class="temporadas">${filas.map(([c,n],i)=>`
+        <div class="fila" title="${n} temporada${n===1?'':'s'} en ${esc(c)}">
+          <span class="nm">${esc(CORTO[c]||c)}</span>
+          <span class="barra"><i class="n${i}"
+            style="width:${Math.max(3,n/total*100)}%"></i></span>
+          <span class="n">${n}</span>
+        </div>`).join('')}</div>
+      <div class="note" style="padding:2px 16px 14px">${total} temporadas en
+        total. Fuente: Wikipedia.</div></div>`;
   }
 
   function drawClub(){
@@ -3410,6 +3513,7 @@ const App=(()=>{
         :`<div class="note" style="padding:0 16px 14px">Todavía sin datos: se arma solo
           a medida que el servidor lee las formaciones de cada partido.</div>`}
       </div>
+      ${temporadasHtml(i.temporadas)}
       ${historialDelClub(d)}`;
     const caja=$('#right').parentElement; if(caja) caja.classList.add('sin-caja');
     $('#tabs').innerHTML='';

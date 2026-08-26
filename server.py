@@ -3918,7 +3918,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Los 34 clubes de la Copa Argentina que no son de Primera ya tienen ficha, y se abre desde su dirección: antes el nombre volvía en minúscula y no se reconocía a ninguno"
+VERSION_APP = "2026-08-27 · Ganados, empatados y perdidos por torneo, y en qué categorías jugó cada club en toda su historia. Más las capacidades que faltaban, de Wikipedia"
 
 
 def reparar_recorridos():
@@ -8627,6 +8627,41 @@ def api_club_info(q):
                     frescura=90)
 
 
+def rendimiento_en(games, canon):
+    """
+    Cómo le fue al club en esos partidos: ganados, empatados y perdidos,
+    más los goles a favor y en contra.
+
+    Es lo que reemplaza al gráfico de "cómo juega" en los clubes que no
+    son de Primera. Ese gráfico se compara contra el promedio de la Liga
+    Profesional, así que para ellos no aparece nunca; y aunque se apuntara
+    a su torneo, en una copa juegan uno o dos partidos y un promedio de dos
+    partidos no dice cómo juega nadie.
+
+    Esto, en cambio, no necesita ningún dato nuevo: sale de los partidos
+    que la ficha ya trae, y en una copa dos ganados y uno perdido sí
+    significan algo.
+
+    Sólo cuenta los terminados: un partido que todavía no se jugó no es un
+    empate.
+    """
+    r = {"pj": 0, "g": 0, "e": 0, "p": 0, "gf": 0, "gc": 0}
+    for m in games or []:
+        if m.get("status") != "FIN":
+            continue
+        local = mismo_club(m["home"].get("canon") or m["home"].get("name"),
+                           canon)
+        gf, gc = (m.get("gh"), m.get("ga")) if local else (m.get("ga"),
+                                                           m.get("gh"))
+        if gf is None or gc is None:
+            continue
+        r["pj"] += 1
+        r["gf"] += gf
+        r["gc"] += gc
+        r["g" if gf > gc else ("p" if gf < gc else "e")] += 1
+    return r if r["pj"] else None
+
+
 def armar_club_info(canon):
     ficha = dict(CLUBES_INFO.get(canon) or {})
     # Los títulos, de la lista de campeones. Va acá y no en un pedido
@@ -8702,6 +8737,7 @@ def armar_club_info(canon):
         return lid, {"nombre": LIGAS[lid]["nombre"],
                      "copa": bool(LIGAS[lid].get("copa")),
                      "posicion": posicion,
+                     "rendimiento": rendimiento_en(suyos, canon),
                      "games": suyos}
 
     cuales = [l for l in LIGAS if l != "fem"]

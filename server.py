@@ -2368,8 +2368,8 @@ def api_match(q):
     # próxima ya tiene color.
     for key, lado in (("home", out["home"]), ("away", out["away"])):
         c = _sin_reventar(
-            lambda n=(lado.get("canon") or lado.get("name") or ""):
-            colores_de_club(n))
+            lambda n=(lado.get("canon") or lado.get("name") or ""),
+            e=lado.get("logo"): colores_de_club(n, escudo=e))
         lado["colores"] = list(c) if c else None
 
     tv = [t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")]
@@ -3894,7 +3894,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Un club se llama igual en todas las fechas de una competencia: el nombre se resuelve al leer y no según cuándo entró cada partido. Y la ficha se abre desde su dirección, con o sin paréntesis"
+VERSION_APP = "2026-08-27 · Ahora sí los colores en la cancha de las otras competencias: el escudo lo trae el partido, y antes se buscaba en una lista que sólo tiene los treinta de Primera"
 
 
 def reparar_recorridos():
@@ -6778,7 +6778,8 @@ def historial_del_club(equipo, liga, tope_por_rival=10):
             # de la lista cargada a mano o, si el rival no está en ella,
             # de su escudo.
             "colores": list(_sin_reventar(
-                lambda n=rnombre: colores_de_club(n)) or ()) or None,
+                lambda n=rnombre, e=(escudos.get(rnombre) or {}).get("logo"):
+                colores_de_club(n, escudo=e)) or ()) or None,
             "escudo": (escudos.get(rnombre) or {}).get("logo")})
         r["pj"] += 1
         r["gf"] += gf
@@ -7890,7 +7891,7 @@ def api_club(q):
 
 # Clubes cuyo "VAR" del logo va en negro. El segundo color de la camiseta
 # no siempre sirve: el celeste de Belgrano sobre la barra celeste no se lee.
-def colores_del_escudo(canon, bajar=False):
+def colores_del_escudo(canon, bajar=False, escudo=None):
     """
     Los colores de un club sacados de su escudo.
 
@@ -7912,10 +7913,18 @@ def colores_del_escudo(canon, bajar=False):
     if guardado is not None:
         return guardado or None         # {} guardado = "ya miré y no se pudo"
 
-    try:
-        url = (_logos().get(canon) or {}).get("logo") or ""
-    except Exception:
-        return None
+    # El escudo lo trae quien llama, porque el que lo tiene es el partido.
+    #
+    # Antes se buscaba en `_logos()`, y ahí estaba el error: esa lista sólo
+    # indexa los treinta de Primera, y justamente los clubes que necesitan
+    # el color derivado no están. O sea que la cancha de una copa se seguía
+    # dibujando en blanco y negro aunque el escudo estuviera guardado.
+    url = escudo or ""
+    if not url:
+        try:
+            url = (_logos().get(canon) or {}).get("logo") or ""
+        except Exception:
+            return None
     m = re.match(r"^/img/competidor/([^/]+)/([^/]+)$", url)
     if not m:
         return None
@@ -8005,7 +8014,7 @@ def api_colores(q):
                      "cargados. Acá no se cambia nada.")}
 
 
-def colores_de_club(canon, bajar=False):
+def colores_de_club(canon, bajar=False, escudo=None):
     """
     El par (principal, acento) de un club, venga de donde venga.
 
@@ -8016,7 +8025,7 @@ def colores_de_club(canon, bajar=False):
     """
     if canon in COLORES:
         return COLORES[canon]
-    sale = colores_del_escudo(canon, bajar)
+    sale = colores_del_escudo(canon, bajar, escudo)
     return (sale["principal"], sale["acento"]) if sale else None
 
 
@@ -8916,10 +8925,12 @@ def api_equipos(q):
     logos = _sin_reventar(_logos, {}) or {}
     salida = []
     for nombre, v in vistos.items():
-        col = _sin_reventar(lambda n=nombre: colores_de_club(n))
+        escudo = v["logo"] or (logos.get(nombre) or {}).get("logo")
+        col = _sin_reventar(
+            lambda n=nombre, e=escudo: colores_de_club(n, escudo=e))
         salida.append({
             "name": nombre,
-            "logo": v["logo"] or (logos.get(nombre) or {}).get("logo"),
+            "logo": escudo,
             "primary": col[0] if col else None,
             "accent": col[1] if col else None,
             "var": "#111111" if nombre in VAR_NEGRO else (col[1] if col else None),

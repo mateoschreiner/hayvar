@@ -3438,13 +3438,26 @@ const App=(()=>{
     return html;
   }
 
+  /* Un nombre que viene de la dirección llega en minúscula —
+     /argentinos-juniors se convierte en "argentinos juniors"— y así se
+     mostraba en la barra. Esto es sólo para el rato que tarda en cargar:
+     apenas contesta el servidor se pone el nombre de verdad. */
+  /* La primera letra de cada palabra, y nada más. Con `\b` y acentos sale
+     mal: "unión" quedaba "UniÓN" y "newell's" quedaba "Newell'S", porque
+     la ó y el apóstrofo cuentan como borde de palabra. */
+  const enMayusculas=s=>String(s||'')
+    .replace(/(^|\s)(\S)/g,(_,antes,letra)=>antes+letra.toUpperCase());
+
   async function loadClub(nombre){
     shell(false,'club'); drawSide();
-    $('.tag').textContent=nombre;
+    $('.tag').textContent=enMayusculas(nombre);
     $('#matches').innerHTML='<div class="skel" style="width:45%"></div><div class="skel"></div>';
     $('#right').innerHTML='<div class="skel"></div>';
     try{ S.clubInfo=await get('/api/club-info?name='+encodeURIComponent(nombre)); }
     catch(e){ return status('err','No se pudo cargar el club: '+esc(e.message)); }
+    // El nombre bueno lo sabe el servidor: "argentinos juniors" entró por
+    // la dirección y sale "Argentinos Juniors".
+    if(S.clubInfo.club) $('.tag').textContent=S.clubInfo.club;
     drawClub();
     status('ok',`<b>${esc(S.clubInfo.club)}</b> · ficha del club`);
   }

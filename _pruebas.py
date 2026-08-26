@@ -6295,6 +6295,25 @@ chequear("la ficha de los treinta se abre por su dirección",
          all(c == v for c, _s, v in _ida_y_vuelta),
          [(c, s, v) for c, s, v in _ida_y_vuelta if c != v])
 
+# El escudo para sacar los colores lo trae quien llama, porque el que lo
+# tiene es el partido. Antes se buscaba en `_logos()`, que sólo indexa los
+# treinta de Primera: justo los clubes que necesitan el color derivado no
+# estaban ahí, y la cancha de una copa se seguía dibujando en blanco y
+# negro aunque el escudo estuviera guardado.
+chequear("el color sale del escudo del partido, no de la lista de Primera",
+         "def colores_del_escudo(canon, bajar=False, escudo=None):" in _SRV
+         and "url = escudo or \"\"" in _SRV)
+chequear("y los tres lugares que lo usan se lo pasan",
+         _SRV.count("escudo=e") >= 3)
+
+# El nombre del club en la barra venía de la dirección, en minúscula
+# —/argentinos-juniors → "argentinos juniors"— y se quedaba así.
+chequear("la barra muestra el nombre de verdad del club",
+         "if(S.clubInfo.club) $('.tag').textContent=S.clubInfo.club;" in HTML)
+chequear("y mientras carga, al menos con mayúsculas",
+         "const enMayusculas=" in HTML
+         and "$('.tag').textContent=enMayusculas(nombre);" in HTML)
+
 # Y la lista de equipos resuelve el nombre al leer, en vez de confiar en lo
 # guardado: un mismo partido puede tener el canon puesto o no según cuándo
 # entró, y así el mismo club salía dos veces —"Estudiantes (LP)" y
@@ -6766,7 +6785,7 @@ chequear("al club de un solo color se le mira sólo ese color",
 # leían COLORES directo, así que fuera de Primera salían en blanco y negro.
 # Ahora pasan por la misma puerta y se llenan solas en las catorce.
 chequear("la cancha y el historial usan la misma puerta de colores",
-         "colores_de_club(n))" in _SRV
+         "colores_de_club(n, escudo=e)" in _SRV
          and _SRV.count("colores_de_club(") >= 3
          and 'lado["colores"] = list(c) if c else None' in _SRV)
 chequear("y ya no leen la lista de Primera directo",
@@ -6782,7 +6801,7 @@ chequear("los colores cargados a mano tienen prioridad",
 # lista de treinta y ocho equipos no puede disparar treinta y ocho
 # descargas.
 chequear("y no se baja ningún escudo con alguien esperando",
-         "def colores_del_escudo(canon, bajar=False):" in _SRV
+         "def colores_del_escudo(canon, bajar=False, escudo=None):" in _SRV
          and "if not bajar and" in _SRV)
 # Comparar los dos colores como conjunto: "oro y azul" donde la lista dice
 # "azul y oro" es el mismo club, no un error.

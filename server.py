@@ -1437,11 +1437,6 @@ def api_games(q):
     rnd = (q.get("round") or [None])[0]
     if date:
         games = [g for g in games if (g["start"] or "")[:10] == date]
-    # Un partido, una fila. Va antes de filtrar y antes de armar el cuadro:
-    # si un repetido llega hasta ahí, se convierte en una llave de ida y
-    # vuelta que no existe.
-    games = sin_repetidos(games)
-
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]
     logos = _logos()
@@ -1725,21 +1720,24 @@ def api_promedios(q):
     # Lo que sí dice algo es cuánto le costaría salvarse: no es lo mismo
     # necesitar diez puntos de cuarenta y ocho que necesitar cuarenta y
     # cuatro. Se pinta por eso — por la exigencia, no por la posibilidad—.
-    UN_TERCIO = 1.0 / 3
     for r in rows:
         n = r.get("restantes") or 0
         disponibles = 3 * n
         r["disponibles"] = disponibles
-        # Salvado sigue queriendo decir lo de siempre: ya no puede
-        # descender haga lo que haga.
+        # Salvado quiere decir lo de siempre: ya no puede descender haga lo
+        # que haga, sin depender de nadie.
         r["salvado"] = r.get("necesita") == 0
         r["descendiendo"] = r in en_descenso
-        # Y en riesgo, el que para salvarse necesita más de un tercio de lo
-        # que queda en juego. El que no llega ni ganando todo, también.
-        exige = (1.0 if r.get("necesita") is None or not disponibles
-                 else r["necesita"] / disponibles)
-        r["exige"] = round(exige, 3)
-        r["enRiesgo"] = exige > UN_TERCIO and not r["descendiendo"]
+        # Y marcado, todo el que todavía necesita puntos. Es lo honesto:
+        # que el color diga "a éste le falta" y no una interpretación
+        # nuestra de cuánto le falta.
+        #
+        # Cuánto le falta lo dice el número, que es lo que de verdad
+        # distingue: no es lo mismo necesitar diez puntos de cuarenta y
+        # ocho que necesitar cuarenta y cuatro.
+        r["exige"] = (1.0 if r.get("necesita") is None or not disponibles
+                      else round(r["necesita"] / disponibles, 3))
+        r["enRiesgo"] = (not r["salvado"]) and not r["descendiendo"]
     riesgo = [r["team"]["name"] for r in rows if r["enRiesgo"]]
 
     # La tabla que va a regir el año que viene: la misma sin 2024. Necesita
@@ -1810,8 +1808,13 @@ def partidos_por_temporada(rows, pj_de_este_ano):
     # mismo para todos los clubes que jugaron las tres.
     c = unico(r["pj"] - a - b for r in rows
               if r.get("p2024") is not None and r.get("p2025") is not None)
-    if not c or c < 0:
-        return None
+    if c is None:
+        return {"error": "los clubes no coinciden en cuántos partidos "
+                         "llevan jugados este año."}
+    if c < 0:
+        return {"error": "la cuenta da %d partidos jugados este año, que no "
+                         "puede ser: revisá los %d de 2024 y los %d de 2025."
+                         % (c, a, b)}
 
     # Y la comprobación que decide si esto se muestra o no: para cada club,
     # los partidos que dice AFA tienen que ser exactamente los de las
@@ -1822,17 +1825,22 @@ def partidos_por_temporada(rows, pj_de_este_ano):
         esperado = (a if r.get("p2024") is not None else 0) \
                  + (b if r.get("p2025") is not None else 0) + c
         if r["pj"] != esperado:
-            return None
+            return {"error": "A %s le dan %d partidos y la cuenta da %d "
+                             "(%d + %d + %d)."
+                             % (r["team"]["name"], r["pj"], esperado, a, b, c)}
         # Y nadie puede haber sacado más de tres puntos por partido.
         for temporada, jugados in (("p2024", a), ("p2025", b), ("p2026", c)):
             pts = r.get(temporada)
             if pts is not None and pts > 3 * jugados:
-                return None
+                return {"error": "%s tiene %d puntos en %s y sólo se jugaban "
+                                 "%d partidos." % (r["team"]["name"], pts,
+                                                   temporada[1:], jugados)}
     # `pj_de_este_ano` ya no hace falta para la cuenta, pero si está y no
     # coincide con lo que salió por resta, algo cambió y conviene frenar.
     dice_la_anual = unico(pj_de_este_ano.get(r["team"]["name"]) for r in rows)
     if dice_la_anual is not None and dice_la_anual != c:
-        return None
+        return {"error": "la cuenta da %d partidos este año y la tabla anual "
+                         "dice %d." % (c, dice_la_anual)}
     return {"2024": a, "2025": b, "2026": c}
 
 
@@ -1845,7 +1853,7 @@ def tabla_del_ano_que_viene(rows, por_temporada):
     Vale para mirar quién está cómodo de verdad y quién sólo está salvado
     por una temporada que se le va.
     """
-    if not por_temporada:
+    if not por_temporada or por_temporada.get("error"):
         return None
     del2024 = por_temporada["2024"]
     salida = []
@@ -3765,7 +3773,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · la tabla de promedios 2027 ya sale, el amarillo dice cuánto costaría salvarse, y la Copa Argentina sin partidos repetidos"
+VERSION_APP = "2026-08-26 · la llave de Copa Argentina sin el partido repetido, el color en todos los que necesitan puntos, y escudos en la calculadora"
 
 
 def reparar_recorridos():
@@ -4850,6 +4858,14 @@ def api_liga_games(q):
     # ordenan por cuándo empezaron y se les da un número, que es lo que el
     # resto del servidor ya sabe manejar. El nombre viaja aparte, para el
     # rótulo de los botones.
+    # Un partido, una fila, y antes que nada.
+    #
+    # Estaba más abajo y no alcanzaba: para cuando se limpiaba, el cuadro
+    # de llaves ya se había armado con el repetido adentro, así que al
+    # abrir la llave seguían apareciendo los dos. Lo que se limpia tarde no
+    # se limpia.
+    games = sin_repetidos(games)
+
     etapas = []
     if cfg.get("copa"):
         # ¿el torneo tiene fase de grupos? Lo dice que haya tablas por zona.
@@ -5085,11 +5101,6 @@ def api_liga_games(q):
         if previas and not cfg.get("sin_cuadro_previa"):
             suyos = [g for g in games if (g.get("etapa") or g.get("stage")) in previas]
             llaves_previa = armar_llaves(suyos, previas, lid)
-
-    # Un partido, una fila. Va antes de filtrar y antes de armar el cuadro:
-    # si un repetido llega hasta ahí, se convierte en una llave de ida y
-    # vuelta que no existe.
-    games = sin_repetidos(games)
 
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]

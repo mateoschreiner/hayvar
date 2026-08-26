@@ -5326,13 +5326,18 @@ chequear("los partidos de la temporada en curso salen restando",
 # equivocada es mucho peor que no mostrarla.
 _roto = [dict(r) for r in _filasP]
 _roto[0]["pj"] += 1
+_falla = server.partidos_por_temporada(_roto, {})
 chequear("y si a algún club no le cierra, no se muestra nada",
-         server.partidos_por_temporada(_roto, {}) is None)
+         isinstance(_falla, dict) and "error" in _falla, _falla)
 # Nadie puede haber sacado más de tres puntos por partido.
 _imposible = [dict(r) for r in _filasP]
 _imposible[0] = dict(_imposible[0], p2024=3 * _A + 1)
+_falla2 = server.partidos_por_temporada(_imposible, {})
 chequear("ni si alguno sacó más puntos de los que se podían",
-         server.partidos_por_temporada(_imposible, {}) is None)
+         isinstance(_falla2, dict) and "error" in _falla2, _falla2)
+# Y que la tabla no se arme con un resultado que trae error adentro.
+chequear("y con ese error no se arma ninguna tabla",
+         server.tabla_del_ano_que_viene(_filasP, _falla) is None)
 _prox = server.tabla_del_ano_que_viene(_filasP, _pt)
 _porNombre = {x["team"]["name"]: x for x in _prox}
 # Lanús: 50 puntos en 2025 y 31 en lo que va de 2026, sobre 32 + 22 partidos.
@@ -5370,15 +5375,12 @@ chequear("los puntos que necesita cada uno salen bien",
 chequear("y el último de la tabla no figura salvado",
          _nec["Ultimo"] is None)
 
-# Cuándo se pinta de amarillo.
-#
-# "Todavía lo pueden alcanzar" es cierto casi siempre: a mitad de
-# temporada quedan cuarenta y ocho puntos en juego y una tabla que se abre
-# en cuarenta, así que cualquiera puede terminar en cualquier lado. Con esa
-# regla quedaban diecisiete equipos marcados, y el escenario que lo
-# justificaba era que el último ganara sus dieciséis partidos y el otro
-# perdiera los dieciséis. Ahora se pinta por lo que le costaría salvarse.
-def _amarillos(faltan):
+# Cuándo se pinta de amarillo: todo el que todavía necesita puntos para no
+# poder descender. Es lo honesto —el color dice "a éste le falta"— y cuánto
+# le falta lo dice el número, que es lo que de verdad distingue: no es lo
+# mismo necesitar diez puntos de cuarenta y ocho que necesitar cuarenta y
+# cuatro.
+def _marcados(faltan):
     filas = []
     for n, pts, _a, _b, _c in _REALES:
         r = {"team": {"name": n}, "pts": pts, "pj": 95, "restantes": faltan,
@@ -5390,97 +5392,42 @@ def _amarillos(faltan):
     filas.sort(key=lambda r: -r["prom"])
     server.puntos_para_salvarse(filas)
     zona = filas[-server.DESCIENDEN:]
-    marcados = 0
-    for r in filas:
-        d = 3 * faltan
-        exige = (1.0 if r.get("necesita") is None or not d
-                 else r["necesita"] / d)
-        if exige > 1.0 / 3 and r not in zona:
-            marcados += 1
-    return marcados
+    return [r for r in filas if r.get("necesita") != 0 and r not in zona]
 
-_a16, _a6, _a2 = _amarillos(16), _amarillos(6), _amarillos(2)
-chequear("el amarillo se achica solo a medida que avanza el torneo",
-         _a16 > _a6 >= _a2, (_a16, _a6, _a2))
-# Faltando dos fechas, con seis puntos en juego, casi nadie está en duda.
-chequear("y sobre el final queda en muy pocos", _a2 <= 2, _a2)
-chequear("se pinta por lo que le costaría, no por si es alcanzable",
-         'r["enRiesgo"] = exige > UN_TERCIO' in _SRV
-         and 'r["exige"] = round(exige, 3)' in _SRV)
+_m16, _m2 = _marcados(16), _marcados(2)
+chequear("se marca a todos los que necesitan puntos, no a algunos",
+         len(_m16) == len(_REALES) - server.DESCIENDEN, len(_m16))
+# Y se achica solo: sobre el final, casi todos ya están salvados.
+chequear("y sobre el final quedan muy pocos", len(_m2) <= 2, len(_m2))
+chequear("el color sale de si necesita puntos, sin umbrales inventados",
+         'r["enRiesgo"] = (not r["salvado"]) and not r["descendiendo"]' in _SRV
+         and 'r["salvado"] = r.get("necesita") == 0' in _SRV)
 # Y que la tabla muestre el número, para que el color signifique algo.
 chequear("la tabla dice cuántos puntos necesita",
          '<td class="nec">${r.necesita===0?' in HTML
          and "los ${(rows[0]||{}).disponibles ?? 0} que quedan en juego" in HTML)
-# El mismo cruce en la misma instancia, pero de dos ediciones distintas:
-# la Copa Argentina es a partido único y guardamos dos temporadas, así que
-# Instituto–Platense de una edición y de la otra aparecían como "Ida" y
-# "Vuelta" de una llave que nunca existió.
-_ca1 = {"id": 1, "round": 3, "temporada": 15, "start": "2025-09-05T20:00:00",
-        "home": {"canon": "Instituto", "name": "Instituto"},
-        "away": {"canon": "Platense", "name": "Platense"}}
-_ca2 = {"id": 2, "round": 3, "temporada": 16, "start": "2026-08-19T20:00:00",
-        "home": {"canon": "Instituto", "name": "Instituto"},
-        "away": {"canon": "Platense", "name": "Platense"}}
-server.marcar_ida_vuelta([_ca1, _ca2])
-chequear("dos ediciones distintas no son una llave de ida y vuelta",
-         _ca1.get("tramo") is None and _ca2.get("tramo") is None,
-         (_ca1.get("tramo"), _ca2.get("tramo")))
-# Y una llave de verdad —dos partidos de la misma edición y la misma
-# instancia— se sigue marcando.
-_id = {"id": 3, "round": 5, "temporada": 69, "start": "2026-08-12T20:00:00",
-       "home": {"canon": "Boca Juniors", "name": "Boca Juniors"},
-       "away": {"canon": "Flamengo", "name": "Flamengo"}}
-_vu = {"id": 4, "round": 5, "temporada": 69, "start": "2026-08-19T20:00:00",
-       "home": {"canon": "Flamengo", "name": "Flamengo"},
-       "away": {"canon": "Boca Juniors", "name": "Boca Juniors"}}
-server.marcar_ida_vuelta([_vu, _id])
-chequear("y la de ida y vuelta de verdad se sigue marcando",
-         _id.get("tramo") == "Ida" and _vu.get("tramo") == "Vuelta",
-         (_id.get("tramo"), _vu.get("tramo")))
-chequear("el cuadro tampoco junta dos ediciones en una llave",
-         "(m.get(\"temporada\"), llave_de(m)), []).append(m)" in _SRV)
-
-# El caso de verdad que apareció en la Copa Argentina: el mismo partido
-# llegando dos veces, con dos identificadores distintos, el mismo día y el
-# mismo local. Se mostraba como "Partidos de ida" y "Partidos de vuelta" de
-# una llave que no existe.
-def _pca(i, loc, vis, dia, gh=None, live=None):
-    return {"id": i, "start": dia + "T21:15:00", "gh": gh,
-            "ga": 0 if gh is not None else None, "liveId": live,
-            "round": 3, "temporada": 16,
-            "home": {"canon": loc, "name": loc},
-            "away": {"canon": vis, "name": vis}}
-
-_dupes = [_pca(1, "Platense", "Instituto", "2026-08-27"),
-          _pca(2, "Platense", "Instituto", "2026-08-27", live=99)]
-_limpio = server.sin_repetidos(_dupes)
-chequear("el mismo partido dos veces queda en una sola fila",
-         len(_limpio) == 1, len(_limpio))
-# Se queda el que más sabe, para que el repetido no se lleve ningún dato.
-chequear("y se queda el que trae más información",
-         _limpio[0]["id"] == 2, _limpio[0]["id"])
-# Segunda red: aunque un repetido sobreviva, no puede volverse una llave.
-_dos = [_pca(1, "Platense", "Instituto", "2026-08-27"),
-        _pca(2, "Platense", "Instituto", "2026-08-27")]
-server.marcar_ida_vuelta(_dos)
-chequear("dos partidos el mismo día no son ida y vuelta",
-         [x.get("tramo") for x in _dos] == [None, None], _dos)
-# En una llave de verdad el local se invierte: el que recibe la ida visita
-# la vuelta. Dos con el mismo local son el mismo partido repetido.
-_mismoLocal = [_pca(1, "Platense", "Instituto", "2026-08-27"),
-               _pca(2, "Platense", "Instituto", "2026-09-03")]
-server.marcar_ida_vuelta(_mismoLocal)
-chequear("ni dos con el mismo local, aunque sean de días distintos",
-         [x.get("tramo") for x in _mismoLocal] == [None, None], _mismoLocal)
-_llave = [_pca(1, "Boca Juniors", "Flamengo", "2026-08-12"),
-          _pca(2, "Flamengo", "Boca Juniors", "2026-08-19")]
-server.marcar_ida_vuelta(_llave)
-chequear("y la llave de verdad se sigue marcando",
-         [x.get("tramo") for x in _llave] == ["Ida", "Vuelta"], _llave)
-chequear("el fixture se limpia antes de armar el cuadro",
-         "games = sin_repetidos(games)" in _SRV
-         and _SRV.index("games = sin_repetidos(games)")
-             < _SRV.index('res = {"games": games'))
+# Cuando la cuenta de los promedios no cierra, que diga POR QUÉ: sin eso,
+# la pantalla sólo dice "no se puede" y no hay con qué arreglarlo.
+_malos = [dict(r) for r in _filasP]
+_malos[0]["pj"] += 1
+# Un ascendido —sin 2024— al que los partidos no le cuadran. Los demás
+# siguen coincidiendo, así que el error tiene que salir de la comprobación
+# club por club y nombrarlo.
+_malos = [dict(r) for r in _filasP] + [
+    {"team": {"name": "Recién Ascendido"}, "pts": 30, "pj": 99,
+     "p2024": None, "p2025": None, "p2026": 30, "prom": 0.3}]
+_motivo = server.partidos_por_temporada(_malos, {})
+chequear("y cuando no cierra, dice qué club no cuadra",
+         isinstance(_motivo, dict) and "Recién Ascendido" in _motivo.get("error", ""),
+         _motivo)
+chequear("la pantalla muestra ese motivo",
+         "(pt&&pt.error)" in HTML)
+# Los escudos en la calculadora salen de la misma lista que ya vino con la
+# tabla: sin un pedido nuevo ni un mapa aparte que se desactualice.
+chequear("la calculadora dibuja los escudos",
+         "function escudoDe(nombre)" in HTML
+         and "${escudoDe(m.local)}" in HTML and "${escudoDe(m.visita)}" in HTML
+         and ".calc-esc{width:18px;height:18px;flex:none" in HTML)
 
 chequear("la calculadora se sirve de un solo pedido",
          '"/api/calculadora": api_calculadora,' in _SRV

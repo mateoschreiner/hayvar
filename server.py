@@ -3894,7 +3894,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Ahora sí los colores en la cancha de las otras competencias: el escudo lo trae el partido, y antes se buscaba en una lista que sólo tiene los treinta de Primera"
+VERSION_APP = "2026-08-27 · El modo club deja elegir la competencia: ya no son sólo los treinta de Primera, son los de cualquiera de las catorce, con el color sacado de su escudo"
 
 
 def reparar_recorridos():

@@ -5228,7 +5228,10 @@ chequear("entrar en frío a una sección no cae en el fixture",
 
 if _sh.which("node"):
     import historia as _hist                                     # noqa: E402
-    _clubes = [{"name": n, "logo": ("/img/x/%d" % i) if i else None}
+    # Con colores, que es lo que el modo club necesita para pintar.
+    _clubes = [{"name": n, "logo": ("/img/x/%d" % i) if i else None,
+                "primary": "#123456", "accent": "#abcdef",
+                "var": "#abcdef"}
                for i, n in enumerate(["River Plate", "Boca Juniors",
                                       "Ñublense", "Aldosivi"])]
     _rsub = json.dumps({
@@ -5236,6 +5239,13 @@ if _sh.which("node"):
         # La lista de equipos ahora es por competencia y sale del
         # calendario, así que anda igual en las catorce.
         "/api/equipos": {"clubes": _clubes, "liga": "lpf"},
+        # La de una copa, con un club sin color: ésos no se pueden ofrecer
+        # en el modo club porque no hay con qué pintar la página.
+        "/api/equipos?liga=ca": {"clubes": [
+            {"name": "Deportivo Madryn", "logo": "/img/x/9",
+             "primary": "#0a5", "accent": "#fff"},
+            {"name": "Sin Color Todavía", "logo": None,
+             "primary": None, "accent": None}], "liga": "ca"},
         "/api/standings": {"zones": []},
         "/api/annual": {"rows": []}, "/api/promedios": {"rows": []},
         "/api/scorers": {"rows": []},
@@ -5280,7 +5290,24 @@ App.init();
      como un `null` pelado y parece que reventó la prueba. */
   const htmlDe=s=>{ const e=doc.querySelector(s); return (e&&e.innerHTML)||''; };
   const sub=htmlDe('#subm'), main=htmlDe('#matches'), der=htmlDe('#right');
+  /* El modo club, abierto de verdad: primero en la competencia que estás
+     mirando y después cambiando a otra. Lo que importa es que la lista de
+     clubes cambie con la competencia y que no ofrezca los que todavía no
+     tienen color, porque con ésos no se puede pintar la página. */
+  let cp = {};
+  try{
+    await App.clubPicker();
+    const uno = htmlDe('#modalBox');
+    await App.clubPicker('ca');
+    const dos = htmlDe('#modalBox');
+    const nom = h => [...h.matchAll(/class="nm">([^<]+)</g)].map(m => m[1]);
+    cp = {ligas: (uno.match(/class="cp-liga[ "]/g) || []).length,
+          marcada: (uno.match(/class="cp-liga on"[^>]*>([^<]+)</) || [])[1] || '',
+          clubes: nom(uno), copa: nom(dos),
+          avisaSinColor: /sin color todav/i.test(dos)};
+  }catch(e){ cp = {revento: String((e && e.message) || e)}; }
   console.log(JSON.stringify({
+    cp,
     haySubmenu: sub.indexOf('Fixture/Tablas') >= 0,
     opciones: (sub.match(/class="sm/g) || []).length,
     seleccionado: (sub.match(/class="sm on"[^>]*>([^<]+)</) || [])[1] || '',
@@ -5375,6 +5402,29 @@ App.init();
                  _s2["nombres"] == ["Aldosivi", "Boca Juniors", "Ñublense",
                                     "River Plate"], _s2["nombres"])
         chequear("y cada uno lleva a su ficha", _s2["linkAlClub"], _s2)
+
+        # El modo club, abierto de verdad y cambiando de competencia.
+        _cp = _s2["cp"]
+        chequear("el modo club se abre sin reventar",
+                 not _cp.get("revento"), _cp.get("revento"))
+        # Las catorce competencias del menú, sin la portada, que no tiene
+        # equipos.
+        _cuantas = len(re.findall(r"\['[a-z]+','[^']+',1\]", HTML[
+            HTML.find("const LIGAS=["):HTML.find("function drawSide()")])) - 1
+        chequear("ofrece todas las competencias, sin la portada",
+                 _cp["ligas"] == _cuantas == 14, (_cp["ligas"], _cuantas))
+        chequear("y arranca marcando la que estabas mirando",
+                 _cp["marcada"] == "Liga Profesional", _cp["marcada"])
+        chequear("con los clubes de esa competencia",
+                 sorted(_cp["clubes"]) == ["Aldosivi", "Boca Juniors",
+                                           "River Plate", "Ñublense"],
+                 _cp["clubes"])
+        # Y el cambio: otra competencia, otros clubes.
+        chequear("cambiar de competencia cambia los clubes",
+                 _cp["copa"] == ["Deportivo Madryn"], _cp["copa"])
+        chequear("y el que no tiene color no se ofrece, pero se avisa",
+                 "Sin Color Todavía" not in _cp["copa"]
+                 and _cp["avisaSinColor"], _cp)
 
     # Y la historia, entrando en frío por su link y con los datos de
     # verdad. Lo que se mira no es que "no explote": que estén los 19
@@ -6294,6 +6344,28 @@ _ida_y_vuelta = [(c, server._slug(c),
 chequear("la ficha de los treinta se abre por su dirección",
          all(c == v for c, _s, v in _ida_y_vuelta),
          [(c, s, v) for c, s, v in _ida_y_vuelta if c != v])
+
+# El modo club ofrecía sólo los treinta de Primera, porque salía de la
+# lista de colores cargada a mano. Ahora sale del calendario de cada
+# competencia y se puede elegir en cualquiera de las catorce.
+chequear("el modo club deja elegir la competencia",
+         "function ligasDelPicker()" in HTML
+         and "async function clubPicker(liga){" in HTML
+         and 'onclick="App.clubPicker(' in HTML
+         and "const clubes=await equipos(cual);" in HTML)
+chequear("y arranca en la que estás mirando",
+         "clubDe=(S.liga&&S.liga!=='home'&&S.liga!=='club')" in HTML)
+# La portada no tiene equipos: no puede aparecer como opción.
+chequear("la portada no se ofrece como competencia",
+         "filter(([id])=>id!=='home')" in HTML)
+# Sin color no se puede pintar la página, así que ésos no se ofrecen —pero
+# se dice cuántos son, para que no parezca que faltan clubes.
+chequear("no se ofrece un club sin color, y se aclara cuántos son",
+         "const conColor=clubes.filter(c=>c.primary);" in HTML
+         and "conColor.length<clubes.length" in HTML)
+# Y si tocás otra competencia mientras la primera carga, no se pisa.
+chequear("y cambiar de competencia mientras carga no pisa la lista",
+         "if(clubDe!==cual) return;" in HTML)
 
 # El escudo para sacar los colores lo trae quien llama, porque el que lo
 # tiene es el partido. Antes se buscaba en `_logos()`, que sólo indexa los

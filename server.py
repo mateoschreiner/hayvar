@@ -3857,7 +3857,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Se pueden corregir los partidos que quedaron guardados con el club equivocado: se recalcula del nombre que mandó la fuente, que siempre estuvo guardado, y no se borra nada"
+VERSION_APP = "2026-08-27 · La corrección ahora compara lo que de verdad queda guardado: contaba ocho mil cambios donde el antes y el después eran el mismo nombre, y los de verdad quedaban perdidos en el medio"
 
 
 def reparar_recorridos():
@@ -8652,17 +8652,27 @@ def corregir_nombres(aplicar=False):
                     if not crudo:
                         continue
                     nuevo = match_team(crudo, difusa)
-                    if nuevo == lado.get("canon"):
+                    # Se compara lo que DE VERDAD queda guardado, que es
+                    # `canon or nombre`, y no el canon a secas. La primera
+                    # versión miraba el canon y contaba como cambio todo
+                    # club que dejaba de reconocerse: un Nottingham Forest
+                    # pasaba de "Nottingham Forest" a None y la tabla
+                    # volvía a guardar "Nottingham Forest". Ocho mil
+                    # cambios que no cambiaban nada, y los de verdad
+                    # perdidos en el medio.
+                    antes = lado.get("canon") or crudo
+                    ahora = nuevo or crudo
+                    if antes == ahora:
                         continue
                     cambios.append({"liga": lid, "club": crudo,
-                                    "antes": lado.get("canon"),
-                                    "ahora": nuevo})
+                                    "antes": antes, "ahora": ahora})
                     if aplicar:
                         lado["canon"] = nuevo
                     hubo = True
-            if hubo and aplicar:
-                almacen.guardar(clave, guardado)
+            if hubo:
                 tocadas[comp] = (lid, i == 0)
+                if aplicar:
+                    almacen.guardar(clave, guardado)
     if aplicar:
         # Se reescriben en el mismo orden que el rescate original: primero
         # las competencias principales. Los partidos que llegan por los dos
@@ -8679,7 +8689,7 @@ def corregir_nombres(aplicar=False):
     # 26 partidos que no eran suyos".
     resumen = {}
     for c in cambios:
-        k = (c["antes"], c["club"])
+        k = (c["antes"], c["ahora"])
         resumen[k] = resumen.get(k, 0) + 1
     return {
         "aplicado": bool(aplicar),
@@ -8688,7 +8698,7 @@ def corregir_nombres(aplicar=False):
         "escritos": escritos,
         "cambios": sorted(
             ({"leSacamosA": a, "club": n, "partidos": v}
-             for (a, n), v in resumen.items() if a),
+             for (a, n), v in resumen.items()),
             key=lambda x: -x["partidos"]),
         "nota": ("Se recalculó a qué club pertenece cada partido usando el "
                  "nombre que mandó la fuente, que siempre estuvo guardado. "

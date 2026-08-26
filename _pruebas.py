@@ -6297,19 +6297,38 @@ try:
                   "canon": "Vélez Sarsfield"},
          "start": "2026-03-02T20:00:00", "round": 1, "status": "FIN",
          "gh": 0, "ga": 0},
+        # Y el que casi me hace escribir ocho mil correcciones vacías: un
+        # club que no reconocemos y que quedó con su propio nombre de
+        # canon. Deja de reconocerse —el canon pasa a None— pero lo que se
+        # guarda es `canon or nombre`, o sea el mismo nombre de siempre. No
+        # cambia nada y no puede contar como cambio.
+        {"id": 90003, "home": {"id": 5, "name": "Nottingham Forest",
+                               "canon": "Nottingham Forest"},
+         "away": {"id": 6, "name": "Everton", "canon": "Everton"},
+         "start": "2026-03-03T20:00:00", "round": 1, "status": "FIN",
+         "gh": 2, "ga": 1},
     ]
     _alm.guardar("fixture:%s" % _COMP_CA, _falsos)
     _tab.guardar("ca", _COMP_CA, _falsos, principal=True)
 
     _antes = server.corregir_nombres(False)
+    # UNO, no tres: los otros dos no cambian de club aunque uno de ellos
+    # deje de reconocerse. Esto es lo que la primera versión contaba mal.
     chequear("primero dice qué cambiaría, sin tocar nada",
              _antes["partidos"] == 1 and not _antes["aplicado"]
              and _antes["escritos"] == 0, _antes)
+    chequear("y cuenta el calendario aunque todavía no lo toque",
+             _antes["calendarios"] == 1, _antes["calendarios"])
     chequear("y nombra al club que se lo estaba quedando",
              _antes["cambios"] and _antes["cambios"][0]["leSacamosA"]
              == "Gimnasia y Esgrima (LP)"
              and _antes["cambios"][0]["club"] == "Gimnasia de Jujuy",
              _antes["cambios"])
+    # Y ninguna fila puede tener el mismo nombre de los dos lados: si el
+    # antes y el después son iguales, no es un cambio.
+    chequear("y ninguna fila dice lo mismo de los dos lados",
+             all(c["leSacamosA"] != c["club"] for c in _antes["cambios"]),
+             [c for c in _antes["cambios"] if c["leSacamosA"] == c["club"]])
     with _alm.conexion() as _c:
         _sin_tocar = _c.execute(
             "SELECT local FROM partidos WHERE id=90001").fetchone()[0]
@@ -6333,7 +6352,12 @@ try:
              _fila1)
     chequear("el que estaba bien no se toca",
              _fila2 == ("River Plate", "Vélez Sarsfield"), _fila2)
-    chequear("y no se duplica ni se borra ninguna fila", _cuantos == 2, _cuantos)
+    with _alm.conexion() as _c:
+        _fila3 = _c.execute("SELECT local, visita FROM partidos "
+                            "WHERE id=90003").fetchone()
+    chequear("y el que no reconocemos se queda con su nombre igual",
+             _fila3 == ("Nottingham Forest", "Everton"), _fila3)
+    chequear("y no se duplica ni se borra ninguna fila", _cuantos == 3, _cuantos)
     # Y correrlo de nuevo no encuentra nada: es idempotente, que es lo que
     # permite volver a pasarlo sin miedo.
     _otra = server.corregir_nombres(True)
@@ -6347,7 +6371,7 @@ try:
              and _copia["bytes"] > 0, _copia)
     chequear("y la copia se abre y tiene los mismos partidos",
              _sqlite3.connect(_copia["archivo"]).execute(
-                 "SELECT count(*) FROM partidos").fetchone()[0] == 2)
+                 "SELECT count(*) FROM partidos").fetchone()[0] == 3)
     chequear("y no pisa una copia que ya está",
              _alm.copia_de_seguridad(_copia["archivo"]) is None)
     # Y se pueden listar: una copia que no se puede ver no sirve de mucho.

@@ -4644,6 +4644,23 @@ _guion7 = _tw2.dedent("""
 
     h = server.historial_entre(1, 2)
     sinHoy = server.historial_entre(1, 2, excluir=1)
+
+    # El partido que se está mirando: cuenta si ya terminó, no si está en
+    # curso o sin jugar. Y se lo reconoce por su fecha además de por su
+    # identificador —el de la ficha es el de 365scores y el de la tabla
+    # sale del calendario—, así que esto no depende de que coincidan.
+    def conElDeHoy(estado, gh, ga, ident=9):
+        tablas.borrar_liga("hoy")
+        tablas.guardar("hoy", 8, [dict(
+            pg(ident, "A", 1, "B", 2, "2026-08-26", gh, ga), status=estado)])
+        r = server.historial_entre(1, 2, excluir=9, dia="2026-08-26T21:00:00Z")
+        marcado = [x for x in r["partidos"] if x.get("este")]
+        return [r["jugados"], r["gano"], bool(marcado)]
+    terminado = conElDeHoy("FIN", 3, 0)
+    enCurso = conElDeHoy("LIVE", 1, 0)
+    sinJugar = conElDeHoy("SCH", None, None)
+    otroId = conElDeHoy("FIN", 3, 0, ident=777)
+    tablas.borrar_liga("hoy")
     print(json.dumps({
         "resumen": [h["gano"], h["empates"], h["perdio"], h["jugados"]],
         "cuantos": len(h["partidos"]),
@@ -4651,10 +4668,13 @@ _guion7 = _tw2.dedent("""
         "torneos": sorted({p["liga"] for p in h["partidos"]}),
         "nombraElTorneo": h["partidos"][0]["ligaNombre"],
         "sinJugarNoCuenta": all(p["gh"] is not None for p in h["partidos"]),
-        "sinHoy": [sinHoy["jugados"],
-                   any(p["id"] == 1 for p in sinHoy["partidos"])],
+        "elDeHoy": [sinHoy["jugados"],
+                    [p.get("este", False) for p in sinHoy["partidos"]
+                     if p["id"] == 1]],
         "nuncaSeCruzaron": server.historial_entre(1, 999),
         "sinEquipo": server.historial_entre(None, 2),
+        "terminado": terminado, "enCurso": enCurso, "sinJugar": sinJugar,
+        "otroId": otroId,
     }))
 """)
 with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
@@ -4693,12 +4713,26 @@ if _hi:
     chequear("los que no se jugaron no entran", _hi["sinJugarNoCuenta"])
     chequear("con el nombre del torneo de cada uno",
              _hi["nombraElTorneo"] == "Liga Profesional", _hi["nombraElTorneo"])
-    # El partido que se está mirando no puede estar en su propio historial.
-    chequear("y el partido de hoy no aparece en su propio historial",
-             _hi["sinHoy"] == [4, False], _hi["sinHoy"])
+    # El que se está mirando aparece y va marcado, para que se vea de
+    # dónde sale la cuenta. Y no se enlaza a sí mismo.
+    chequear("el partido de hoy aparece marcado, no escondido",
+             _hi["elDeHoy"] == [5, [True]], _hi["elDeHoy"])
     # Dos que nunca se cruzaron no muestran una caja vacía: no muestran nada.
     chequear("si nunca se cruzaron, no se muestra nada",
              _hi["nuncaSeCruzaron"] is None and _hi["sinEquipo"] is None)
+    # Abrir un partido ya terminado: forma parte del historial como
+    # cualquier otro, así que cuenta. Antes lo sacaba siempre.
+    chequear("un partido terminado cuenta en su propio historial",
+             _hi["terminado"] == [6, 4, True], _hi["terminado"])
+    # Uno en curso o sin jugar todavía no dijo nada.
+    chequear("pero uno en curso no", _hi["enCurso"] == [5, 3, False],
+             _hi["enCurso"])
+    chequear("ni uno que no se jugó", _hi["sinJugar"] == [5, 3, False],
+             _hi["sinJugar"])
+    # Y se lo reconoce por la fecha, no sólo por el identificador: dos
+    # equipos no se cruzan dos veces el mismo día.
+    chequear("y se lo reconoce por la fecha aunque el id no coincida",
+             _hi["otroId"] == [6, 4, True], _hi["otroId"])
 chequear("el partido lo lleva puesto, sin un pedido más",
          'out["historial"] = historial_entre(' in _SRV)
 # Va después de la tabla del torneo y aparte: si una tarda o falla, la otra
@@ -4779,6 +4813,71 @@ App.init();
         chequear("con el que ganó cada uno resaltado", _hd["marcados"] == 2,
                  _hd["marcados"])
         chequear("y cada cruce lleva a su partido", _hd["linkea"], _hd)
+
+    # El bug que encontró Mateo: al cambiar de zona o pasar a la anual, el
+    # panel se rehace entero y el historial desaparecía para no volver
+    # hasta recargar la página. Colgarlo una sola vez no alcanza.
+    _eq = lambda n: {"name": n, "canon": n, "logo": None, "short": ""}
+    _fl = lambda p, n: {"pos": p, "canon": n, "team": _eq(n), "pts": 10 - p,
+                        "pj": 6, "g": 3, "e": 1, "p": 2, "gf": 8, "gc": 6,
+                        "dif": 2, "form": ["G"], "live": False}
+    _pr = lambda p, n: dict(_fl(p, n), prom=1.5, promMin=1.2, restantes=5,
+                            descendiendo=False, enRiesgo=False)
+    _resp = json.dumps({
+        "/api/match": json.loads(_mh), "/api/liga/games": {"llaves": []},
+        "/api/standings": {"zones": [
+            {"name": "Zona A", "rows": [_fl(1, "Boca Juniors")]},
+            {"name": "Zona B", "rows": [_fl(2, "River Plate")]}]},
+        "/api/annual": {"rows": [_fl(1, "Boca Juniors")]},
+        "/api/promedios": {"rows": [_pr(1, "Boca Juniors")]},
+        "/api/liga": {"zonas": [], "anual": [], "goleadores": []},
+        "/api/ligas": {"ligas": []}, "/api/clubes": {"clubes": []},
+        "/api/visita": {"v": "x"}}, ensure_ascii=False)
+    _jt = ("""
+process.on('unhandledRejection',()=>{});
+const RESP=__R__;
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='/partido/boca-juniors-vs-river-plate-99';
+App.init();
+(async()=>{
+  const esperar=async n=>{for(let i=0;i<n;i++) await new Promise(r=>setImmediate(r));};
+  await esperar(90);
+  const der=()=>doc.querySelector('#right').innerHTML||'';
+  const hay=()=>der().indexOf('Cómo les fue')>=0;
+  const paso=[hay()];
+  for(const t of ['B','anual','prom','A']){
+    App.tab(t); await esperar(10); paso.push(hay());
+  }
+  console.log(JSON.stringify({paso,
+    copias: (der().match(/class="hist"/g) || []).length,
+    sigueLaTabla: der().indexOf('Boca Juniors') >= 0}));
+})();
+""").replace("__R__", _resp)
+    _gt = (open(_DOMSITO, encoding="utf-8").read()
+           + "\nglobalThis.document=doc; globalThis.window=win;"
+             "\nglobalThis.location=loc; globalThis.history=historial;"
+             "\nglobalThis.localStorage=almacenLocal;"
+             "\nglobalThis.MutationObserver=MutationObserver;"
+             "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+             "\nglobalThis.requestAnimationFrame=f=>0;"
+             "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+           + _app.replace("const App=(()=>{", "App=(()=>{") + _jt)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gt); _rt3 = _f.name
+    _pt4 = _sub.run(["node", _rt3], capture_output=True, text=True, timeout=60)
+    os.unlink(_rt3)
+    _tb2 = json.loads(_pt4.stdout) if _pt4.returncode == 0 and _pt4.stdout else None
+    chequear("las pestañas del panel corren", _tb2 is not None,
+             _pt4.stderr.strip().splitlines()[:2])
+    if _tb2:
+        chequear("el historial sobrevive a cambiar de zona, anual y promedios",
+                 _tb2["paso"] == [True] * 5, _tb2["paso"])
+        # Y no se pega de nuevo encima del que ya estaba.
+        chequear("y queda una sola copia", _tb2["copias"] == 1, _tb2["copias"])
+        chequear("con la tabla nueva arriba", _tb2["sigueLaTabla"], _tb2)
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

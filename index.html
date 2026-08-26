@@ -314,6 +314,12 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
   gap:6px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
   border-top:1px solid var(--line)}
 .hist-p .cuando{color:var(--txt3);font-size:10px}
+/* El que se está mirando: cuenta en el resumen y se marca acá, para que se
+   vea de dónde sale la cuenta. No se enlaza a sí mismo. */
+.hist-p.este{background:rgba(47,111,237,.07);border-radius:6px;
+  margin:0 -6px;padding-left:6px;padding-right:6px}
+.hist-p.este .cuando{color:var(--acc);font-weight:800;
+  text-transform:uppercase;letter-spacing:.3px}
 .hist-p .eq{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;color:var(--txt2)}
 .hist-p .eq.der{text-align:right}
@@ -3748,6 +3754,13 @@ const App=(()=>{
     else if(S.tab==='anual') el.innerHTML=S.annual?annualTable():'';
     else if(S.tab==='prom')  el.innerHTML=S.promedios?promTable():'';
     else if(S.tab==='gol')   el.innerHTML=S.scorers?scorersTable():'';
+    /* Y en la página de un partido, el historial de vuelta abajo.
+
+       Va acá porque ésta es la única función que reescribe este panel: al
+       cambiar de zona o pasar a la anual se rehacía entero y el historial
+       desaparecía para no volver hasta recargar. Colgarlo una sola vez
+       después de dibujar no alcanzaba. */
+    if(S.modal&&S.modal.t==='partido') historialAlCostado(current());
   }
 
   /* ── el pop-up, y cómo se vuelve ──────────────────────────────────────
@@ -4062,6 +4075,8 @@ const App=(()=>{
   function historialAlCostado(m){
     const el=$('#right'), h=m&&m.historial;
     if(!el||!h||!h.partidos||!h.partidos.length) return;
+    // Que llamarla de más no lo pegue dos veces.
+    if(String(el.innerHTML).indexOf('class="hist"')>=0) return;
     const local=m.home.canon||m.home.name, visita=m.away.canon||m.away.name;
     const barra=(n,clase)=>h.jugados
       ? `<i class="${clase}" style="width:${100*n/h.jugados}%"></i>` : '';
@@ -4076,13 +4091,15 @@ const App=(()=>{
           <span><b>${h.perdio}</b> ${esc(visita)}</span>
         </div>
         ${h.partidos.map(p=>{
-          const r=rutaPartido({liveId:p.id, home:{canon:p.local},
-                               away:{canon:p.visita}});
+          // El que se está mirando cuenta pero no se enlaza a sí mismo:
+          // queda marcado para que se entienda de dónde sale la cuenta.
+          const r=p.este?null:rutaPartido({liveId:p.id, home:{canon:p.local},
+                                           away:{canon:p.visita}});
           const gano=p.gh>p.ga?'l':p.gh<p.ga?'v':'';
-          return `<${r?'a':'div'} class="hist-p"${r
+          return `<${r?'a':'div'} class="hist-p${p.este?' este':''}"${r
               ? ` href="${esc(Rutas.url(r))}" data-ir`:''}>
-            <span class="cuando">${esc((p.dia||'').split('-').reverse()
-                                        .slice(0,2).join('/'))}</span>
+            <span class="cuando">${p.este?'éste'
+              :esc((p.dia||'').split('-').reverse().slice(0,2).join('/'))}</span>
             <span class="eq ${gano==='l'?'gano':''}">${esc(p.local)}</span>
             <b>${p.gh}-${p.ga}</b>
             <span class="eq der ${gano==='v'?'gano':''}">${esc(p.visita)}</span>

@@ -1997,7 +1997,8 @@ def api_match(q):
     # milisegundo que se note.
     try:
         out["historial"] = historial_entre(out["home"].get("id"),
-                                           out["away"].get("id"), gid)
+                                           out["away"].get("id"), gid,
+                                           dia=out.get("start"))
     except Exception:
         out["historial"] = None
 
@@ -3528,7 +3529,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la página del partido dice cómo les fue las veces anteriores, en cualquier torneo"
+VERSION_APP = "2026-08-25 · cómo les fue las veces anteriores, en la página del partido: cuenta también el que estás mirando si ya terminó"
 
 
 def reparar_recorridos():
@@ -6050,7 +6051,7 @@ def rellenar_formaciones(cuantos=POR_VUELTA):
 _LIGA_DE_COMP = {}
 
 
-def historial_entre(a, b, excluir=None, tope=6):
+def historial_entre(a, b, excluir=None, tope=6, dia=None):
     """
     Cómo les fue las veces anteriores que se cruzaron, en cualquier torneo.
 
@@ -6068,8 +6069,31 @@ def historial_entre(a, b, excluir=None, tope=6):
     # partido de hoy se descartan después.
     crudos = tablas.entre(a, b, tope + 6)
     filas, gano_a, empates, gano_b = [], 0, 0, 0
+    dia = (dia or "")[:10]
+
+    def es_este(m):
+        """
+        Si esta fila es el partido que se está mirando.
+
+        Se lo reconoce por su identificador y también por su fecha. Lo
+        segundo parece de más y no lo es: el identificador que usa la ficha
+        es el de 365scores, y el de la tabla sale del calendario, que en
+        los torneos de AFA podría venir con el de ellos. Hoy coinciden en
+        los catorce torneos —lo verifiqué— pero no quiero que esto dependa
+        de una coincidencia. Dos equipos no se cruzan dos veces el mismo
+        día, así que la fecha alcanza sola.
+        """
+        return (str(m.get("id")) == str(excluir or "")
+                or (bool(dia) and m.get("dia") == dia))
+
     for m in crudos:
-        if m.get("gh") is None or str(m.get("id")) == str(excluir or ""):
+        if m.get("gh") is None:
+            continue
+        # El que se está mirando cuenta igual, si ya terminó: es parte del
+        # historial como cualquier otro. Lo que no cuenta es uno en curso o
+        # sin jugar, que todavía no dijo nada.
+        este = es_este(m)
+        if este and (m.get("estado") or "") != "FIN":
             continue
         # Quién ganó, mirado desde `a`, sea que jugó de local o de visitante.
         casa = m.get("local_id") == a
@@ -6081,13 +6105,15 @@ def historial_entre(a, b, excluir=None, tope=6):
         else:
             gano_b += 1
         if len(filas) < tope:
-            filas.append({"id": m["id"], "dia": m.get("dia"),
-                          "liga": m.get("liga"),
-                          "ligaNombre": (LIGAS.get(m.get("liga")) or {}).get("nombre"),
-                          "local": m.get("local"), "visita": m.get("visita"),
-                          "gh": m["gh"], "ga": m["ga"],
-                          "localId": m.get("local_id"),
-                          "visitaId": m.get("visita_id")})
+            fila = {"id": m["id"], "dia": m.get("dia"), "liga": m.get("liga"),
+                    "ligaNombre": (LIGAS.get(m.get("liga")) or {}).get("nombre"),
+                    "local": m.get("local"), "visita": m.get("visita"),
+                    "gh": m["gh"], "ga": m["ga"],
+                    "localId": m.get("local_id"),
+                    "visitaId": m.get("visita_id")}
+            if este:
+                fila["este"] = True
+            filas.append(fila)
     if not filas:
         return None
     return {"partidos": filas,

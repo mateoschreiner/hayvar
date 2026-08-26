@@ -456,6 +456,43 @@ def once_de(partido, lado):
                 "                   THEN 1 ELSE 2 END, dorsal", (partido, lado))}
 
 
+def sin_formacion(ligas, tope=5, saltear=()):
+    """
+    Partidos ya jugados de estos torneos a los que todavía no les guardamos
+    la formación, del más nuevo al más viejo.
+
+    Es la lista de lo que falta para completar la historia. Se pide de a
+    poco a propósito: cada uno cuesta un pedido a la fuente, y el que
+    aparece primero es el que más chance tiene de que alguien lo mire.
+    """
+    if not ligas:
+        return []
+    huecos = ",".join("?" * len(ligas))
+    p = list(ligas)
+    sql = ("SELECT id, liga FROM partidos "
+           " WHERE liga IN (%s) AND gh IS NOT NULL "
+           "   AND id NOT IN (SELECT partido FROM alineaciones)" % huecos)
+    if saltear:
+        saltear = [int(x) for x in saltear]
+        sql += " AND id NOT IN (%s)" % ",".join("?" * len(saltear))
+        p += saltear
+    sql += " ORDER BY cuando DESC LIMIT ?"
+    p.append(tope)
+    return _filas(sql, p)
+
+
+def cuantos_sin_formacion(ligas):
+    """Cuántos faltan, para poder mostrar cuánto queda."""
+    if not ligas:
+        return 0
+    huecos = ",".join("?" * len(ligas))
+    f = _filas("SELECT COUNT(*) AS n FROM partidos "
+               " WHERE liga IN (%s) AND gh IS NOT NULL "
+               "   AND id NOT IN (SELECT partido FROM alineaciones)" % huecos,
+               list(ligas))
+    return f[0]["n"] if f else 0
+
+
 def estado():
     """Qué hay adentro, para poder mirarlo desde el administrador."""
     resumen = _filas(

@@ -392,6 +392,14 @@ function tablaDePartidos(base){
     ${caja('ok', 'Formaciones', miles(t.conFormacion || 0),
            `partidos con el once y el dibujo · ${miles(t.formaciones || 0)}
             jugadores · ${miles(t.estadisticas || 0)} estadísticas`)}
+    ${/* Los partidos viejos se completan de a poco en los ratos libres del
+          recolector: mil ochocientos pedidos de golpe contra una API
+          privada es la forma más corta de que te corten el acceso. */''}
+    ${t.faltanFormaciones ? caja('mirar', 'Historia por completar',
+        miles(t.faltanFormaciones),
+        `partidos viejos sin formación · ${t.porVuelta} por vuelta en los
+         ratos libres · unos ${Math.ceil(t.faltanFormaciones /
+           (t.porVuelta || 5) / 96)} días`) : ''}
     ${caja('ok', 'Leídos de los bloques', miles((c || {}).leidos || 0),
       (c || {}).leidos && (c || {}).leidos !== t.filas
         ? `${miles(((c || {}).leidos || 0) - t.partidos)} repetidos, unificados`

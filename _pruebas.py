@@ -1599,10 +1599,14 @@ server.all_games, server.api_match = _all_real, _match_real
 chequear("va a buscar los partidos terminados que no tienen estadísticas",
          _abiertos == ["7002"], _abiertos)
 chequear("y no vuelve a pedir los que ya están", _hechos == 1, _hechos)
+# Puesto al día, el recolector no se corta: sigue durmiendo y volviendo.
+# La rama puede hacer algo antes de dormir —ahí es donde completa las
+# formaciones viejas— pero tiene que terminar en el sueño de siempre.
+_rama = _SRV.split("if not pendientes and not goles_pendientes:")[1]
+_rama = _rama.split("elif not pendientes:")[0]
 chequear("el rescate no se va cuando se pone al día",
          "Historia completa: no queda nada por traer" not in _SRV
-         and re.search(r"if not pendientes and not goles_pendientes:\n"
-                       r"\s+time\.sleep\(900\)", _SRV) is not None)
+         and _rama.rstrip().endswith("time.sleep(900)"), _rama.rstrip()[-40:])
 
 
 print("\n── la bandera del plantel ──")
@@ -4496,6 +4500,119 @@ chequear("la ficha de un partido también deja su formación",
          "anotar_formacion(liga_id, gid, g)" in _SRV)
 chequear("y las dos puertas usan la misma función",
          _SRV.count("anotar_formacion(") == 3)   # la definición y las dos
+
+print("\n── completar la historia vieja, sin apurarse ──")
+# Novecientos partidos ya jugados sin formación, dos pedidos cada uno.
+# Hacerlos de golpe son mil ochocientos pedidos en ráfaga desde una sola IP
+# contra una API privada de la que depende el sitio entero.
+chequear("se hacen de a poco y con pausa entre uno y otro",
+         server.POR_VUELTA <= 10 and server.PAUSA_ENTRE >= 1,
+         (server.POR_VUELTA, server.PAUSA_ENTRE))
+# Y sólo cuando no hay nada mejor que hacer: mientras falte algo de hoy,
+# eso manda.
+# Y engancharlo donde corresponde: en la rama del recolector que sólo se
+# alcanza cuando no quedó nada del día, y en ninguna otra.
+_ramaLibre = _SRV.split("if not pendientes and not goles_pendientes:")[1] \
+                 .split("elif not pendientes:")[0]
+chequear("y sólo cuando el recolector no tiene nada que hacer",
+         "rellenar_formaciones()" in _ramaLibre
+         and _SRV.count("rellenar_formaciones(") == 2,   # la definición y ésta
+         _SRV.count("rellenar_formaciones("))
+
+_guion6 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import almacen, server, tablas
+    server.PAUSA_ENTRE = 0        # en la prueba no se espera de verdad
+
+    # un torneo de mentira con seis partidos jugados
+    pg = lambda i: {"id": i, "temporada": 1, "round": 1, "gh": 1, "ga": 0,
+                    "start": "2026-05-0%dT20:00:00" % (i % 9 + 1),
+                    "status": "FIN",
+                    "home": {"id": 1, "canon": "A"}, "away": {"id": 2, "canon": "B"}}
+    tablas.guardar("lpf", 7, [pg(i) for i in range(1, 7)])
+
+    CON = {"formation": "4-3-3", "members": [
+        {"id": 10, "status": 1, "jerseyNumber": 1,
+         "position": {"name": "Arquero"}, "ranking": 7.0,
+         "stats": [{"name": "Atajadas", "value": "3"}]}]}
+
+    class F:
+        def __init__(s, d): s.d = d
+        def read(s): return json.dumps(s.d).encode()
+        def __enter__(s): return s
+        def __exit__(s, *a): pass
+
+    n = [0]
+    vacios = set()
+    def falso(req, timeout=None):
+        n[0] += 1
+        gid = req.full_url.split("gameId=")[1].split("&")[0]
+        lu = {"members": []} if gid in vacios else CON
+        return F({"game": {"id": int(gid), "statusText": "Finalizado",
+            "gameTimeAndStatusDisplayType": 2, "startTime": "2026-05-01T20:00:00",
+            "members": [{"id": 10, "name": "Un Arquero"}],
+            "homeCompetitor": {"id": 1, "name": "A", "score": 1, "lineups": lu},
+            "awayCompetitor": {"id": 2, "name": "B", "score": 0,
+                               "lineups": {"members": []}},
+            "events": [], "tvNetworks": []}})
+    server.urlopen = falso
+
+    faltan0 = tablas.cuantos_sin_formacion(["lpf"])
+    r1 = server.rellenar_formaciones(2)
+    pedidos1 = n[0]
+    # los dos que siguen no tienen formación en la fuente
+    vacios.update(str(p["id"]) for p in tablas.sin_formacion(["lpf"], 2))
+    r2 = server.rellenar_formaciones(2)
+    descartados = list(almacen.leer("formaciones:sinsuerte")[0] or [])
+    # y no vuelven a aparecer nunca más
+    quedan = [p["id"] for p in tablas.sin_formacion(["lpf"], 9, descartados)]
+    print(json.dumps({
+        "faltanAlEmpezar": faltan0,
+        "primera": r1, "pedidosPrimera": pedidos1,
+        "segunda": r2, "descartados": len(descartados),
+        "losDescartadosNoVuelven": not (set(descartados) & set(quedan)),
+        "quedan": len(quedan),
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion6); _gp8 = _f.name
+_db6 = os.path.join(_tp2.gettempdir(), "hayvar_rel_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db6 + _ext):
+        os.unlink(_db6 + _ext)
+_pr2 = _sb2.run([sys.executable, _gp8, _db6, AQUI],
+                capture_output=True, text=True, timeout=120)
+os.unlink(_gp8)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db6 + _ext):
+        os.unlink(_db6 + _ext)
+_re = None
+for _linea in _pr2.stdout.splitlines():
+    if _linea.startswith("{"):
+        _re = json.loads(_linea)
+chequear("el relleno corre entero", _re is not None,
+         (_pr2.stdout[-200:], _pr2.stderr[-400:]))
+if _re:
+    chequear("sabe cuántos le faltan", _re["faltanAlEmpezar"] == 6,
+             _re["faltanAlEmpezar"])
+    chequear("hace los que se le piden y ni uno más",
+             _re["primera"]["hechos"] == 2 and _re["pedidosPrimera"] == 2,
+             (_re["primera"], _re["pedidosPrimera"]))
+    chequear("y va descontando", _re["primera"]["faltan"] == 4,
+             _re["primera"]["faltan"])
+    # Un partido viejo que la fuente ya no detalla no se puede completar
+    # nunca: sin anotarlo, se pediría de nuevo en cada vuelta para siempre.
+    chequear("al que la fuente no detalla lo anota y no lo repite",
+             _re["segunda"]["hechos"] == 0 and _re["segunda"]["sin"] == 2
+             and _re["descartados"] == 2 and _re["losDescartadosNoVuelven"],
+             _re)
+    chequear("y sigue con los que quedan", _re["quedan"] == 2, _re["quedan"])
+chequear("el administrador muestra cuánto falta",
+         "faltanFormaciones=tablas.cuantos_sin_formacion(" in _SRV
+         and "Historia por completar" in _ADM)
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

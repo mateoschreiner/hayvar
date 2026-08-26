@@ -3519,7 +3519,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · formaciones y estadísticas en tablas: las deja el recolector al pasar y también cada partido que alguien abre"
+VERSION_APP = "2026-08-25 · la historia vieja se completa sola: el recolector llena las formaciones que faltan en sus ratos libres, de a cinco"
 
 
 def reparar_recorridos():
@@ -5987,6 +5987,57 @@ def anotar_formacion(liga, game_id, g):
         return None
 
 
+# Completar la historia, sin apurarse
+#
+# El recolector no vuelve a abrir un partido cuyos goles ya resolvió, así
+# que las formaciones de todo lo ya jugado no se capturan solas. Son unos
+# novecientos partidos, y cada uno cuesta un pedido a 365scores.
+#
+# Hacerlos de golpe sería mil ochocientos pedidos en ráfaga desde una sola
+# IP, contra una API privada de la que depende el sitio entero: la forma
+# más corta de que te corten el acceso. Así que se hacen de a poco, y sólo
+# cuando el recolector no tiene nada mejor que hacer —que es la mayor parte
+# del tiempo—. A este ritmo tarda un par de días y no se nota.
+POR_VUELTA = 5              # cuántos por vuelta del recolector
+PAUSA_ENTRE = 2.0           # segundos entre uno y otro
+_SIN_SUERTE = "formaciones:sinsuerte"
+
+
+def rellenar_formaciones(cuantos=POR_VUELTA):
+    """
+    Le pide la formación a unos pocos partidos viejos que no la tengan.
+
+    Los que no la tienen ni la van a tener —partidos viejos que la fuente
+    ya no detalla— se anotan aparte para no volver a pedirlos en cada
+    vuelta, para siempre.
+    """
+    fallados, _ = almacen.leer(_SIN_SUERTE)
+    fallados = fallados or []
+    pendientes = tablas.sin_formacion(LIGAS_EN_DETALLE, cuantos, fallados)
+    if not pendientes:
+        return None
+    hechos, sin = 0, []
+    for i, p in enumerate(pendientes):
+        if i:
+            time.sleep(PAUSA_ENTRE)
+        try:
+            detalle_liviano(str(p["id"]), en_juego=False, liga=p["liga"])
+        except Exception:
+            sin.append(p["id"])
+            continue
+        # Si después del pedido sigue sin formación, la fuente no la tiene:
+        # no tiene sentido volver a preguntarle mañana.
+        if not tablas.once_de(p["id"], "h")["gente"]:
+            sin.append(p["id"])
+        else:
+            hechos += 1
+    if sin:
+        # Con tope: es una lista de descarte, no un archivo histórico.
+        almacen.guardar(_SIN_SUERTE, (fallados + sin)[-3000:])
+    return {"hechos": hechos, "sin": len(sin),
+            "faltan": tablas.cuantos_sin_formacion(LIGAS_EN_DETALLE)}
+
+
 _LIGA_DE_COMP = {}
 
 
@@ -8078,7 +8129,11 @@ ROUTES = {
     # Con el desglose por familia: sin eso, "202 MB" no dice qué hacer.
     "/api/base": lambda q: dict(almacen.estado(),
                                 pesos=almacen.pesos(),
-                                tablas=tablas.estado(),
+                                tablas=dict(
+                                    tablas.estado(),
+                                    faltanFormaciones=tablas.cuantos_sin_formacion(
+                                        LIGAS_EN_DETALLE),
+                                    porVuelta=POR_VUELTA),
                                 tablasCuando=almacen.leer("tablas:ultima")[0],
                                 limpieza=almacen.leer("limpieza:ultima")[0],
                                 cacheQueSobra=[almacen.familia(p + "/?")
@@ -9422,6 +9477,17 @@ def rescatar_todo():
         # hacerlo cada minuto le come el procesador al que está mirando la
         # página. Cada cinco alcanza.
         if not pendientes and not goles_pendientes:
+            # Nada que hacer: es el momento de completar la historia vieja.
+            # Va acá y no arriba a propósito —mientras falte algo del día de
+            # hoy, eso manda— y con esta pausa el sitio no se entera.
+            try:
+                relleno = rellenar_formaciones()
+                if relleno and relleno["hechos"]:
+                    _ESTADO_FONDO.update(
+                        haciendo="completando formaciones viejas",
+                        faltanFormaciones=relleno["faltan"])
+            except Exception as e:
+                print("  El relleno de formaciones falló: %s" % e, flush=True)
             time.sleep(900)
         elif not pendientes:
             time.sleep(300)             # sólo quedan goles por buscar

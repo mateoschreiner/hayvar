@@ -1607,7 +1607,13 @@ _rama = _SRV.split("if not pendientes and not goles_pendientes:")[1]
 _rama = _rama.split("elif not pendientes:")[0]
 chequear("el rescate no se va cuando se pone al día",
          "Historia completa: no queda nada por traer" not in _SRV
-         and _rama.rstrip().endswith("time.sleep(900)"), _rama.rstrip()[-40:])
+         and _rama.rstrip().endswith("else PAUSA_AL_DIA)"),
+         _rama.rstrip()[-60:])
+# Y el sueño depende de si todavía falta historia: corto mientras haya
+# atraso, largo cuando ya no. Sin esto la rama vuelve a ser la de antes.
+chequear("y duerme según si le queda algo por completar",
+         "PAUSA_CON_ATRASO if (relleno and relleno.get(\"faltan\"))" in _rama,
+         _rama.rstrip()[-200:])
 
 
 print("\n── la bandera del plantel ──")
@@ -4511,9 +4517,28 @@ print("\n── completar la historia vieja, sin apurarse ──")
 # Novecientos partidos ya jugados sin formación, dos pedidos cada uno.
 # Hacerlos de golpe son mil ochocientos pedidos en ráfaga desde una sola IP
 # contra una API privada de la que depende el sitio entero.
+#
+# Lo que importa no es cuántos van por vuelta —eso se ajusta— sino el ritmo
+# sostenido: cuántos pedidos por segundo termina haciendo. Escrito así, la
+# prueba sigue sirviendo cuando el número cambie, que es lo que acaba de
+# pasar: iba a cinco cada quince minutos y los planteles tardaban semanas
+# en aparecer.
+_ciclo = server.POR_VUELTA * server.PAUSA_ENTRE + server.PAUSA_CON_ATRASO
+_por_seg = server.POR_VUELTA * 2 / _ciclo        # dos pedidos por partido
 chequear("se hacen de a poco y con pausa entre uno y otro",
-         server.POR_VUELTA <= 10 and server.PAUSA_ENTRE >= 1,
-         (server.POR_VUELTA, server.PAUSA_ENTRE))
+         server.PAUSA_ENTRE >= 1 and _por_seg <= 0.5,
+         (server.POR_VUELTA, server.PAUSA_ENTRE, round(_por_seg, 3)))
+# Y nunca en ráfaga: entre uno y otro siempre se espera.
+chequear("y nunca todos de golpe",
+         "time.sleep(PAUSA_ENTRE)" in _SRV
+         and server.POR_VUELTA * server.PAUSA_ENTRE >= 20,
+         server.POR_VUELTA * server.PAUSA_ENTRE)
+# Cuando ya no falta nada, vuelve a dormir largo: apurarse sólo tiene
+# sentido mientras haya atraso.
+chequear("y cuando se pone al día afloja",
+         server.PAUSA_AL_DIA >= 900
+         and server.PAUSA_AL_DIA > server.PAUSA_CON_ATRASO,
+         (server.PAUSA_CON_ATRASO, server.PAUSA_AL_DIA))
 # Y sólo cuando no hay nada mejor que hacer: mientras falte algo de hoy,
 # eso manda.
 # Y engancharlo donde corresponde: en la rama del recolector que sólo se
@@ -5948,6 +5973,172 @@ chequear("los campeones que siguen en Primera coinciden de nombre",
 chequear("los campeones que ya no existen no descolocan la fila",
          "span.hist-esc{border-radius:50%;background:var(--line)}" in HTML
          and ".hist-esc{width:20px;height:20px;flex:none" in HTML)
+
+print("\n── contra qué se compara a un jugador ──")
+#
+# El radar comparaba contra "la liga" a secas, y adentro de eso entraba
+# todo lo que hubiera guardado: el Clausura mezclado con el Apertura, que
+# se juegan con otro plantel. Ahora se elige, y lo que hay que probar no es
+# que el selector se dibuje sino dos cosas que se pueden romper en
+# silencio: que cada comparación use SOLO sus partidos, y que no se ofrezca
+# una comparación que no tiene con qué.
+_APERTURA = {"a1", "a2", "a3", "a4"}
+_CLAUSURA = {"c1", "c2", "c3", "c4", "c5"}
+_LIB = {"l1", "l2", "l3", "l4", "l5", "l6"}
+_COPA_ARG = {"k1"}
+
+
+def _fila_jug(nombre, goles, puntaje):
+    return {"n": nombre, "eq": "Ejemplo", "p": "Delantero",
+            "v": {"goles": goles, "remates": goles * 3,
+                  "goles esperados": goles, "pases claves": 1, "regates": 1},
+            "r": puntaje}
+
+
+# Nuestro jugador hace un gol por partido en el Apertura, tres en el
+# Clausura y ninguno en la Libertadores. Los números tienen que salir
+# distintos según contra qué se lo compare: si salieran iguales, es que el
+# filtro no se está aplicando.
+_GOLES = dict([(g, 1) for g in _APERTURA] + [(g, 3) for g in _CLAUSURA]
+              + [(g, 0) for g in _LIB] + [(g, 9) for g in _COPA_ARG])
+_JUG_FALSO = {}
+for _g in _APERTURA | _CLAUSURA | _LIB | _COPA_ARG:
+    _liga_de = "lib" if _g in _LIB else ("ca" if _g in _COPA_ARG else "lpf")
+    _filas = [_fila_jug("Nuestro", _GOLES[_g], 7.0)]
+    # Cinco colegas de puesto, para que haya con quién comparar. En la Copa
+    # Argentina no: es eliminación directa y ahí está justamente el caso que
+    # NO tiene que ofrecerse.
+    if _g not in _COPA_ARG:
+        _filas += [_fila_jug("Par%d" % i, 1, 6.0) for i in range(1, 6)]
+    _JUG_FALSO["jug:%s:%s" % (_liga_de, _g)] = _filas
+_JUG_FALSO["jugidx:lpf"] = sorted(_APERTURA | _CLAUSURA)
+_JUG_FALSO["jugidx:lib"] = sorted(_LIB)
+_JUG_FALSO["jugidx:ca"] = sorted(_COPA_ARG)
+_JUG_FALSO["jugidx:sud"] = []
+
+_leer_real = server.almacen.leer
+_torneos_real = server.torneos_del_ano
+
+
+def _leer_falso(clave, *a, **k):
+    if clave in _JUG_FALSO:
+        return _JUG_FALSO[clave], 0
+    if clave.startswith(("jug:", "jugidx:", "jugagg:")):
+        return None, 0
+    return _leer_real(clave, *a, **k)
+
+
+server.almacen.leer = _leer_falso
+server.torneos_del_ano = lambda: {"Apertura": _APERTURA, "Clausura": _CLAUSURA}
+server._AGG_JUG.clear()
+server._AGG_JUG_CUANDO.clear()
+_guardar_real = server.almacen.guardar
+server.almacen.guardar = lambda *a, **k: None
+try:
+    _ops = server.comparaciones_de("lpf", "Nuestro", "delantero")
+    _ids = [o["id"] for o in _ops]
+    # Las que tienen muestra, y en ese orden: el año entero primero, que es
+    # lo que cubre a más gente.
+    chequear("se ofrecen las comparaciones que tienen datos",
+             _ids == ["lpf", "lpf-clausura", "lpf-apertura", "lib"], _ids)
+    chequear("y la primera es el año entero, diciendo de qué está hecho",
+             _ops[0]["rotulo"] == "Apertura y Clausura", _ops[0]["rotulo"])
+    # El caso que motivó todo esto: Copa Argentina es eliminación directa y
+    # casi nadie llega a tres partidos. La opción no se dibuja, en vez de
+    # dibujarse vacía.
+    chequear("y la Copa Argentina no se ofrece si no hay con qué",
+             "ca" not in _ids and "sud" not in _ids, _ids)
+    # Cuántos partidos suyos entran en cada una: 9 en el año, 5 en el
+    # Clausura, 4 en el Apertura, 6 en la Libertadores.
+    _suyos = {o["id"]: o["suyos"] for o in _ops}
+    chequear("cada comparación cuenta sólo sus partidos",
+             _suyos == {"lpf": 9, "lpf-clausura": 5, "lpf-apertura": 4,
+                        "lib": 6}, _suyos)
+
+    # Y lo que de verdad importa: los números salen distintos. Tres goles
+    # por partido en el Clausura, uno en el Apertura, cero en la
+    # Libertadores. Si el filtro no se aplicara, los tres darían igual.
+    def _goles_en(cual):
+        r = server.radar_jugador("lpf", "Nuestro", "Delantero", cual)
+        if not r:
+            return None
+        e = next((x for x in r["ejes"] if x["eje"] == "Goles"), None)
+        return e and e["jugador"]
+
+    _por_torneo = {c: _goles_en(c) for c in
+                   ("lpf", "lpf-clausura", "lpf-apertura", "lib")}
+    # 4 partidos de un gol y 5 de tres son 19 en 9: 2,11 por partido, que no
+    # es ni lo del Apertura ni lo del Clausura. Ahí se ve que cada una está
+    # contando lo suyo.
+    chequear("y el gráfico no mezcla un torneo con otro",
+             _por_torneo == {"lpf": round(19 / 9, 2), "lpf-clausura": 3.0,
+                             "lpf-apertura": 1.0, "lib": 0.0}, _por_torneo)
+    # Sin pedir nada, se muestra la primera.
+    _porDefecto = server.radar_jugador("lpf", "Nuestro", "Delantero")
+    chequear("sin elegir nada, va el año entero",
+             _porDefecto["cual"] == "lpf"
+             and _porDefecto["contra"] == "Apertura y Clausura",
+             (_porDefecto["cual"], _porDefecto["contra"]))
+    # Y el gráfico lleva la lista para que la pantalla dibuje los botones.
+    chequear("el gráfico dice contra qué más se puede comparar",
+             [o["id"] for o in _porDefecto["opciones"]] == _ids,
+             _porDefecto["opciones"])
+    # El puesto ("3° de 137") se cuenta adentro de la misma comparación: si
+    # saliera del total, diría un número que no corresponde a lo de al lado.
+    _eje = next(x for x in _porDefecto["ejes"] if x["eje"] == "Goles")
+    chequear("y el puesto se cuenta adentro de esa misma comparación",
+             _eje.get("de") == 6, _eje)
+
+    # El mínimo vale para el jugador, no sólo para sus colegas. Antes la
+    # pantalla decía "hacen falta al menos tres suyos" y el código no lo
+    # cumplía: con un partido salía un gráfico hecho de ruido.
+    _uno = server.comparaciones_de("lpf", "Par1", "delantero")
+    _JUG_FALSO["jugidx:ca"] = sorted(_COPA_ARG)
+    _flaco = [o for o in server.comparaciones_de("ca", "Nuestro", "delantero")]
+    chequear("con un solo partido no se ofrece ninguna comparación",
+             _flaco == [], _flaco)
+finally:
+    server.almacen.leer = _leer_real
+    server.almacen.guardar = _guardar_real
+    server.torneos_del_ano = _torneos_real
+    server._AGG_JUG.clear()
+    server._AGG_JUG_CUANDO.clear()
+
+# Dos recortes distintos no se pueden pisar en el guardado: si la clave
+# fuera sólo la liga, el Clausura devolvería lo del año entero.
+chequear("cada recorte se guarda con su propia clave",
+         'cual = "%s:%s" % (liga, marca) if marca else liga' in _SRV
+         and 'almacen.guardar("jugagg:%s" % cual, salida)' in _SRV)
+
+# La pantalla: los botones, y que cambiar redibuje sólo el gráfico.
+chequear("la ficha del jugador deja elegir contra qué",
+         'onclick="App.radarContra(' in HTML
+         and "async radarContra(cual){" in HTML
+         and '<div id="radarJug">' in HTML)
+chequear("y con un solo camino no dibuja botones",
+         "(r.opciones||[]).length>1" in HTML)
+chequear("y dice contra qué está comparando",
+         "' en '+esc(r.contra)" in HTML)
+# Si mientras se pide se abrió otra ficha, no se pisa la que se está
+# mirando: es el mismo cuidado que ya tiene el resto de la ficha.
+chequear("y no pisa la ficha si mientras tanto abriste otra",
+         "if(!sigue||S.jugadorUrl!==antes) return;" in HTML)
+
+# El DT: la fuente le pone dorsal -1, que en pantalla no quiere decir nada.
+chequear("el técnico se reconoce en un solo lugar",
+         "def es_tecnico(" in _SRV
+         and 'or es_tecnico(f.get("puesto"), f.get("pos")))' in _SRV)
+chequear("y en el plantel dice DT, no -1",
+         'f["dt"] = True' in _SRV and 'f["n"] = None' in _SRV
+         and "j.dt?'DT':(j.n??'–')" in HTML)
+chequear("y va al final, no ordenado por un número que no tiene",
+         '5 if x.get("dt") else puesto_rango' in _SRV
+         and "j.dt?'Cuerpo técnico'" in HTML)
+chequear("es_tecnico reconoce las formas que manda la fuente",
+         all(server.es_tecnico(x) for x in ("Entrenador", "Director Técnico",
+                                            "Coach", "Manager"))
+         and not any(server.es_tecnico(x) for x in ("Delantero", "Arquero",
+                                                    "", None)))
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

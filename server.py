@@ -2136,11 +2136,8 @@ def api_match(q):
 
     def es_dt(f):
         """El entrenador: 365scores le pone el dorsal -1."""
-        if str(f.get("n")) == "-1":
-            return True
-        etiqueta = norm("%s %s" % (f.get("puesto") or "", f.get("pos") or ""))
-        return any(x in etiqueta for x in ("entrenador", "director tecnico",
-                                           "coach", "manager"))
+        return (str(f.get("n")) == "-1"
+                or es_tecnico(f.get("puesto"), f.get("pos")))
     # lo que hizo cada jugador, para el gráfico de su ficha
     filas_jug = []
     for c_key, key in (("homeCompetitor", "home"), ("awayCompetitor", "away")):
@@ -3797,7 +3794,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · Historia: el año por año en el medio, los títulos por club al costado con su desglose, las copas desplegables, y los títulos en la ficha de cada club"
+VERSION_APP = "2026-08-26 · El gráfico del jugador se puede comparar por torneo y por copa, el DT dice DT en vez de -1, y el recolector va más rápido para que aparezcan los planteles que faltan"
 
 
 def reparar_recorridos():
@@ -5979,6 +5976,20 @@ def grupo_puesto(texto):
     return None
 
 
+def es_tecnico(*etiquetas):
+    """
+    Si un puesto es el del entrenador y no el de un jugador.
+
+    Vive acá y no adentro del armado del partido porque hacen falta los dos
+    lados: el que lee la formación para no contarlo como jugador, y el que
+    arma el plantel para escribir DT en vez del dorsal -1 que manda la
+    fuente.
+    """
+    t = norm(" ".join(str(x or "") for x in etiquetas))
+    return any(x in t for x in ("entrenador", "director tecnico", "tecnico",
+                                "coach", "manager"))
+
+
 def _num_jug(v):
     """
     El número de una estadística de jugador.
@@ -6023,24 +6034,34 @@ _AGG_JUG, _AGG_JUG_CUANDO = {}, {}
 _AGG_JUG_VIDA = 30 * 60
 
 
-def agregado_jugadores(liga, forzar=False):
+def agregado_jugadores(liga, forzar=False, partidos=None, marca=""):
     """
     El promedio por partido de cada jugador de la liga, con su puesto.
 
     Devuelve {nombre: {puesto, partidos, club, prom: {clave: promedio}}}.
+
+    `partidos` acota qué partidos entran, por el mismo motivo que en el
+    radar del club: el índice guarda los últimos quinientos de la
+    competencia y eso pasa de largo el torneo y hasta la temporada, así que
+    sin filtrar el Clausura queda mezclado con el Apertura —otro plantel, a
+    veces otro técnico—. `marca` es cómo se llama ese recorte, y va en la
+    clave del guardado para que dos recortes no se pisen entre sí.
     """
     ahora = time.time()
-    if (not forzar and liga in _AGG_JUG
-            and ahora - _AGG_JUG_CUANDO.get(liga, 0) < _AGG_JUG_VIDA):
-        return _AGG_JUG[liga]
+    cual = "%s:%s" % (liga, marca) if marca else liga
+    if (not forzar and cual in _AGG_JUG
+            and ahora - _AGG_JUG_CUANDO.get(cual, 0) < _AGG_JUG_VIDA):
+        return _AGG_JUG[cual]
 
     if not forzar:
-        guardado, _ = almacen.leer("jugagg:%s" % liga, _AGG_JUG_VIDA)
+        guardado, _ = almacen.leer("jugagg:%s" % cual, _AGG_JUG_VIDA)
         if guardado:
-            _AGG_JUG[liga], _AGG_JUG_CUANDO[liga] = guardado, ahora
+            _AGG_JUG[cual], _AGG_JUG_CUANDO[cual] = guardado, ahora
             return guardado
 
     idx, _ = almacen.leer("jugidx:%s" % liga)
+    if partidos is not None:
+        idx = [g for g in (idx or []) if str(g) in partidos]
     acum = {}
     for gid in (idx or []):
         filas, _ = almacen.leer("jug:%s:%s" % (liga, gid))
@@ -6074,9 +6095,9 @@ def agregado_jugadores(liga, forzar=False):
                      "partidos": a["partidos"],
                      "prom": {c: a["suma"][c] / a["cuenta"][c]
                               for c in a["suma"] if a["cuenta"].get(c)}}
-    _AGG_JUG[liga], _AGG_JUG_CUANDO[liga] = salida, ahora
+    _AGG_JUG[cual], _AGG_JUG_CUANDO[cual] = salida, ahora
     if salida:
-        almacen.guardar("jugagg:%s" % liga, salida)
+        almacen.guardar("jugagg:%s" % cual, salida)
     return salida
 
 
@@ -6098,7 +6119,7 @@ def _prom_eje(prom, e):
 MIN_PARTIDOS_JUGADOR = 3
 
 
-def ranking_jugadores(liga, grupo, eje_nombre):
+def ranking_jugadores(liga, grupo, eje_nombre, tabla=None):
     """
     La tabla de un eje: todos los del puesto, ordenados por esa estadística.
 
@@ -6108,6 +6129,11 @@ def ranking_jugadores(liga, grupo, eje_nombre):
 
     Los empates comparten posición —dos primeros y ningún segundo—, que es
     como se lee cualquier tabla.
+
+    `tabla` es el agregado ya armado. El gráfico le pasa el suyo —que puede
+    estar acotado a un torneo— para que el puesto que muestra sea el de esa
+    misma comparación: decir "3° de 137" contando partidos que no entraron
+    en el promedio de al lado sería mentir en la mitad del renglón.
     """
     edef = next((e for e in EJES_JUGADOR.get(grupo, [])
                  if e["eje"] == eje_nombre), None)
@@ -6115,7 +6141,7 @@ def ranking_jugadores(liga, grupo, eje_nombre):
         return None
 
     filas = []
-    for v in agregado_jugadores(liga).values():
+    for v in (tabla if tabla is not None else agregado_jugadores(liga)).values():
         if v.get("puesto") != grupo or v["partidos"] < MIN_PARTIDOS_JUGADOR:
             continue
         val = _prom_eje(v.get("prom") or {}, edef)
@@ -6166,7 +6192,124 @@ def api_ranking(q):
             "ejes": [e["eje"] for e in EJES_JUGADOR[grupo]]}
 
 
-def radar_jugador(liga, nombre, puesto=None):
+# Las copas que un jugador de la Liga Profesional puede haber jugado,
+# aparte de su torneo. No están todas las competencias del sitio a
+# propósito: éstas son las que juega un club argentino.
+COPAS_DEL_JUGADOR = (("ca", "Copa Argentina"),
+                     ("lib", "Libertadores"),
+                     ("sud", "Sudamericana"))
+
+
+def torneos_del_ano():
+    """
+    Los partidos del año en la Liga Profesional, separados por torneo.
+
+    365scores marca la etapa de cada partido —"Apertura", "Clausura"— y con
+    eso alcanza. Hace falta porque el índice de estadísticas guarda los
+    últimos quinientos partidos de la competencia y eso se pasa del año:
+    sin separar, "el promedio de la liga" mezcla dos torneos que se juegan
+    con otro plantel y a veces con otro técnico.
+
+    Devuelve {"Clausura": {ids}, "Apertura": {ids}} o {} si no se pudo.
+    """
+    try:
+        fixture = _sc_fixture(COMPETITION)
+    except Exception:
+        return {}
+    por = {}
+    for m in fixture:
+        etapa = (m.get("stage") or "").strip()
+        if etapa and m.get("id"):
+            por.setdefault(etapa, set()).add(str(m["id"]))
+    return por
+
+
+def grupo_del_jugador(liga, nombre, puesto=None):
+    """
+    En qué puesto juega, para saber contra quiénes compararlo.
+
+    El mejor dato es el que ya teníamos: el puesto que MÁS VECES ocupó, no
+    el del último partido —un lateral que una vez entró de nueve sigue
+    siendo lateral—. Lo que cambió es de dónde se saca: del agregado del
+    año y no del de los últimos quinientos partidos guardados, que se pasa
+    de temporada. Además ése es el que igual hay que armar para la primera
+    comparación, así que sale gratis.
+
+    Si de este año no hay nada, se cae al puesto que declara la fuente
+    —que es el que la ficha ya muestra al lado del nombre— y recién
+    después al agregado completo, que es el más caro de armar.
+    """
+    if liga == "lpf":
+        t = torneos_del_ano()
+        ids = (t.get("Clausura") or set()) | (t.get("Apertura") or set())
+        if ids:
+            v = agregado_jugadores("lpf", partidos=ids,
+                                   marca="ano").get(norm(nombre))
+            if v and v.get("puesto"):
+                return v["puesto"]
+    g = grupo_puesto(puesto or "")
+    if g:
+        return g
+    return (agregado_jugadores(liga).get(norm(nombre)) or {}).get("puesto")
+
+
+def comparaciones_de(liga, nombre, grupo):
+    """
+    Contra qué se puede comparar a este jugador, con la muestra de cada una.
+
+    Se devuelven TODAS las que tienen con qué, y la pantalla dibuja sólo
+    ésas. Que la Copa Argentina no aparezca cuando está vacía no es un
+    detalle de terminación: es eliminación directa, la mayoría juega uno o
+    dos partidos, y una opción que casi siempre dice "no hay datos" es una
+    opción que no sirve.
+
+    La primera es la que se muestra al abrir.
+    """
+    opciones = []
+
+    def sumar(cual, rotulo, lid, partidos, marca):
+        tabla = agregado_jugadores(lid, partidos=partidos, marca=marca)
+        yo = tabla.get(norm(nombre))
+        # El mínimo vale para el jugador también, no sólo para sus colegas.
+        # La pantalla ya decía "hacen falta al menos tres suyos" y el código
+        # no lo cumplía: con un partido salía un gráfico hecho de ruido, y
+        # en las copas eso sería casi todo lo que se vería.
+        if not yo or yo["partidos"] < MIN_PARTIDOS_JUGADOR:
+            return
+        pares = sum(1 for v in tabla.values()
+                    if v.get("puesto") == grupo
+                    and v["partidos"] >= MIN_PARTIDOS_JUGADOR)
+        if pares < 4:
+            return
+        opciones.append({"id": cual, "rotulo": rotulo, "liga": lid,
+                         "marca": marca, "partidos": partidos,
+                         "suyos": yo["partidos"], "compara": pares})
+
+    if liga == "lpf":
+        torneos = torneos_del_ano()
+        clausura = torneos.get("Clausura")
+        apertura = torneos.get("Apertura")
+        # El año entero primero, que es lo que cubre a más gente, pero
+        # diciendo de qué está hecho: "la liga" a secas no dice si adentro
+        # está el Apertura, y adentro está.
+        if clausura or apertura:
+            sumar("lpf", "Apertura y Clausura", "lpf",
+                  (clausura or set()) | (apertura or set()), "ano")
+        else:
+            sumar("lpf", "Liga Profesional", "lpf", None, "")
+        if clausura:
+            sumar("lpf-clausura", "Clausura", "lpf", clausura, "clausura")
+        if apertura:
+            sumar("lpf-apertura", "Apertura", "lpf", apertura, "apertura")
+        for lid, rotulo in COPAS_DEL_JUGADOR:
+            sumar(lid, rotulo, lid, None, "")
+    else:
+        sumar(liga, (LIGAS.get(liga) or {}).get("nombre") or liga,
+              liga, None, "")
+    return opciones
+
+
+def radar_jugador(liga, nombre, puesto=None, cual=None):
     """
     El gráfico del jugador contra el promedio de los que juegan en su puesto.
 
@@ -6174,16 +6317,25 @@ def radar_jugador(liga, nombre, puesto=None):
     remates y un nueve cero atajadas, y los dos saldrían pésimos. Por eso el
     promedio es el de su grupo —arqueros, defensores, volantes o
     delanteros— y el puesto también.
+
+    `cual` elige contra qué competencia o torneo comparar. Sin él va la
+    primera de `comparaciones_de`, que es el año de la liga.
     """
     if not nombre:
         return None
-    tabla = agregado_jugadores(liga)
-    yo = tabla.get(norm(nombre))
-    if not yo:
+    grupo = grupo_del_jugador(liga, nombre, puesto)
+    if not grupo:
         return None
 
-    grupo = yo.get("puesto") or grupo_puesto(puesto or "")
-    if not grupo:
+    opciones = comparaciones_de(liga, nombre, grupo)
+    if not opciones:
+        return None
+    elegida = next((o for o in opciones if o["id"] == cual), opciones[0])
+
+    tabla = agregado_jugadores(elegida["liga"], partidos=elegida["partidos"],
+                               marca=elegida["marca"])
+    yo = tabla.get(norm(nombre))
+    if not yo:
         return None
     ejes_def = EJES_JUGADOR[grupo]
 
@@ -6210,12 +6362,14 @@ def radar_jugador(liga, nombre, puesto=None):
                 "indice": max(0, min(220, indice))}
         # El puesto sale de la misma tabla que sirve la lista completa: si
         # se calculara acá aparte, tarde o temprano dirían cosas distintas.
-        tabla = ranking_jugadores(liga, grupo, e["eje"])
-        if tabla:
-            mia = next((f for f in tabla["filas"]
+        # Se le pasa la tabla ya acotada para que el puesto sea el de esta
+        # comparación y no el de otra.
+        lista = ranking_jugadores(elegida["liga"], grupo, e["eje"], tabla)
+        if lista:
+            mia = next((f for f in lista["filas"]
                         if norm(f["name"]) == norm(nombre)), None)
             if mia:
-                fila["puesto"], fila["de"] = mia["pos"], tabla["total"]
+                fila["puesto"], fila["de"] = mia["pos"], lista["total"]
         ejes.append(fila)
 
     if len(ejes) < 3:
@@ -6224,7 +6378,13 @@ def radar_jugador(liga, nombre, puesto=None):
             # el nombre tal cual está en la tabla: con él se lo encuentra
             # después en la lista completa de cada estadística
             "quien": yo["nombre"],
-            "ejes": ejes, "compara": len(pares)}
+            "ejes": ejes, "compara": len(pares),
+            # Contra qué se está comparando, y contra qué más se puede. Van
+            # sólo las que tienen muestra: una opción vacía no es una
+            # opción.
+            "cual": elegida["id"], "contra": elegida["rotulo"],
+            "opciones": [{"id": o["id"], "rotulo": o["rotulo"],
+                          "suyos": o["suyos"]} for o in opciones]}
 
 
 def anotar_plantel(club, ficha, titular, dia):
@@ -6342,8 +6502,22 @@ def anotar_formacion(liga, game_id, g):
 # más corta de que te corten el acceso. Así que se hacen de a poco, y sólo
 # cuando el recolector no tiene nada mejor que hacer —que es la mayor parte
 # del tiempo—. A este ritmo tarda un par de días y no se nota.
-POR_VUELTA = 5              # cuántos por vuelta del recolector
-PAUSA_ENTRE = 2.0           # segundos entre uno y otro
+# El ritmo del relleno de formaciones.
+#
+# Iba a cinco partidos cada quince minutos —veinte por hora— y con eso los
+# planteles de los clubes cuyos partidos nadie abrió tardaban semanas en
+# aparecer. No era un error: era esto.
+#
+# Ahora van veinte por vuelta y la vuelta se repite a los dos minutos
+# mientras quede algo, que son unos cuatrocientos ochenta por hora. Sigue
+# siendo suave: con la pausa de segundo y medio entre pedidos son menos de
+# 0,2 por segundo, y sobre todo sigue cediendo ante todo lo demás —esto
+# corre únicamente cuando no queda nada del día por hacer—. Cuando se
+# termina el atraso vuelve a dormir los quince minutos de siempre.
+POR_VUELTA = 20             # cuántos por vuelta del recolector
+PAUSA_ENTRE = 1.5           # segundos entre uno y otro
+PAUSA_CON_ATRASO = 120      # entre vuelta y vuelta mientras falte historia
+PAUSA_AL_DIA = 900          # y cuando ya no falta nada
 _SIN_SUERTE = "formaciones:sinsuerte"
 
 
@@ -6799,7 +6973,15 @@ def plantel_de(club):
         return 4
 
     filas = list(plantel.values())
-    filas.sort(key=lambda x: (puesto_rango(x.get("puesto")),
+    # El técnico: 365scores lo manda en la formación con el dorsal -1, y así
+    # aparecía en el plantel, con un "-1" que no quiere decir nada. Se lo
+    # marca para que la página escriba DT, y va al final: no es del plantel
+    # y ordenarlo por un número que no tiene lo metía en el medio.
+    for f in filas:
+        if str(f.get("n")) == "-1" or es_tecnico(f.get("puesto")):
+            f["dt"] = True
+            f["n"] = None
+    filas.sort(key=lambda x: (5 if x.get("dt") else puesto_rango(x.get("puesto")),
                               x.get("n") if isinstance(x.get("n"), int) else 99,
                               norm(x.get("nombre"))))
     # Si la fuente no contesta, el plantel se muestra igual: lo que falta
@@ -7113,10 +7295,12 @@ def api_atleta(q):
     p["carrera"] = carrera(p["name"])
     p["pj"] = partidos_jugados(p["name"], lid)
 
-    # el gráfico, contra el promedio de los que juegan en su mismo puesto
+    # El gráfico, contra el promedio de los que juegan en su mismo puesto.
+    # `contra` elige la competencia o el torneo; sin él va el año de su liga.
     try:
         p["radar"] = radar_jugador(lid, p["name"],
-                                   p.get("puesto") or p.get("posicion"))
+                                   p.get("puesto") or p.get("posicion"),
+                                   (q.get("contra") or [""])[0].strip() or None)
     except Exception:
         pass
 
@@ -9996,6 +10180,7 @@ def rescatar_todo():
             # Nada que hacer: es el momento de completar la historia vieja.
             # Va acá y no arriba a propósito —mientras falte algo del día de
             # hoy, eso manda— y con esta pausa el sitio no se entera.
+            relleno = None
             try:
                 relleno = rellenar_formaciones()
                 if relleno and relleno["hechos"]:
@@ -10004,7 +10189,12 @@ def rescatar_todo():
                         faltanFormaciones=relleno["faltan"])
             except Exception as e:
                 print("  El relleno de formaciones falló: %s" % e, flush=True)
-            time.sleep(900)
+            # Mientras quede atraso se vuelve enseguida; cuando ya no falta
+            # nada, a dormir. Es la diferencia entre que los planteles que
+            # faltan aparezcan en días o en semanas, y no cuesta nada
+            # porque acá ya sabemos que no hay nada del día pendiente.
+            time.sleep(PAUSA_CON_ATRASO if (relleno and relleno.get("faltan"))
+                       else PAUSA_AL_DIA)
         elif not pendientes:
             time.sleep(300)             # sólo quedan goles por buscar
         else:

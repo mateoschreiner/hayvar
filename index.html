@@ -384,6 +384,13 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .eq-item .nm{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 
+/* ── Contra qué se compara al jugador ── */
+.radar-cual{display:flex;gap:4px;flex-wrap:wrap;padding:2px 0 10px}
+.rc{font:inherit;font-size:11.5px;font-weight:600;padding:4px 9px;
+  border-radius:7px;background:var(--bg);color:var(--txt2);white-space:nowrap}
+.rc:hover{background:var(--line);color:var(--txt)}
+.rc.on{background:var(--acc);color:#fff}
+
 /* ── Los campeones históricos ── */
 .hist-esc{width:20px;height:20px;flex:none;object-fit:contain;display:block}
 span.hist-esc{border-radius:50%;background:var(--line)}
@@ -3178,9 +3185,21 @@ const App=(()=>{
       partido y hacen falta al menos tres suyos, más un puñado de colegas de
       su puesto para sacar el promedio.</div>`;
     const quienes=GRUPO_TXT[r.grupo]||'los de su puesto';
+    /* Contra qué se lo compara. Los botones son sólo los que tienen
+       muestra: el servidor no manda los vacíos, así que acá no hay nada que
+       decidir. Si hay uno solo, no se dibuja ninguno —un selector de una
+       opción es un adorno—. */
+    const cuales=(r.opciones||[]).length>1
+      ? `<div class="radar-cual">${r.opciones.map(o=>
+          `<button class="rc${o.id===r.cual?' on':''}"
+             onclick="App.radarContra('${js(o.id)}')"
+             title="${o.suyos} partidos suyos">${esc(o.rotulo)}</button>`).join('')}</div>`
+      : '';
     return `<div class="subt" style="margin-top:16px">Cómo juega
       <span style="font-weight:400;color:var(--txt3)">
-        · ${r.partidos} partidos, contra ${quienes} de la liga</span></div>
+        · ${r.partidos} partidos, contra ${quienes}${r.contra
+          ? ' en '+esc(r.contra) : ' de la liga'}</span></div>
+      ${cuales}
       ${radarPanel(r,{color:'var(--acc)', etiqueta:'media',
         notaInvertido:'menos es mejor', grupo:r.grupo, quien:r.quien||'',
         mio:e=>e.jugador, medio:e=>e.media})}
@@ -3229,11 +3248,13 @@ const App=(()=>{
     // plantel agrupado por puesto
     let plantel='', ultimo='';
     (d.plantel||[]).forEach(j=>{
-      const pu=j.puesto||'Sin puesto';
+      // El técnico va con su propio rótulo y con "DT" donde va el dorsal:
+      // la fuente le pone -1, que en la pantalla no quiere decir nada.
+      const pu=j.dt?'Cuerpo técnico':(j.puesto||'Sin puesto');
       if(pu!==ultimo){ plantel+=`<div class="cl-puesto">${esc(pu)}</div>`; ultimo=pu; }
       plantel+=`<a class="cl-jug"
         href="${esc(Rutas.url(rutaJugador(j.nombre,j.id)))}" data-ir>
-        <span class="num">${j.n??'–'}</span><span class="nm">${esc(j.nombre)}</span>
+        <span class="num">${j.dt?'DT':(j.n??'–')}</span><span class="nm">${esc(j.nombre)}</span>
         <span class="pais">${j.bandera
           ? `<img src="${esc(j.bandera)}" alt="${esc(j.pais||'')}"
                title="${esc(j.pais||'')}" loading="lazy">` : ''}</span></a>`;
@@ -4297,7 +4318,10 @@ const App=(()=>{
     const quien=d.nombre
       ? 'name='+encodeURIComponent(d.nombre)
       : 'slug='+encodeURIComponent(d.slug);
-    try{ p=await get(`/api/atleta?${atletaId?'id='+atletaId+'&':''}${quien}&liga=${S.liga}`); }
+    // Se guarda para poder volver a pedir la misma ficha con otra
+    // comparación, sin rearmar la dirección a mano en dos lugares.
+    S.jugadorUrl=`/api/atleta?${atletaId?'id='+atletaId+'&':''}${quien}&liga=${S.liga}`;
+    try{ p=await get(S.jugadorUrl); }
     catch(e){ p={name:nombre,team:equipo,error:e.message,
       transfermarkt:'https://www.transfermarkt.es/schnellsuche/ergebnis/schnellsuche?query='+encodeURIComponent(nombre)}; }
     // si la capa se cerró o se pasó a otra pantalla mientras se pedía, no
@@ -4343,7 +4367,9 @@ const App=(()=>{
           return `<div class="stat"><div class="lb"><span class="c">${esc(lb)}</span><b>${n}</b></div>
             <div class="bar"><i style="width:${pc}%"></i><i style="width:${100-pc}%"></i></div></div>`;
         }).join('')}
-        ${radarJugador(p.radar)}
+        ${/* En su propia caja: cambiar la comparación redibuja sólo esto,
+              sin rehacer la ficha entera ni perder dónde estabas. */''}
+        <div id="radarJug">${radarJugador(p.radar)}</div>
         ${(p.carrera||[]).length?`<div class="subt" style="margin-top:14px">Trayectoria</div>
           <div class="carrera">${p.carrera.map(h=>`
             <div class="cr"><span class="crest" style="width:20px;height:20px">${
@@ -6570,6 +6596,24 @@ const App=(()=>{
       medir.evento('modo_club',{club:c?c.name:'(ninguno)'});
       if(S.liga==='home') loadHome(); else if(S.liga==='lpf') drawRight(); },
     pick(r){ Rutas.ir({t:'liga', id:S.liga, fecha:r}); },
+    /* Cambiar contra qué se compara al jugador. Se vuelve a pedir la misma
+       ficha con `contra` y se redibuja sólo el gráfico: el resto de la
+       ficha no cambia, y rehacerla entera haría saltar el scroll. */
+    async radarContra(cual){
+      const caja=$('#radarJug'); if(!caja||!S.jugadorUrl) return;
+      const antes=S.jugadorUrl;
+      caja.innerHTML='<div class="skel"></div>';
+      let p;
+      try{ p=await get(antes+'&contra='+encodeURIComponent(cual)); }
+      catch(e){ p=null; }
+      // Si mientras tanto se abrió otra ficha, no se pisa lo que se está
+      // mirando ahora.
+      const sigue=$('#radarJug');
+      if(!sigue||S.jugadorUrl!==antes) return;
+      sigue.innerHTML=p ? radarJugador(p.radar)
+        : '<div class="note" style="padding:0 4px 8px">No se pudo cambiar la '
+          +'comparación. Probá de nuevo.</div>';
+    },
     player(nombre,equipo,atletaId){
       Rutas.ir({t:'jugador', slug:slugTexto(nombre), atleta:atletaId||null,
                 nombre, equipo:equipo||''}); },

@@ -7,12 +7,14 @@ function nodo(tag){
       add(...c){c.forEach(x=>this._s.add(x));}, remove(...c){c.forEach(x=>this._s.delete(x));},
       toggle(c,v){ v===undefined? (this._s.has(c)?this._s.delete(c):this._s.add(c)) : (v?this._s.add(c):this._s.delete(c)); },
       contains(c){return this._s.has(c);}},
-    get innerHTML(){return this._html;}, set innerHTML(v){this._html=String(v);},
+    get innerHTML(){return this._html;},
+    set innerHTML(v){this._html=String(v); anotarIds(v);},
     textContent:'', value:'', offsetHeight:56,
     /* Agregar sin rehacer lo que ya está. La página lo usa para colgar el
        historial abajo de la tabla del torneo sin volver a dibujarla. Sólo
        se implementan las dos posiciones que se usan. */
     insertAdjacentHTML(donde,html){
+      anotarIds(html);
       if(donde==='beforeend') this._html += String(html);
       else if(donde==='afterbegin') this._html = String(html) + this._html;
     },
@@ -22,12 +24,38 @@ function nodo(tag){
     closest(){return null;}};
   return n;
 }
+/* Qué elementos existen de verdad.
+
+   Antes `querySelector` inventaba un nodo para cualquier selector, y con
+   eso una pantalla podía buscar algo que todavía no se había dibujado y la
+   prueba no se enteraba. Pasó de verdad: el submenú del torneo se pedía
+   antes de que `shell()` armara la pantalla, en el navegador daba null y no
+   se dibujaba nunca, y acá pasaba en verde.
+
+   Ahora se lleva la cuenta de los `id` que se fueron escribiendo, y lo que
+   nadie escribió no existe —igual que en un navegador—. Se anotan sólo los
+   `id`: modelar clases y anidamiento sería escribir medio navegador, y con
+   los id alcanza para la clase de error que importa. */
+// Los que ya vienen en el HTML antes de que el script toque nada. Si
+// alguna vez se agrega uno al documento de arranque, va acá.
+const IDS = new Set(['app', 'bar', 'barTime', 'barTxt', 'clubCrest', 'dot',
+                     'golBtn', 'liveBtn', 'liveCnt', 'modalBox', 'ov', 'q',
+                     'qres', 'scrim']);
+function anotarIds(html){
+  for (const m of String(html || '').matchAll(/id="([^"]+)"/g)) IDS.add(m[1]);
+}
+
 const porId={};
 const doc={documentElement:nodo('html'), body:nodo('body'), head:nodo('head'),
   _oyentes:{},
   createElement:nodo,
   addEventListener(t,f){ (this._oyentes[t]=this._oyentes[t]||[]).push(f); },
-  querySelector(s){ return porId[s]||(porId[s]=nodo()); },
+  querySelector(s){
+    // Un id que nadie escribió no existe, igual que en el navegador.
+    const m=/^#([\w-]+)$/.exec(String(s||''));
+    if(m && !IDS.has(m[1])) return null;
+    return porId[s]||(porId[s]=nodo());
+  },
   querySelectorAll(){ return []; },
   getElementById(id){ return porId['#'+id]||(porId['#'+id]=nodo()); }};
 doc.documentElement.dataset={};

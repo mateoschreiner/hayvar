@@ -3711,7 +3711,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · la Liga Profesional con submenú: Fixture/Tablas, calculadora de promedios y equipos, más la tabla del año que viene"
+VERSION_APP = "2026-08-26 · el submenú de la Liga Profesional aparece de verdad, y la Copa Argentina ya no inventa idas y vueltas entre dos ediciones"
 
 
 def reparar_recorridos():
@@ -4382,9 +4382,15 @@ def marcar_ida_vuelta(games):
     juega antes es la ida. Con eso el fixture se puede ordenar como se mira
     —todas las idas y después todas las vueltas— y cada partido dice qué es.
     """
+    # Ojo con la temporada: sin ella, el mismo cruce en la misma instancia
+    # de dos ediciones distintas se agrupaba como si fuera una llave de ida
+    # y vuelta. Pasaba en la Copa Argentina, que es a partido único: dos
+    # ediciones guardadas y un cruce repetido alcanzaban para que la página
+    # mostrara "Ida" y "Vuelta" de partidos con un año de diferencia.
     series = {}
     for m in games:
-        series.setdefault((m.get("round"), llave_de(m)), []).append(m)
+        clave = (m.get("temporada"), m.get("round"), llave_de(m))
+        series.setdefault(clave, []).append(m)
     for partidos in series.values():
         if len(partidos) != 2:
             continue
@@ -4414,7 +4420,9 @@ def armar_llaves(games, etapas, liga_id=""):
         et = m.get("etapa") or ""
         if not et or not del_cuadro(et):
             continue
-        por_etapa.setdefault(et, {}).setdefault(llave_de(m), []).append(m)
+        # Y lo mismo acá: una llave no cruza dos ediciones del torneo.
+        por_etapa.setdefault(et, {}).setdefault(
+            (m.get("temporada"), llave_de(m)), []).append(m)
 
     salida = []
     for et in etapas:

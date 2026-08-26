@@ -3228,7 +3228,7 @@ App.init();
   const medio=doc.querySelector('#matches').innerHTML||'';
   console.log(JSON.stringify({partido: medio.includes('2 - 2'),
     tapado: medio.includes('ver torneo'),
-    calendario: !!(doc.querySelector('#days').innerHTML)}));
+    calendario: !!doc.querySelector('#days')}));
 })();
 """)
     _g2 = (open(_DOMSITO, encoding="utf-8").read()
@@ -3246,7 +3246,8 @@ App.init();
     os.unlink(_rt)
     _tr = json.loads(_pt.stdout) if _pt.returncode == 0 and _pt.stdout else None
     chequear("abrir el link en una pestaña nueva muestra el partido",
-             _tr and _tr["partido"] is True, _tr)
+             _tr and _tr["partido"] is True,
+             _tr or _pt.stderr.strip().splitlines()[:4])
     chequear("y no se lo tapa la portada cuando llega la lista de clubes",
              _tr and _tr["tapado"] is False and _tr["calendario"] is False, _tr)
 
@@ -5217,6 +5218,8 @@ App.init();
     haySubmenu: sub.indexOf('Fixture/Tablas') >= 0,
     opciones: (sub.match(/class="sm/g) || []).length,
     seleccionado: (sub.match(/class="sm on"[^>]*>([^<]+)</) || [])[1] || '',
+    pestanas: [...(doc.querySelector('#tabs').innerHTML||'')
+      .matchAll(/>([^<]+)<\/button>/g)].map(m=>m[1]),
     equipos: (main.match(/class="eq-item"/g) || []).length,
     nombres: [...main.matchAll(/<span class="nm">([^<]+)</g)].map(m=>m[1]),
     linkAlClub: main.indexOf('href="/boca-juniors"') >= 0}));
@@ -5238,6 +5241,27 @@ App.init();
         os.unlink(_rr)
         return json.loads(_p.stdout) if _p.returncode == 0 and _p.stdout else None
 
+    # El error que costó una subida: `drawSubmenu()` y `pestanasLpf()` se
+    # llamaban ANTES de que `shell()` armara la pantalla. En el navegador
+    # `querySelector` devuelve null y no se dibujaba nada; peor todavía,
+    # `shell()` después reescribía las pestañas con las de su plantilla y
+    # se llevaba puesta la de "Promedios 2027".
+    #
+    # Acá no se detectaba porque el DOM de mentira inventaba un nodo para
+    # cualquier selector. Ahora un id que nadie escribió no existe, igual
+    # que en el navegador, y esta prueba tiene sentido.
+    # Con `find` y no con `index`: si el texto no está, esto tiene que
+    # fallar como un control más, no reventar la corrida entera y dejar sin
+    # correr todo lo que viene después.
+    _iShell = HTML.find("shell();\n      drawSide();")
+    _iDespues = HTML.find("      pestanasLpf();\n      drawSubmenu();")
+    chequear("el submenú y las pestañas se dibujan después del armazón",
+             _iShell >= 0 and _iDespues > _iShell, (_iShell, _iDespues))
+    chequear("y el navegador de mentira sabe que un id sin escribir no existe",
+             "const IDS = new Set([" in open(_DOMSITO, encoding="utf-8").read()
+             and "if(m && !IDS.has(m[1])) return null;"
+                 in open(_DOMSITO, encoding="utf-8").read())
+
     _s1 = _entrar("/liga-profesional")
     _s2 = _entrar("/liga-profesional/equipos")
     chequear("el submenú se dibuja al entrar", _s1 is not None and _s2 is not None,
@@ -5246,6 +5270,12 @@ App.init();
         chequear("con las tres opciones y Fixture/Tablas ya elegida",
                  _s1["haySubmenu"] and _s1["opciones"] == 3
                  and _s1["seleccionado"] == "Fixture/Tablas", _s1)
+        # Y las pestañas del panel, dibujadas de verdad: `shell()` las
+        # reescribía con las de su plantilla y se llevaba puesta la nueva.
+        chequear("y las pestañas incluyen la de Promedios 2027",
+                 _s1["pestanas"] == ["Zona A", "Zona B", "Anual", "Promedios",
+                                     "Promedios 2027", "Goles"],
+                 _s1["pestanas"])
         chequear("y entrando por el link de una sección, ésa",
                  _s2["seleccionado"] == "Equipos", _s2)
         # El bug: por el atajo de la LPF, entrar en frío a una sección
@@ -5317,6 +5347,35 @@ chequear("los puntos que necesita cada uno salen bien",
 # el último se quedara sin nadie a quien superar y figurara salvado.
 chequear("y el último de la tabla no figura salvado",
          _nec["Ultimo"] is None)
+# El mismo cruce en la misma instancia, pero de dos ediciones distintas:
+# la Copa Argentina es a partido único y guardamos dos temporadas, así que
+# Instituto–Platense de una edición y de la otra aparecían como "Ida" y
+# "Vuelta" de una llave que nunca existió.
+_ca1 = {"id": 1, "round": 3, "temporada": 15, "start": "2025-09-05T20:00:00",
+        "home": {"canon": "Instituto", "name": "Instituto"},
+        "away": {"canon": "Platense", "name": "Platense"}}
+_ca2 = {"id": 2, "round": 3, "temporada": 16, "start": "2026-08-19T20:00:00",
+        "home": {"canon": "Instituto", "name": "Instituto"},
+        "away": {"canon": "Platense", "name": "Platense"}}
+server.marcar_ida_vuelta([_ca1, _ca2])
+chequear("dos ediciones distintas no son una llave de ida y vuelta",
+         _ca1.get("tramo") is None and _ca2.get("tramo") is None,
+         (_ca1.get("tramo"), _ca2.get("tramo")))
+# Y una llave de verdad —dos partidos de la misma edición y la misma
+# instancia— se sigue marcando.
+_id = {"id": 3, "round": 5, "temporada": 69, "start": "2026-08-12T20:00:00",
+       "home": {"canon": "Boca Juniors", "name": "Boca Juniors"},
+       "away": {"canon": "Flamengo", "name": "Flamengo"}}
+_vu = {"id": 4, "round": 5, "temporada": 69, "start": "2026-08-19T20:00:00",
+       "home": {"canon": "Flamengo", "name": "Flamengo"},
+       "away": {"canon": "Boca Juniors", "name": "Boca Juniors"}}
+server.marcar_ida_vuelta([_vu, _id])
+chequear("y la de ida y vuelta de verdad se sigue marcando",
+         _id.get("tramo") == "Ida" and _vu.get("tramo") == "Vuelta",
+         (_id.get("tramo"), _vu.get("tramo")))
+chequear("el cuadro tampoco junta dos ediciones en una llave",
+         "(m.get(\"temporada\"), llave_de(m)), []).append(m)" in _SRV)
+
 chequear("la calculadora se sirve de un solo pedido",
          '"/api/calculadora": api_calculadora,' in _SRV
          and "def api_calculadora(q):" in _SRV)
@@ -5423,13 +5482,23 @@ App.init();
   const antes=leer();
   const partidos=(izq().match(/class="calc-p"/g)||[]).length;
   const fechas=(izq().match(/class="calc-fecha"/g)||[]).length;
+  const botones=(izq().match(/class="cbtn-lim"/g)||[]).length;
   App.calc('1','l'); await esperar(5); const gano=leer();
   App.calc('2','l'); await esperar(5); const perdio=leer();
   App.calc('2','l'); await esperar(5); const desmarcado=leer();
   App.calcLimpiar(); await esperar(5);
-  console.log(JSON.stringify({partidos, fechas, antes, gano, perdio,
+  // el botón de completar: marca todo lo que quedó sin marcar
+  App.calc('1','e'); await esperar(5);
+  App.calcSortear(); await esperar(5);
+  const trasSortear=izq();
+  const marcadosTrasSortear=(trasSortear.match(/class="cbtn3 on"/g)||[]).length;
+  const respetoElMio=/marcado/.test(trasSortear)
+    && (trasSortear.match(/<b>3<\/b> marcados/)||[]).length===1;
+  App.calcLimpiar(); await esperar(5);
+  console.log(JSON.stringify({partidos, fechas, antes, gano, perdio, botones,
     desmarcarVuelve: JSON.stringify(desmarcado)===JSON.stringify(gano),
-    limpiarVuelve: JSON.stringify(leer())===JSON.stringify(antes)}));
+    limpiarVuelve: JSON.stringify(leer())===JSON.stringify(antes),
+    marcadosTrasSortear, respetoElMio}));
 })();
 """).replace("__R__", _rcalc)
     _gc2 = (open(_DOMSITO, encoding="utf-8").read()
@@ -5472,6 +5541,13 @@ App.init();
                  _ca["desmarcarVuelve"])
         chequear("y empezar de nuevo devuelve la tabla de hoy",
                  _ca["limpiarVuelve"])
+        # Y el botón de completar lo que falta: llena los tres partidos,
+        # uno por equipo por fecha, sin pisar lo que ya estaba marcado.
+        chequear("hay un botón para completar los que faltan",
+                 _ca["botones"] == 2, _ca["botones"])
+        chequear("y completa todos los que quedaban sin marcar",
+                 _ca["marcadosTrasSortear"] == 3,
+                 _ca["marcadosTrasSortear"])
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

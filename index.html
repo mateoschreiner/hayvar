@@ -620,6 +620,15 @@ html[data-theme="light"] .lg-premier .lgimg{border-radius:5px;padding:1.5px;
   transition:transform .75s cubic-bezier(.4,.1,.2,1)}
 .kit .cara{position:absolute;inset:0;backface-visibility:hidden;display:grid;place-items:center}
 .kit .atras{transform:rotateY(180deg)}
+/* La camiseta provisoria: lisa, a media tinta y con el cartelito. Se ve
+   que es un lugar reservado y no la camiseta del club. No gira: no hay
+   nada del otro lado. */
+.kit .escena:has(.proxima){cursor:default;position:relative}
+.kit .pivote.proxima{opacity:.45;transition:none}
+.kit .cartelito{position:absolute;left:50%;top:12px;transform:translateX(-50%);
+  font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  background:var(--txt);color:var(--card);padding:3px 9px;border-radius:11px;
+  white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.18)}
 .kit .lb{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
   font-weight:700;margin-top:4px}
 
@@ -3333,12 +3342,31 @@ const App=(()=>{
     });
 
     const kits=i.camisetas||{};
-    const kitHtml=Object.keys(kits).map((nom,idx)=>`
+    let kitHtml=Object.keys(kits).map((nom,idx)=>`
       <div class="kit"><div class="escena" onclick="App.girarKit(${idx})">
         <div class="pivote" id="kit${idx}">
           <div class="cara">${camisetaSVG(kits[nom],false,d.escudo)}</div>
           <div class="cara atras">${camisetaSVG(kits[nom],true)}</div>
         </div></div><div class="lb">${esc(nom)}</div></div>`).join('');
+    /* La camiseta provisoria, para los clubes que todavía no tienen la
+       suya dibujada.
+
+       Va lisa y traslúcida, con un cartelito colgando: una camiseta o está
+       bien o está escandalosamente mal —River sin la banda, Boca a
+       bastones— y no hay término medio. Así se ve que es un lugar
+       reservado y no un error, y el club igual se reconoce por su color.
+       El patrón —banda, bastones, franjas— no se puede adivinar del
+       escudo; eso se dibuja a mano y va llegando de a poco. */
+    if(!kitHtml&&d.primary){
+      kitHtml=`<div class="kit"><div class="escena">
+          <div class="pivote proxima">
+            <div class="cara">${camisetaSVG(
+              {base:d.primary, cuello:d.accent||d.primary,
+               mangas:d.accent||d.primary}, false)}</div>
+          </div>
+          <span class="cartelito">Próximamente</span>
+        </div><div class="lb">Aproximada</div></div>`;
+    }
 
     $('#matches').innerHTML=`
       <div class="cl-top">

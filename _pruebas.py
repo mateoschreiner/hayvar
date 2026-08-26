@@ -5269,6 +5269,14 @@ if _sh.which("node"):
             "historial": [], "plantel": [], "fixture": [], "radar": None,
             "partidos": {}, "sitio": None, "tienda": None},
         "/api/club": {"club": "River Plate", "partidos": {}},
+        # Un club sin ficha cargada a mano: sin estadio, sin camisetas y
+        # sin títulos, pero con el color sacado de su escudo. Es el caso de
+        # los cientos de clubes de las otras trece competencias.
+        "/api/club-info?name=deportivo%20madryn": {
+            "club": "Deportivo Madryn", "escudo": "/img/x/9",
+            "primary": "#0a7d3a", "accent": "#f2f2f2", "var": "#0a7d3a",
+            "info": {}, "historial": [], "plantel": [], "fixture": [],
+            "radar": None, "partidos": {}, "sitio": None, "tienda": None},
         "/api/rounds": {"rounds": [1], "current": 1},
         "/api/games": {"games": []}, "/api/ligas": {"ligas": []},
         "/api/visita": {"v": "x"}}, ensure_ascii=False)
@@ -5327,10 +5335,20 @@ App.init();
     histDesglose: (der.match(/class="desglose">([^<]*)</) || [])[1] || '',
     /* La tarjeta de títulos de la ficha del club, con su rótulo, su
        número y el desglose de abajo. */
-    fichaDatos: [...main.matchAll(/class="lb">([^<]+)</g)].map(m=>m[1]),
+    /* Sólo las tarjetas de la ficha. El rótulo de la camiseta usa la
+       misma clase, y sin acotarlo "Aproximada" contaba como un dato. */
+    fichaDatos: [...main.matchAll(
+      /class="cl-dato"><div class="lb">([^<]+)</g)].map(m=>m[1]),
     fichaTitulos: (main.match(
       /class="lb">Títulos<\\/div>\\s*<div class="vl">(\\d+)<div class="pie">([^<]*)/)
-      || []).slice(1,3)}));
+      || []).slice(1,3),
+    /* La camiseta: la dibujada gira y tiene dos caras; la provisoria es
+       una sola, a media tinta y con el cartelito. */
+    kits: (main.match(/class="kit"/g) || []).length,
+    caras: (main.match(/class="cara/g) || []).length,
+    proxima: main.indexOf('pivote proxima') >= 0,
+    cartelito: (main.match(/class="cartelito">([^<]+)</) || [])[1] || '',
+    tagClub: (htmlDe('#app').match(/class="tag"[^>]*>([^<]*)</) || [])[1] || ''}));
 })();
 """).replace("__R__", _rsub).replace("__E__", ruta)
         _g = (open(_DOMSITO, encoding="utf-8").read()
@@ -5482,6 +5500,24 @@ App.init();
         # Primera: no tienen escudo y ahí es donde una fila se descoloca.
         chequear("los campeones sin escudo se dibujan igual",
                  _s3["histSinEscudo"] >= 15, _s3["histSinEscudo"])
+
+    # La ficha de un club que no tiene nada cargado a mano: sin estadio,
+    # sin títulos y sin camisetas dibujadas. Antes quedaba pelada; ahora
+    # muestra lo que hay y una camiseta provisoria en su color.
+    _s6 = _entrar("/deportivo-madryn")
+    chequear("la ficha de un club sin datos cargados se abre", _s6 is not None,
+             _s6)
+    if _s6:
+        chequear("y muestra una camiseta provisoria en su color",
+                 _s6["kits"] == 1 and _s6["proxima"]
+                 and _s6["cartelito"] == "Próximamente",
+                 (_s6["kits"], _s6["proxima"], _s6["cartelito"]))
+        # Una sola cara: no gira, porque del otro lado no hay nada.
+        chequear("que no gira, porque no hay nada del otro lado",
+                 _s6["caras"] == 1, _s6["caras"])
+        # Y sin inventar datos que no tenemos.
+        chequear("y no inventa estadio ni títulos",
+                 _s6["fichaDatos"] == [], _s6["fichaDatos"])
 
     # Y la ficha del club, que es el otro lugar donde tenían que aparecer:
     # en la misma fila que el estadio y la capacidad.

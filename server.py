@@ -3894,7 +3894,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · El modo club deja elegir la competencia: ya no son sólo los treinta de Primera, son los de cualquiera de las catorce, con el color sacado de su escudo"
+VERSION_APP = "2026-08-27 · La ficha de un club sin datos cargados ya no queda pelada: escudo y colores salen de sus propios partidos, y la camiseta va provisoria, traslúcida y con su cartelito"
 
 
 def reparar_recorridos():
@@ -8594,7 +8594,6 @@ def armar_club_info(canon):
     # Los clubes que nunca salieron campeones dan None y no muestran nada:
     # un cero grande en la ficha sería una manera fea de decirlo.
     ficha["titulos"] = historia.titulos_de(canon)
-    colores = COLORES.get(canon)
     escudo = None
     try:
         escudo = (_logos().get(canon) or {}).get("logo")
@@ -8670,6 +8669,31 @@ def armar_club_info(canon):
     # el orden es el de LIGAS, no el que hayan terminado los pedidos
     orden = [l for l in cuales if traido.get(l)]
     fixture = {l: traido[l] for l in orden}
+
+    # El escudo y los colores, recién acá.
+    #
+    # `_logos()` sólo indexa la Liga Profesional, así que un club del
+    # ascenso o de una copa no está ahí. Su escudo sí viene en sus propios
+    # partidos, que son los que se acaban de traer: sale gratis. La primera
+    # versión de esto recorría las trece competencias buscándolo, que es
+    # pedir el sitio entero para pintar una ficha.
+    if not escudo:
+        for l in orden:
+            for m in fixture[l]["games"]:
+                for s in ("home", "away"):
+                    lado = m.get(s) or {}
+                    if (lado.get("logo")
+                            and mismo_club(lado.get("canon") or lado.get("name"),
+                                           canon)):
+                        escudo = lado["logo"]
+                        break
+                if escudo:
+                    break
+            if escudo:
+                break
+    # Los cargados a mano si el club está, y si no, los de su escudo: es lo
+    # que hace que la ficha de un club del ascenso se pinte como las demás.
+    colores = _sin_reventar(lambda: colores_de_club(canon, escudo=escudo))
 
     return {
         "club": canon,

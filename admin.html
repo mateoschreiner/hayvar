@@ -523,6 +523,90 @@ function nombres(n){
     <footer>${esc(n.nota || '')}</footer>`;
 }
 
+/* Corregir los partidos que quedaron guardados con el club equivocado.
+
+   En dos pasos a propósito: primero se ve qué cambiaría y recién después
+   se aplica, con una confirmación en el medio. Reescribe filas ya
+   guardadas —no borra nada— y antes saca una copia de la base. */
+async function corregir(){
+  const caja = $('#corregir');
+  caja.innerHTML = '<div class="vacio">Mirando…</div>';
+  let r;
+  try{ r = await pedir('/api/corregir'); }
+  catch(e){ caja.innerHTML = '<div class="vacio">No se pudo: '
+    + esc(e.message) + '</div>'; return; }
+  if(!r.partidos){
+    caja.innerHTML = '<div class="tarj"><b style="font-size:22px">Nada</b>'
+      + '<span>No quedó ningún partido con el club equivocado.</span></div>';
+    return;
+  }
+  caja.innerHTML = `<div class="tarj" style="margin-bottom:10px">
+      <b style="font-size:22px">${r.partidos} partidos</b>
+      <span>cambiarían de club, en ${r.calendarios} calendarios.
+      Todavía no se tocó nada.</span></div>
+    ${listaDeCopias(r.copias)}
+    <table><thead><tr><th>Se le sacan a</th><th>Y pasan a</th>
+      <th style="text-align:right">Partidos</th></tr></thead><tbody>
+    ${r.cambios.map(c => `<tr><td>${esc(c.leSacamosA)}</td>
+      <td>${esc(c.club)}</td>
+      <td style="text-align:right">${c.partidos}</td></tr>`).join('')}
+    </tbody></table>
+    <div style="padding:12px 14px">
+      <button onclick="aplicarCorreccion()">Corregirlos</button>
+      <span class="vacio" style="padding:0 0 0 10px">Saca una copia de la
+        base antes. No borra nada.</span></div>`;
+}
+
+async function aplicarCorreccion(){
+  if(!confirm('Reescribe el club de esos partidos en la base.\n'
+      + 'Antes saca una copia. ¿Seguimos?')) return;
+  const caja = $('#corregir');
+  caja.innerHTML = '<div class="vacio">Corrigiendo…</div>';
+  let r;
+  try{ r = await pedir('/api/corregir?aplicar=si'); }
+  catch(e){ caja.innerHTML = '<div class="vacio">No se pudo: '
+    + esc(e.message) + '</div>'; return; }
+  caja.innerHTML = `<div class="tarj">
+      <b style="font-size:22px">${r.partidos} corregidos</b>
+      <span>${r.escritos} filas reescritas.${r.copia
+        ? ' Copia de la base en ' + esc(r.copia.archivo)
+          + ' (' + megas(r.copia.bytes) + ').'
+        : ' No se pudo sacar la copia.'}</span></div>
+    ${listaDeCopias(r.copias)}`;
+}
+
+/* Las copias que hay en el disco. Una copia que no podés ver no sirve de
+   mucho: esto es para poder confirmar que está y cuánto pesa.
+
+   Ojo con lo que protege: vive en el MISMO disco que la base. Sirve para
+   volver atrás si una corrección sale mal, no para el día que se pierda el
+   disco. Para eso habría que bajarla afuera. */
+function listaDeCopias(copias){
+  if(!copias || !copias.length)
+    return `<div style="padding:8px 14px" class="vacio">Todavía no hay
+      ninguna copia. <button onclick="soloCopia()">Sacar una ahora</button></div>`;
+  return `<div style="padding:10px 14px">
+    <div class="rot">Copias en el disco</div>
+    ${copias.map(c => `<div style="font-size:12.5px;color:var(--txt2)">
+      ${esc(c.archivo)} · ${megas(c.bytes)}</div>`).join('')}
+    <div style="margin-top:8px"><button onclick="soloCopia()">Sacar otra</button>
+      <span class="vacio" style="padding:0 0 0 8px">Están en el mismo disco
+        que la base.</span></div></div>`;
+}
+
+async function soloCopia(){
+  const caja = $('#corregir');
+  const antes = caja.innerHTML;
+  caja.innerHTML = '<div class="vacio">Copiando…</div>';
+  try{
+    const r = await pedir('/api/corregir?copia=si');
+    caja.innerHTML = `<div class="tarj"><b style="font-size:20px">${
+      r.copia ? 'Copia hecha' : 'No se pudo'}</b><span>${
+      r.copia ? esc(r.copia.archivo) + ' · ' + megas(r.copia.bytes) : ''
+      }</span></div>${listaDeCopias(r.copias)}`;
+  }catch(e){ caja.innerHTML = antes; alert('No se pudo: ' + e.message); }
+}
+
 async function cargar(){
   $('#app').innerHTML = '<div class="vacio" style="padding:60px">Cargando…</div>';
   let t, base, cont, rec, diag, vis, col, nom;
@@ -592,7 +676,10 @@ async function cargar(){
       <h2>Cuánto lleva bajado cada torneo</h2>
       ${recorrido(rec)}
       ${nom ? `<h2>Clubes que se confunden con otro</h2>
-        ${nombres(nom)}` : ''}
+        ${nombres(nom)}
+        <h2>Corregir los que quedaron mal guardados</h2>
+        <div id="corregir"><div style="padding:12px 0">
+          <button onclick="corregir()">Ver qué cambiaría</button></div></div>` : ''}
       ${col ? `<h2>¿Sirve sacar los colores del escudo?</h2>
         ${colores(col)}` : ''}
       <footer>Base: ${esc(base.archivo || '—')}${

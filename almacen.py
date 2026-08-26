@@ -392,6 +392,54 @@ def _compactar(c):
             pass
 
 
+def copia_de_seguridad(nombre=None):
+    """
+    Una copia de la base, al lado de la original.
+
+    Es para antes de tocar filas ya guardadas. Se hace con `VACUUM INTO`,
+    que es la forma que trae SQLite para copiar una base **en caliente**:
+    respeta las transacciones en curso, no hace falta parar el servidor, y
+    de paso la copia sale compactada. Copiar el archivo a mano mientras
+    alguien escribe puede dejar una copia rota, que es peor que no tenerla.
+
+    Devuelve {"archivo": ..., "bytes": ...} o None si no se pudo.
+    """
+    if RUTA == ":memory:":
+        return None
+    import datetime as _dt
+    sello = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    destino = nombre or "%s.copia-%s" % (RUTA, sello)
+    if os.path.exists(destino):
+        return None                      # nunca pisar una copia que ya está
+    try:
+        with conexion() as c:
+            c.execute("VACUUM INTO ?", (destino,))
+    except Exception:
+        return None
+    try:
+        return {"archivo": destino, "bytes": os.path.getsize(destino)}
+    except OSError:
+        return {"archivo": destino, "bytes": None}
+
+
+def copias():
+    """Las copias que hay, de la más nueva a la más vieja."""
+    if RUTA == ":memory:":
+        return []
+    carpeta = os.path.dirname(RUTA) or "."
+    base = os.path.basename(RUTA) + ".copia-"
+    salida = []
+    try:
+        for n in os.listdir(carpeta):
+            if n.startswith(base):
+                camino = os.path.join(carpeta, n)
+                salida.append({"archivo": n,
+                               "bytes": os.path.getsize(camino)})
+    except OSError:
+        return []
+    return sorted(salida, key=lambda x: x["archivo"], reverse=True)
+
+
 def _tamano():
     """
     Lo que ocupa la base en el disco, contando todos sus archivos.

@@ -152,6 +152,7 @@ PRIVADAS = {
     "/api/visitas",       # quién entró, de dónde y qué miró
     "/api/colores",       # baja los treinta escudos para comparar colores
     "/api/nombres",       # recorre el calendario de las trece competencias
+    "/api/corregir",      # reescribe el club de partidos ya guardados
     "/admin",             # la página que junta todo lo de arriba
 }
 # Ojo: /api/visita —sin la ese— NO va acá. Es la que usa la página para
@@ -3856,7 +3857,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Un nombre más largo que el nuestro ya no se toma por el club de Primera: Union Berlin era Unión, Racing de Santander era Racing y los tres Independiente de la Libertadores eran Independiente"
+VERSION_APP = "2026-08-27 · Se pueden corregir los partidos que quedaron guardados con el club equivocado: se recalcula del nombre que mandó la fuente, que siempre estuvo guardado, y no se borra nada"
 
 
 def reparar_recorridos():
@@ -8617,6 +8618,107 @@ def armar_club_info(canon):
     }
 
 
+def corregir_nombres(aplicar=False):
+    """
+    Recalcula a qué club pertenece cada partido guardado, con la regla nueva.
+
+    Se puede hacer sin adivinar nada porque el calendario guardado conserva
+    el nombre TAL COMO LO MANDÓ LA FUENTE, aparte del club al que lo
+    habíamos asignado. O sea que el dato bueno nunca se perdió: lo único
+    que estaba mal era la conclusión, y se vuelve a sacar.
+
+    No borra ni inventa: donde el club recalculado coincide con el
+    guardado, no toca nada. Donde no coincide, lo reescribe y vuelve a
+    pasar ese calendario por la misma función que lo escribió la primera
+    vez, que actualiza por id en vez de duplicar.
+
+    Con `aplicar` en False sólo cuenta, que es como conviene mirarlo antes.
+    """
+    if not tablas.iniciar():
+        return None
+    cambios, tocadas, escritos = [], {}, 0
+    for lid, cfg in LIGAS.items():
+        for i, comp in enumerate(comps_de(cfg)):
+            clave = "fixture:%s" % comp
+            guardado, _ = almacen.leer(clave)
+            if not guardado:
+                continue
+            difusa = comp == COMPETITION
+            hubo = False
+            for m in guardado:
+                for s in ("home", "away"):
+                    lado = m.get(s) or {}
+                    crudo = lado.get("name")
+                    if not crudo:
+                        continue
+                    nuevo = match_team(crudo, difusa)
+                    if nuevo == lado.get("canon"):
+                        continue
+                    cambios.append({"liga": lid, "club": crudo,
+                                    "antes": lado.get("canon"),
+                                    "ahora": nuevo})
+                    if aplicar:
+                        lado["canon"] = nuevo
+                    hubo = True
+            if hubo and aplicar:
+                almacen.guardar(clave, guardado)
+                tocadas[comp] = (lid, i == 0)
+    if aplicar:
+        # Se reescriben en el mismo orden que el rescate original: primero
+        # las competencias principales. Los partidos que llegan por los dos
+        # lados quedan con el torneo que corresponde.
+        for principal in (True, False):
+            for comp, (lid, es_principal) in tocadas.items():
+                if es_principal != principal:
+                    continue
+                guardado, _ = almacen.leer("fixture:%s" % comp)
+                escritos += tablas.guardar(lid, comp, guardado or [],
+                                           principal=principal)
+
+    # Un resumen por club, que es como se mira: "a Independiente le sacamos
+    # 26 partidos que no eran suyos".
+    resumen = {}
+    for c in cambios:
+        k = (c["antes"], c["club"])
+        resumen[k] = resumen.get(k, 0) + 1
+    return {
+        "aplicado": bool(aplicar),
+        "partidos": len(cambios),
+        "calendarios": len(tocadas),
+        "escritos": escritos,
+        "cambios": sorted(
+            ({"leSacamosA": a, "club": n, "partidos": v}
+             for (a, n), v in resumen.items() if a),
+            key=lambda x: -x["partidos"]),
+        "nota": ("Se recalculó a qué club pertenece cada partido usando el "
+                 "nombre que mandó la fuente, que siempre estuvo guardado. "
+                 "No se borró nada." if aplicar else
+                 "Esto es lo que cambiaría. Todavía no se tocó nada."),
+    }
+
+
+def api_corregir(q):
+    """
+    /api/corregir            dice qué cambiaría
+    /api/corregir?aplicar=si lo hace, sacando una copia antes
+    /api/corregir?copia=si   sólo saca una copia
+
+    En dos pasos a propósito: reescribe filas ya guardadas y eso conviene
+    mirarlo antes.
+    """
+    aplicar = (q.get("aplicar") or [""])[0] == "si"
+    solo_copia = (q.get("copia") or [""])[0] == "si"
+    if solo_copia:
+        return {"copia": _sin_reventar(almacen.copia_de_seguridad),
+                "copias": _sin_reventar(almacen.copias, [])}
+    copia = _sin_reventar(almacen.copia_de_seguridad) if aplicar else None
+    salida = corregir_nombres(aplicar) or {"error": "no se pudo abrir la tabla"}
+    if aplicar:
+        salida["copia"] = copia
+    salida["copias"] = _sin_reventar(almacen.copias, [])
+    return salida
+
+
 def api_nombres(q):
     """
     Qué clubes se estaban confundiendo con otro, competencia por competencia.
@@ -9162,6 +9264,9 @@ ROUTES = {
     # Qué clubes se estaban confundiendo con otro por el parecido de
     # nombres. Cuenta, no corrige.
     "/api/nombres": lambda q: api_nombres(q),
+    # Y la corrección de lo ya guardado, en dos pasos: primero dice qué
+    # cambiaría y recién con ?aplicar=si lo hace.
+    "/api/corregir": lambda q: api_corregir(q),
     "/api/scorers": api_scorers,
     "/api/match": api_match,
     # se resuelve al llamarla porque se define más abajo, junto al resto de

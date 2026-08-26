@@ -2320,7 +2320,7 @@ chequear("lo que borra o gasta está en la lista de privadas",
          server.PRIVADAS == {"/api/recorrido", "/api/raw", "/api/contenido",
                              "/api/diagnostico", "/api/tiempos",
                              "/api/base", "/api/visitas", "/api/colores",
-                             "/api/nombres", "/admin"},
+                             "/api/nombres", "/api/corregir", "/admin"},
          sorted(server.PRIVADAS))
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")
@@ -6256,6 +6256,114 @@ chequear("la decisión sale de la competencia del partido",
          and "if not difusa:" in _SRV)
 chequear("y hay con qué medir lo ya guardado",
          "/api/nombres" in server.ROUTES)
+
+# ── Corregir lo que ya quedó mal guardado ────────────────────────────────
+#
+# La corrección se puede hacer sin adivinar porque el calendario guardado
+# conserva el nombre TAL COMO LO MANDÓ LA FUENTE, aparte del club al que lo
+# habíamos asignado. El dato bueno nunca se perdió: lo que estaba mal era
+# la conclusión.
+#
+# Esto corre sobre una base de mentira, con un partido bien y otro mal, y
+# comprueba lo que de verdad importa: que el que estaba bien no se toque.
+import sqlite3 as _sqlite3                                       # noqa: E402
+import threading as _threading                                   # noqa: E402
+import almacen as _alm                                           # noqa: E402
+import tablas as _tab                                            # noqa: E402
+
+_dir_tmp = _tmp.mkdtemp()
+_ruta_real = _alm.RUTA
+try:
+    # Se apunta la base a un archivo de prueba y se tira la conexión que
+    # tenía guardada el hilo: si no, seguiría escribiendo en la de verdad.
+    # Y hay que crear el esquema, que se arma al arrancar y no al conectar.
+    _alm.RUTA = os.path.join(_dir_tmp, "prueba.db")
+    _alm._local = _threading.local()
+    _alm.iniciar()
+    _tab.iniciar()
+
+    _COMP_CA = server.comps_de(server.LIGAS["ca"])[0]
+    _falsos = [
+        # Uno mal: el nombre crudo es del ascenso y quedó como el de Primera.
+        {"id": 90001, "home": {"id": 1, "name": "Gimnasia de Jujuy",
+                               "canon": "Gimnasia y Esgrima (LP)"},
+         "away": {"id": 2, "name": "Boca Juniors", "canon": "Boca Juniors"},
+         "start": "2026-03-01T20:00:00", "round": 1, "status": "FIN",
+         "gh": 1, "ga": 2},
+        # Y uno bien, que no se puede tocar.
+        {"id": 90002, "home": {"id": 3, "name": "River Plate",
+                               "canon": "River Plate"},
+         "away": {"id": 4, "name": "Vélez Sarsfield",
+                  "canon": "Vélez Sarsfield"},
+         "start": "2026-03-02T20:00:00", "round": 1, "status": "FIN",
+         "gh": 0, "ga": 0},
+    ]
+    _alm.guardar("fixture:%s" % _COMP_CA, _falsos)
+    _tab.guardar("ca", _COMP_CA, _falsos, principal=True)
+
+    _antes = server.corregir_nombres(False)
+    chequear("primero dice qué cambiaría, sin tocar nada",
+             _antes["partidos"] == 1 and not _antes["aplicado"]
+             and _antes["escritos"] == 0, _antes)
+    chequear("y nombra al club que se lo estaba quedando",
+             _antes["cambios"] and _antes["cambios"][0]["leSacamosA"]
+             == "Gimnasia y Esgrima (LP)"
+             and _antes["cambios"][0]["club"] == "Gimnasia de Jujuy",
+             _antes["cambios"])
+    with _alm.conexion() as _c:
+        _sin_tocar = _c.execute(
+            "SELECT local FROM partidos WHERE id=90001").fetchone()[0]
+    chequear("mirar no escribe", _sin_tocar == "Gimnasia y Esgrima (LP)",
+             _sin_tocar)
+
+    _dsp = server.corregir_nombres(True)
+    with _alm.conexion() as _c:
+        _fila1 = _c.execute("SELECT local, visita, gh, ga FROM partidos "
+                            "WHERE id=90001").fetchone()
+        _fila2 = _c.execute("SELECT local, visita FROM partidos "
+                            "WHERE id=90002").fetchone()
+        _cuantos = _c.execute("SELECT count(*) FROM partidos").fetchone()[0]
+    # El club que no reconocemos queda sin canon y se guarda con su nombre
+    # crudo: es lo correcto —es ese club y no otro— y se arregla el día que
+    # se le agregue el alias.
+    chequear("el partido mal guardado queda con el club que es",
+             _fila1[0] == "Gimnasia de Jujuy" and _fila1[1] == "Boca Juniors",
+             _fila1)
+    chequear("y no se pierde nada del partido", _fila1[2] == 1 and _fila1[3] == 2,
+             _fila1)
+    chequear("el que estaba bien no se toca",
+             _fila2 == ("River Plate", "Vélez Sarsfield"), _fila2)
+    chequear("y no se duplica ni se borra ninguna fila", _cuantos == 2, _cuantos)
+    # Y correrlo de nuevo no encuentra nada: es idempotente, que es lo que
+    # permite volver a pasarlo sin miedo.
+    _otra = server.corregir_nombres(True)
+    chequear("correrlo dos veces no cambia nada la segunda",
+             _otra["partidos"] == 0, _otra)
+
+    # La copia de seguridad, que va antes de tocar filas.
+    _copia = _alm.copia_de_seguridad()
+    chequear("se puede sacar una copia de la base en caliente",
+             _copia and os.path.exists(_copia["archivo"])
+             and _copia["bytes"] > 0, _copia)
+    chequear("y la copia se abre y tiene los mismos partidos",
+             _sqlite3.connect(_copia["archivo"]).execute(
+                 "SELECT count(*) FROM partidos").fetchone()[0] == 2)
+    chequear("y no pisa una copia que ya está",
+             _alm.copia_de_seguridad(_copia["archivo"]) is None)
+    # Y se pueden listar: una copia que no se puede ver no sirve de mucho.
+    _hay = _alm.copias()
+    chequear("las copias se pueden ver desde afuera",
+             any(c["bytes"] == _copia["bytes"] for c in _hay), _hay)
+finally:
+    _alm.RUTA = _ruta_real
+    _alm._local = _threading.local()
+    _sh.rmtree(_dir_tmp, ignore_errors=True)
+
+chequear("la corrección tiene su dirección y está cerrada",
+         "/api/corregir" in server.ROUTES
+         and "/api/corregir" in server.PRIVADAS)
+chequear("y no aplica nada sin pedirlo expresamente",
+         'aplicar = (q.get("aplicar") or [""])[0] == "si"' in _SRV)
 
 print("\n── el botón de sólo en vivo, en todas las pantallas ──")
 #

@@ -380,9 +380,80 @@ def titulos_de(club):
     return _POR_CLUB.get(_plano(club))
 
 
+# Qué competencia del sitio corresponde a cada lista de campeones. Sin
+# esto, la pantalla de Copa Argentina no sabría cuál de las ocho copas es
+# la suya.
+DE_LA_COMPETENCIA = {
+    "ca": "Copa Argentina",
+}
+
+
+def de_copa(nombre):
+    """
+    La historia de una copa sola, con la misma forma que la de la liga.
+
+    Devuelve las mismas claves —`porAno`, `porClub`, `total`— para que la
+    pantalla sea una y no dos: lo único que cambia es que una copa no
+    tiene dos campeones en el mismo año, así que cada fila trae uno.
+    """
+    filas = next((f for n, f in COPAS if n == nombre), None)
+    if filas is None:
+        return None
+    por_ano = [{"temporada": t, "titulos": [{"torneo": "", "campeon": c,
+                                             "nota": None}]}
+               for t, c in sorted(filas, key=lambda x: _clave(x[0]),
+                                  reverse=True)]
+    por_club = []
+    for x in por_club_de(filas):
+        por_club.append(x)
+    return {
+        "copa": nombre,
+        "titulo": nombre,
+        "desde": min(t for t, _c in filas),
+        "total": len(filas),
+        "porAno": por_ano,
+        "porClub": por_club,
+        "copas": [],
+        "fuente": "RSSSF (Gorgazzi y Villa Martínez) sobre registros de AFA",
+        "nota": ("Todos los campeones de la %s. Una copa se gana una vez "
+                 "por edición, así que acá cada año tiene un solo campeón."
+                 % nombre),
+    }
+
+
+def por_club_de(filas):
+    """
+    Cuántas veces ganó cada club una copa, con la misma forma que la de la
+    liga para que la pantalla no tenga que distinguir.
+    """
+    cuenta = {}
+    for temporada, campeon in filas:
+        c = cuenta.setdefault(campeon, {"club": campeon, "ligas": 0,
+                                        "copas": 0, "detalleLigas": [],
+                                        "detalleCopas": []})
+        c["copas"] += 1
+        c["detalleLigas"].append({"temporada": temporada, "torneo": ""})
+    salida = sorted(cuenta.values(),
+                    key=lambda x: (-x["copas"], _plano(x["club"])))
+    for x in salida:
+        x["total"] = x["copas"]
+        # Se muestran en el mismo lugar que las ligas de la otra pantalla:
+        # acá "las ligas" del club son sus ediciones ganadas.
+        x["ligas"] = x["copas"]
+        x["copas"] = 0
+        x["detalleCopas"] = []
+        x["detalleLigas"].sort(key=lambda d: _clave(d["temporada"]),
+                               reverse=True)
+    for i, x in enumerate(salida, 1):
+        x["pos"] = i if i == 1 or x["total"] != salida[i - 2]["total"] \
+            else salida[i - 2]["pos"]
+    return salida
+
+
 def todo():
     """Lo que se manda a la pantalla, ya armado."""
     return {
+        "titulo": "Ligas",
         "desde": DESDE,
         "total": len(LIGAS),
         "porAno": por_ano(),

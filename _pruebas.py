@@ -5216,8 +5216,11 @@ chequear("y la página conoce las mismas",
          "calculadora:{rotulo:'Calculadora de promedios'" in HTML
          and "equipos:{rotulo:'Equipos'" in HTML
          and "historia:{rotulo:'Historia'" in HTML
-         and "const CON_SECCIONES={lpf:['calculadora','equipos','historia']};"
-             in HTML)
+         and "lpf:['calculadora','equipos','historia']," in HTML)
+# La Copa Argentina tiene Equipos e Historia pero no calculadora: los
+# promedios son de la liga, ahí no significan nada.
+chequear("la Copa Argentina tiene sus dos secciones y no la calculadora",
+         "ca:['equipos','historia']," in HTML)
 # Entrar en frío a una sección tomaba el atajo de la portada de la LPF y
 # cargaba el fixture en vez de la sección.
 chequear("entrar en frío a una sección no cae en el fixture",
@@ -5229,12 +5232,20 @@ if _sh.which("node"):
                for i, n in enumerate(["River Plate", "Boca Juniors",
                                       "Ñublense", "Aldosivi"])]
     _rsub = json.dumps({
-        "/api/clubes": {"clubes": _clubes}, "/api/standings": {"zones": []},
+        "/api/clubes": {"clubes": _clubes},
+        # La lista de equipos ahora es por competencia y sale del
+        # calendario, así que anda igual en las catorce.
+        "/api/equipos": {"clubes": _clubes, "liga": "lpf"},
+        "/api/standings": {"zones": []},
         "/api/annual": {"rows": []}, "/api/promedios": {"rows": []},
         "/api/scorers": {"rows": []},
         # Los campeones de verdad, no un ejemplo: si la pantalla se rompe
         # con un club sin escudo o con un año de tres títulos, que se rompa
         # acá.
+        # Las dos historias, con los datos de verdad. La clave más larga
+        # gana en el buscador de abajo, así que `?liga=ca` no se come la
+        # de Primera ni al revés.
+        "/api/historia?liga=ca": _hist.de_copa("Copa Argentina"),
         "/api/historia": _hist.todo(),
         # La ficha de un club, para poder mirar la tarjeta de títulos. El
         # `titulos` es el de verdad, no un ejemplo.
@@ -5402,6 +5413,21 @@ App.init();
                  (_s3["histPrimero"], _s3["histDesglose"]))
         chequear("las ocho copas van abajo, aparte",
                  _s3["histCopas"] == len(_hist.COPAS) == 8, _s3["histCopas"])
+
+    # Y la misma pantalla en la Copa Argentina, que es una competencia
+    # distinta con su propia lista de campeones. Lo que se mira es que no
+    # se mezclen: la copa tiene sus trece ediciones y NO lleva el bloque de
+    # "copas nacionales" abajo, porque ahí la copa es lo de arriba.
+    _s5 = _entrar("/copa-argentina/historia")
+    chequear("la historia de la copa se abre", _s5 is not None, _s5)
+    if _s5:
+        _ca = _hist.de_copa("Copa Argentina")
+        chequear("con sus ediciones y no con las de Primera",
+                 _s5["histAnos"] == len(_ca["porAno"]) == 13, _s5["histAnos"])
+        chequear("y sin el bloque de copas abajo, que ahí no va",
+                 _s5["histCopas"] == 0, _s5["histCopas"])
+        chequear("y Boca primero con sus tres",
+                 _s5["histPrimero"] == "3", _s5["histPrimero"])
         # Chacarita, Ferro, Quilmes, Arsenal y compañía ya no están en
         # Primera: no tienen escudo y ahí es donde una fila se descoloca.
         chequear("los campeones sin escudo se dibujan igual",
@@ -6392,6 +6418,17 @@ chequear("y un color mínimo no desplaza al gris que ocupa mucho",
 chequear("al club de un solo color se le mira sólo ese color",
          "unico = _dif_color(a_mano[0], a_mano[1]) <= CERCA" in _SRV
          and "if unico:" in _SRV)
+
+# Y donde se usan: la cancha de las formaciones y la barra del historial
+# leían COLORES directo, así que fuera de Primera salían en blanco y negro.
+# Ahora pasan por la misma puerta y se llenan solas en las catorce.
+chequear("la cancha y el historial usan la misma puerta de colores",
+         "colores_de_club(n))" in _SRV
+         and _SRV.count("colores_de_club(") >= 3
+         and 'lado["colores"] = list(c) if c else None' in _SRV)
+chequear("y ya no leen la lista de Primera directo",
+         'COLORES.get(lado.get("canon")' not in _SRV
+         and 'list(COLORES.get(rnombre) or ())' not in _SRV)
 
 # La lista cargada a mano manda siempre: esto es un respaldo para los
 # clubes que no están, no un reemplazo de lo que ya se revisó.

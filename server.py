@@ -2269,9 +2269,16 @@ def api_match(q):
     except Exception:
         out["historial"] = None
 
-    # colores del club, para pintar la cancha
+    # Los colores del club, para pintar las bolitas de la cancha. Salen de
+    # la lista cargada a mano si el club está, y si no, del escudo: por eso
+    # un Copa Argentina contra un club del ascenso ya no sale en blanco y
+    # negro. Sin descargar nada mientras alguien espera: si el escudo
+    # todavía no está guardado, la cancha se dibuja como antes y a la
+    # próxima ya tiene color.
     for key, lado in (("home", out["home"]), ("away", out["away"])):
-        c = COLORES.get(lado.get("canon") or "")
+        c = _sin_reventar(
+            lambda n=(lado.get("canon") or lado.get("name") or ""):
+            colores_de_club(n))
         lado["colores"] = list(c) if c else None
 
     tv = [t.get("name") for t in (g.get("tvNetworks") or []) if t.get("name")]
@@ -3796,7 +3803,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · El botón de en vivo anda en todas las competencias, no sólo en la Liga Profesional: antes las dejaba con el molde de la liga y con un rótulo que ahí no existe"
+VERSION_APP = "2026-08-27 · La Copa Argentina tiene Equipos e Historia, y los colores del escudo llegan a la cancha y al historial: las canchas de las otras competencias ya no salen en blanco y negro"
 
 
 def reparar_recorridos():
@@ -6672,10 +6679,12 @@ def historial_del_club(equipo, liga, tope_por_rival=10):
         r = rivales.setdefault(rid, {
             "id": rid, "rival": rnombre, "pj": 0, "g": 0, "e": 0, "p": 0,
             "gf": 0, "gc": 0, "partidos": [],
-            # Los rivales son de la misma liga, así que sus colores y su
-            # escudo están cargados: la barra de cada fila se pinta como en
-            # el partido, y el escudo la termina de identificar de un ojo.
-            "colores": list(COLORES.get(rnombre) or ()) or None,
+            # La barra de cada fila se pinta como en el partido, y el
+            # escudo la termina de identificar de un ojo. Los colores salen
+            # de la lista cargada a mano o, si el rival no está en ella,
+            # de su escudo.
+            "colores": list(_sin_reventar(
+                lambda n=rnombre: colores_de_club(n)) or ()) or None,
             "escudo": (escudos.get(rnombre) or {}).get("logo")})
         r["pj"] += 1
         r["gf"] += gf
@@ -8555,6 +8564,78 @@ def armar_club_info(canon):
     }
 
 
+def api_historia(q):
+    """
+    Los campeones de una competencia. /api/historia?liga=ca
+
+    Sin `liga`, o con una que no tenga lista propia, van los de Primera.
+    Las listas están escritas a mano y verificadas contra la fuente, así
+    que una competencia se suma acá recién cuando su lista existe: es
+    preferible que no haya pestaña a que haya una vacía.
+    """
+    lid = (q.get("liga") or ["lpf"])[0]
+    cual = historia.DE_LA_COMPETENCIA.get(lid)
+    if cual:
+        salida = historia.de_copa(cual)
+        if salida:
+            return salida
+    return historia.todo()
+
+
+def api_equipos(q):
+    """
+    Los equipos de una competencia, con su escudo y sus colores.
+
+    Sale del calendario de la competencia y no de una lista cargada a
+    mano: por eso funciona igual para las catorce sin escribir nada por
+    club. Los que ya tienen colores cargados usan ésos; a los demás se los
+    saca del escudo.
+
+    En una copa entran TODOS los que jugaron la edición, eliminados
+    incluidos. Es lo que hace que el modo club sirva para llegar a un club
+    del ascenso que quedó afuera en 32avos: si sólo estuvieran los que
+    siguen, la lista se achicaría hasta quedar en uno.
+    """
+    lid = (q.get("liga") or ["lpf"])[0]
+    if lid == "lpf":
+        return api_clubes(q)
+    if lid not in LIGAS:
+        return {"error": "liga desconocida"}
+    try:
+        juegos = api_liga_games({"id": [lid]}).get("games", [])
+    except Exception:
+        juegos = []
+
+    vistos = {}
+    for m in juegos:
+        for lado in ("home", "away"):
+            e = m.get(lado) or {}
+            nombre = (e.get("canon") or e.get("name") or "").strip()
+            if not nombre or nombre.lower().startswith("a confirmar"):
+                continue
+            v = vistos.setdefault(nombre, {"name": nombre, "logo": None})
+            v["logo"] = v["logo"] or e.get("logo")
+
+    logos = _sin_reventar(_logos, {}) or {}
+    salida = []
+    for nombre, v in vistos.items():
+        col = _sin_reventar(lambda n=nombre: colores_de_club(n))
+        salida.append({
+            "name": nombre,
+            "logo": v["logo"] or (logos.get(nombre) or {}).get("logo"),
+            "primary": col[0] if col else None,
+            "accent": col[1] if col else None,
+            "var": "#111111" if nombre in VAR_NEGRO else (col[1] if col else None),
+            # De dónde salieron los colores, para poder saber después
+            # cuáles conviene repasar a mano.
+            "aMano": nombre in COLORES,
+        })
+    salida.sort(key=lambda x: norm(x["name"]))
+    return {"clubes": salida, "liga": lid,
+            "nombre": (LIGAS.get(lid) or {}).get("nombre") or lid,
+            "aMano": sum(1 for x in salida if x["aMano"])}
+
+
 def api_clubes(q):
     """Clubes de Primera con sus colores, para el modo club."""
     logos = {}
@@ -8945,6 +9026,9 @@ ROUTES = {
                                 diasDeCache=DIAS_DE_CACHE),
     "/api/home": api_home,
     "/api/clubes": api_clubes,
+    # Los equipos de cualquier competencia, para la sección Equipos y para
+    # el modo club. Sale del calendario, así que anda en las catorce.
+    "/api/equipos": api_equipos,
     "/api/buscar": api_buscar,
     "/api/ranking": api_ranking,
     "/api/recorrido": api_recorrido,
@@ -8965,7 +9049,9 @@ ROUTES = {
     "/api/calculadora": api_calculadora,
     # Los campeones históricos. No pide nada afuera ni toca la base: es una
     # lista escrita a mano que se arma en microsegundos.
-    "/api/historia": lambda q: historia.todo(),
+    # Los campeones. Sin `liga` van los de Primera; con una competencia que
+    # tenga lista propia —hoy la Copa Argentina— van los de ésa.
+    "/api/historia": lambda q: api_historia(q),
     # Los colores que saca el escudo contra los que están cargados a mano,
     # para los treinta de Primera. Es la prueba de si el método sirve antes
     # de aplicarlo a los cientos de clubes de las otras competencias: acá
@@ -9009,6 +9095,7 @@ AL_TOQUE = {
     "/api/liga/games": 10,
     "/api/club": 60,          # el último y el próximo de un club
     "/api/clubes": 600,       # la lista de clubes no cambia nunca
+    "/api/equipos": 600,      # ni la de los que juegan una competencia
     "/api/ligas": 600,
 }
 

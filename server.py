@@ -49,6 +49,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 import almacen
+import historia
 import tablas
 import visitas
 import apifootball
@@ -1769,6 +1770,28 @@ def api_promedios(q):
 PARTIDOS_DE_TEMPORADA = {"2024": 41, "2025": 32}
 
 
+def temporadas_jugadas(pj, por_temporada):
+    """
+    Qué temporadas jugó un club, deducido de cuántos partidos lleva.
+
+    Un ascendido entra y se queda: nadie se saltea una temporada del medio.
+    Así que las temporadas que jugó cualquier club son siempre las últimas
+    N, y alcanza con mirar el total de partidos para saber cuántas.
+
+    Devuelve la tupla de temporadas, o None si el número no cae en ninguna
+    de las tres cohortes posibles.
+    """
+    a, b, c = (por_temporada["2024"], por_temporada["2025"],
+               por_temporada["2026"])
+    if pj == a + b + c:
+        return ("2024", "2025", "2026")
+    if pj == b + c:
+        return ("2025", "2026")
+    if pj == c:
+        return ("2026",)
+    return None
+
+
 def partidos_por_temporada(rows, pj_de_este_ano):
     """
     Cuántos partidos jugó cada temporada, que AFA no publica.
@@ -1778,70 +1801,68 @@ def partidos_por_temporada(rows, pj_de_este_ano):
     armar la tabla del año que viene —la misma sin 2024— hay que poder
     restarle los partidos de 2024, no sólo los puntos.
 
-    Se deduce por diferencia, aprovechando que los ascendidos no jugaron
-    todas las temporadas:
+    Los de la temporada en curso salen del club que más partidos lleva:
+    nadie pudo jugar más que las tres temporadas enteras, así que ése las
+    jugó todas y lo que le sobra por encima de 2024 y 2025 es lo de este
+    año. Después cada club tiene que caer en una de las tres cohortes que
+    describe `temporadas_jugadas`; si alguno no cae en ninguna, el modelo
+    está mal —un partido suspendido, un descuento, un club que bajó y
+    volvió— y no se devuelve nada. Una tabla de descensos equivocada es
+    mucho peor que no mostrarla.
 
-      · un club que subió para 2026 no tiene 2024 ni 2025, así que todos
-        sus partidos son de 2026;
-      · uno que subió para 2025 no tiene 2024: sus partidos menos los de
-        2026 son los de 2025;
-      · y con esos dos números, los de 2024 salen restando.
+    OJO con deducir la cohorte de los puntos en vez de los partidos, que es
+    como estaba escrito y por eso la tabla de 2027 no apareció nunca: AFA
+    manda 0 —no vacío— en las temporadas que el ascendido no jugó, así que
+    "tiene puntos de 2024" da verdadero para los treinta y no distingue a
+    nadie. Con Aldosivi (54 partidos), Gimnasia de Mendoza y Estudiantes de
+    Río Cuarto (22) metidos en la misma bolsa que los 95 de los demás, los
+    partidos jugados no coincidían y la deducción se frenaba sola. Los
+    partidos sí distinguen, porque son la suma de lo que cada uno jugó.
 
-    Lo importante es lo último: cada cohorte tiene que dar SIEMPRE el mismo
-    número. Si dos clubes que jugaron las mismas temporadas no coinciden,
-    el modelo está mal —un partido suspendido, un descuento de puntos, un
-    club que bajó y volvió— y entonces no se devuelve nada. Una tabla de
-    descensos equivocada es mucho peor que no mostrarla.
-
-    Devuelve {"2024": n, "2025": n, "2026": n} o None.
+    Devuelve {"2024": n, "2025": n, "2026": n} o {"error": ...}.
     """
     if not rows:
         return None
     a, b = PARTIDOS_DE_TEMPORADA["2024"], PARTIDOS_DE_TEMPORADA["2025"]
-
-    def unico(valores):
-        """El valor si todos coinciden; None si no hay o si discrepan."""
-        v = {x for x in valores if x is not None}
-        return v.pop() if len(v) == 1 else None
-
-    # Los de la temporada en curso salen restando, y tienen que dar lo
-    # mismo para todos los clubes que jugaron las tres.
-    c = unico(r["pj"] - a - b for r in rows
-              if r.get("p2024") is not None and r.get("p2025") is not None)
-    if c is None:
-        return {"error": "los clubes no coinciden en cuántos partidos "
-                         "llevan jugados este año."}
+    c = max(r["pj"] for r in rows) - a - b
     if c < 0:
         return {"error": "la cuenta da %d partidos jugados este año, que no "
                          "puede ser: revisá los %d de 2024 y los %d de 2025."
                          % (c, a, b)}
+    por_temporada = {"2024": a, "2025": b, "2026": c}
 
-    # Y la comprobación que decide si esto se muestra o no: para cada club,
-    # los partidos que dice AFA tienen que ser exactamente los de las
-    # temporadas que jugó. Si alguno no cuadra —un ascendido con otro
-    # arranque, un descuento, un año con otro formato— el modelo está mal y
-    # es preferible no mostrar nada.
     for r in rows:
-        esperado = (a if r.get("p2024") is not None else 0) \
-                 + (b if r.get("p2025") is not None else 0) + c
-        if r["pj"] != esperado:
-            return {"error": "A %s le dan %d partidos y la cuenta da %d "
-                             "(%d + %d + %d)."
-                             % (r["team"]["name"], r["pj"], esperado, a, b, c)}
-        # Y nadie puede haber sacado más de tres puntos por partido.
-        for temporada, jugados in (("p2024", a), ("p2025", b), ("p2026", c)):
-            pts = r.get(temporada)
-            if pts is not None and pts > 3 * jugados:
+        jugadas = temporadas_jugadas(r["pj"], por_temporada)
+        if jugadas is None:
+            return {"error": "A %s le dan %d partidos jugados y no son ni %d "
+                             "(las tres temporadas), ni %d (desde 2025), ni "
+                             "%d (sólo este año)."
+                             % (r["team"]["name"], r["pj"], a + b + c, b + c, c)}
+        # Nadie puede haber sacado más de tres puntos por partido, ni haber
+        # sumado en una temporada que no jugó.
+        for temporada, jugados in (("2024", a), ("2025", b), ("2026", c)):
+            pts = r.get("p" + temporada) or 0
+            if temporada not in jugadas:
+                if pts:
+                    return {"error": "%s tiene %d puntos de %s pero por los "
+                                     "partidos jugados no estaba en esa "
+                                     "temporada."
+                                     % (r["team"]["name"], pts, temporada)}
+            elif pts > 3 * jugados:
                 return {"error": "%s tiene %d puntos en %s y sólo se jugaban "
-                                 "%d partidos." % (r["team"]["name"], pts,
-                                                   temporada[1:], jugados)}
-    # `pj_de_este_ano` ya no hace falta para la cuenta, pero si está y no
+                                 "%d partidos."
+                                 % (r["team"]["name"], pts, temporada, jugados)}
+
+    # `pj_de_este_ano` no hace falta para la cuenta, pero si está y no
     # coincide con lo que salió por resta, algo cambió y conviene frenar.
-    dice_la_anual = unico(pj_de_este_ano.get(r["team"]["name"]) for r in rows)
-    if dice_la_anual is not None and dice_la_anual != c:
+    # Acá sí tienen que dar todos lo mismo: son los partidos de la temporada
+    # en curso, que juegan los treinta por igual.
+    dice = {x for x in (pj_de_este_ano.get(r["team"]["name"]) for r in rows)
+            if x is not None}
+    if len(dice) == 1 and dice != {c}:
         return {"error": "la cuenta da %d partidos este año y la tabla anual "
-                         "dice %d." % (c, dice_la_anual)}
-    return {"2024": a, "2025": b, "2026": c}
+                         "dice %d." % (c, dice.pop())}
+    return por_temporada
 
 
 def tabla_del_ano_que_viene(rows, por_temporada):
@@ -1858,7 +1879,10 @@ def tabla_del_ano_que_viene(rows, por_temporada):
     del2024 = por_temporada["2024"]
     salida = []
     for r in rows:
-        jugo24 = r.get("p2024") is not None
+        # Quién jugó 2024 se sabe por los partidos, no por los puntos: los
+        # ascendidos vienen con 0, no con vacío, y ese 0 no distingue al que
+        # no jugó del que jugó y no sumó.
+        jugo24 = "2024" in (temporadas_jugadas(r["pj"], por_temporada) or ())
         pts = r["pts"] - (r.get("p2024") or 0)
         pj = r["pj"] - (del2024 if jugo24 else 0)
         if pj <= 0:
@@ -3773,7 +3797,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · la llave de Copa Argentina sin el partido repetido, el color en todos los que necesitan puntos, y escudos en la calculadora"
+VERSION_APP = "2026-08-26 · Historia: los campeones desde 1931, año por año y por club, con las copas aparte. Y los promedios 2027, que no salían porque los ascendidos llevan menos partidos"
 
 
 def reparar_recorridos():
@@ -8617,6 +8641,9 @@ ROUTES = {
     "/api/annual": api_annual,
     "/api/promedios": api_promedios,
     "/api/calculadora": api_calculadora,
+    # Los campeones históricos. No pide nada afuera ni toca la base: es una
+    # lista escrita a mano que se arma en microsegundos.
+    "/api/historia": lambda q: historia.todo(),
     "/api/scorers": api_scorers,
     "/api/match": api_match,
     # se resuelve al llamarla porque se define más abajo, junto al resto de
@@ -8746,6 +8773,10 @@ SECCIONES_LIGA = {
         "Equipos de %s — %s" % (n, TITULO_BASE),
         "Todos los clubes de %s, con su plantel, su historial y cómo "
         "juegan." % n),
+    "historia": lambda n: (
+        "Campeones de %s — %s" % (n, TITULO_BASE),
+        "Todos los campeones del fútbol argentino desde %s, año por año y "
+        "por club, más las copas nacionales." % historia.DESDE),
 }
 
 # La página ya armada para cada dirección, con y sin comprimir. Ver _pagina.

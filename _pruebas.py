@@ -5171,6 +5171,7 @@ print("\n── el submenú de la Liga Profesional ──")
 # atrás las distingue.
 for _r, _q in (("/liga-profesional", "Liga Profesional Clausura"),
                ("/liga-profesional/equipos", "Equipos de Liga Profesional"),
+               ("/liga-profesional/historia", "Campeones de Liga Profesional"),
                ("/liga-profesional/calculadora", "Calculadora de promedios")):
     _t = server._titulo_de_ruta(_r)
     chequear("%s tiene su propio título" % _r, _t and _q in _t[0],
@@ -5179,17 +5180,21 @@ for _r, _q in (("/liga-profesional", "Liga Profesional Clausura"),
 chequear("y una sección que no existe no es una dirección nuestra",
          server._titulo_de_ruta("/liga-profesional/cualquiera") is None)
 chequear("las secciones están declaradas en un solo lugar",
-         sorted(server.SECCIONES_LIGA) == ["calculadora", "equipos"])
+         sorted(server.SECCIONES_LIGA) == ["calculadora", "equipos",
+                                           "historia"])
 chequear("y la página conoce las mismas",
          "calculadora:{rotulo:'Calculadora de promedios'" in HTML
          and "equipos:{rotulo:'Equipos'" in HTML
-         and "const CON_SECCIONES={lpf:['calculadora','equipos']};" in HTML)
+         and "historia:{rotulo:'Historia'" in HTML
+         and "const CON_SECCIONES={lpf:['calculadora','equipos','historia']};"
+             in HTML)
 # Entrar en frío a una sección tomaba el atajo de la portada de la LPF y
 # cargaba el fixture en vez de la sección.
 chequear("entrar en frío a una sección no cae en el fixture",
          "d.id==='lpf'&&!SECCIONES[d.sec]" in HTML)
 
 if _sh.which("node"):
+    import historia as _hist                                     # noqa: E402
     _clubes = [{"name": n, "logo": ("/img/x/%d" % i) if i else None}
                for i, n in enumerate(["River Plate", "Boca Juniors",
                                       "Ñublense", "Aldosivi"])]
@@ -5197,6 +5202,10 @@ if _sh.which("node"):
         "/api/clubes": {"clubes": _clubes}, "/api/standings": {"zones": []},
         "/api/annual": {"rows": []}, "/api/promedios": {"rows": []},
         "/api/scorers": {"rows": []},
+        # Los campeones de verdad, no un ejemplo: si la pantalla se rompe
+        # con un club sin escudo o con un año de tres títulos, que se rompa
+        # acá.
+        "/api/historia": _hist.todo(),
         "/api/rounds": {"rounds": [1], "current": 1},
         "/api/games": {"games": []}, "/api/ligas": {"ligas": []},
         "/api/visita": {"v": "x"}}, ensure_ascii=False)
@@ -5214,6 +5223,16 @@ App.init();
   for(let i=0;i<150;i++) await new Promise(r=>setImmediate(r));
   const sub=doc.querySelector('#subm').innerHTML||'';
   const main=doc.querySelector('#matches').innerHTML||'';
+  /* La otra vista de la historia, que es la mitad de la pantalla y no se
+     dibuja hasta que la tocás. Se cambia acá mismo porque es la misma
+     lista ya en memoria: no hay pedido nuevo que esperar. */
+  let otra='';
+  try{
+    if(loc.pathname.indexOf('historia')>=0){
+      App.hist('ano');
+      otra=doc.querySelector('#matches').innerHTML||'';
+    }
+  }catch(e){ otra='REVENTO: '+e.message; }
   console.log(JSON.stringify({
     haySubmenu: sub.indexOf('Fixture/Tablas') >= 0,
     opciones: (sub.match(/class="sm/g) || []).length,
@@ -5222,7 +5241,14 @@ App.init();
       .matchAll(/>([^<]+)<\/button>/g)].map(m=>m[1]),
     equipos: (main.match(/class="eq-item"/g) || []).length,
     nombres: [...main.matchAll(/<span class="nm">([^<]+)</g)].map(m=>m[1]),
-    linkAlClub: main.indexOf('href="/boca-juniors"') >= 0}));
+    linkAlClub: main.indexOf('href="/boca-juniors"') >= 0,
+    histClubes: (main.match(/class="hist-club"/g) || []).length,
+    histCopas: (main.match(/class="hist-copa"/g) || []).length,
+    histPrimero: (main.match(/class="cant">(\\d+)</) || [])[1] || '',
+    histSinEscudo: (main.match(/<span class="hist-esc"><\\/span>/g)||[]).length,
+    histAnos: (otra.match(/class="hist-ano/g) || []).length,
+    histDobles: (otra.match(/class="hist-ano doble"/g) || []).length,
+    histOtraRevento: otra.indexOf('REVENTO') === 0 ? otra : ''}));
 })();
 """).replace("__R__", _rsub).replace("__E__", ruta)
         _g = (open(_DOMSITO, encoding="utf-8").read()
@@ -5267,8 +5293,8 @@ App.init();
     chequear("el submenú se dibuja al entrar", _s1 is not None and _s2 is not None,
              (_s1, _s2))
     if _s1 and _s2:
-        chequear("con las tres opciones y Fixture/Tablas ya elegida",
-                 _s1["haySubmenu"] and _s1["opciones"] == 3
+        chequear("con las cuatro opciones y Fixture/Tablas ya elegida",
+                 _s1["haySubmenu"] and _s1["opciones"] == 4
                  and _s1["seleccionado"] == "Fixture/Tablas", _s1)
         # Y las pestañas del panel, dibujadas de verdad: `shell()` las
         # reescribía con las de su plantilla y se llevaba puesta la nueva.
@@ -5287,6 +5313,40 @@ App.init();
                                     "River Plate"], _s2["nombres"])
         chequear("y cada uno lleva a su ficha", _s2["linkAlClub"], _s2)
 
+    # Y la historia, entrando en frío por su link y con los datos de
+    # verdad. Lo que se mira no es que "no explote": que estén los 19
+    # clubes campeones, las 96 temporadas y las 8 copas, que es lo único
+    # que prueba que se dibujó entera y no la mitad.
+    _s3 = _entrar("/liga-profesional/historia")
+    chequear("la historia se abre entrando en frío", _s3 is not None, _s3)
+    if _s3:
+        chequear("con su opción del submenú marcada",
+                 _s3["seleccionado"] == "Historia", _s3["seleccionado"])
+        chequear("y las dos vistas arriba",
+                 _s3["pestanas"] == ["Por club", "Año por año"],
+                 _s3["pestanas"])
+        chequear("se dibuja una fila por club campeón",
+                 _s3["histClubes"] == len(_hist.por_club()) == 19,
+                 _s3["histClubes"])
+        chequear("y River primero con sus 37",
+                 _s3["histPrimero"] == "37", _s3["histPrimero"])
+        chequear("las ocho copas van abajo, aparte",
+                 _s3["histCopas"] == len(_hist.COPAS) == 8, _s3["histCopas"])
+        # Chacarita, Ferro, Quilmes, Arsenal y compañía ya no están en
+        # Primera: no tienen escudo y ahí es donde una fila se descoloca.
+        chequear("los campeones sin escudo se dibujan igual",
+                 _s3["histSinEscudo"] >= 15, _s3["histSinEscudo"])
+        # Y la otra vista, que es la mitad de la pantalla: una fila por
+        # temporada, y las de más de un título marcadas como tales.
+        chequear("cambiar a año por año no revienta",
+                 not _s3["histOtraRevento"], _s3["histOtraRevento"])
+        chequear("y dibuja una fila por temporada",
+                 _s3["histAnos"] == len(_hist.por_ano()), _s3["histAnos"])
+        chequear("con los años de más de un campeón marcados",
+                 _s3["histDobles"] == sum(
+                     1 for f in _hist.por_ano() if len(f["titulos"]) > 1),
+                 _s3["histDobles"])
+
 
 print("\n── los promedios: el año que viene y lo que necesita cada uno ──")
 # AFA publica los puntos de cada temporada por separado pero los partidos
@@ -5301,57 +5361,124 @@ _A = server.PARTIDOS_DE_TEMPORADA["2024"]
 _B = server.PARTIDOS_DE_TEMPORADA["2025"]
 _C = 22                                   # lo que va de 2026
 
-# La tabla real, tal como se ve hoy en el sitio: total, y los tres años.
-_REALES = [("Lanús", 140, 59, 50, 31), ("Huracán", 139, 62, 47, 30),
-           ("Talleres (C)", 136, 72, 34, 30),
-           ("Independiente Rivadavia", 131, 46, 43, 42),
-           ("Barracas Central", 128, 49, 49, 30), ("Unión", 127, 60, 39, 28),
-           ("San Lorenzo", 125, 45, 51, 29), ("Belgrano", 122, 49, 37, 36),
-           ("Instituto", 121, 53, 34, 34), ("Tigre", 119, 39, 49, 31),
-           ("Platense", 116, 57, 35, 24), ("Banfield", 101, 41, 35, 25),
-           ("Sarmiento (J)", 101, 35, 35, 31)]
-_filasP = [{"team": {"name": n}, "pts": pts, "pj": _A + _B + _C,
+# La tabla real, tal como se ve hoy en el sitio: nombre, total, partidos
+# jugados y los tres años. Están los treinta y con los partidos de cada
+# uno, porque ahí está lo que importa: NO todos llevan los mismos. Los
+# veintisiete que jugaron las tres temporadas llevan 95 (41+32+22),
+# Aldosivi subió para 2025 y lleva 54 (32+22), y Gimnasia de Mendoza y
+# Estudiantes de Río Cuarto subieron para 2026 y llevan 22.
+#
+# Y el detalle que hacía fallar todo: en las temporadas que no jugaron, AFA
+# manda 0 —no vacío—. Mirar los puntos para saber quién estuvo no distingue
+# nada, porque los treinta "tienen" puntos de 2024.
+_REALES = [("Boca Juniors", 166, 95, 67, 62, 37),
+           ("River Plate", 156, 95, 70, 53, 33),
+           ("Vélez Sarsfield", 156, 95, 76, 40, 40),
+           ("Argentinos Juniors", 155, 95, 56, 57, 42),
+           ("Rosario Central", 152, 95, 47, 66, 39),
+           ("Racing", 149, 95, 70, 53, 26),
+           ("Independiente", 144, 95, 63, 47, 34),
+           ("Estudiantes (LP)", 142, 95, 63, 42, 37),
+           ("Lanús", 140, 95, 59, 50, 31),
+           ("Huracán", 139, 95, 62, 47, 30),
+           ("Talleres (C)", 136, 95, 72, 34, 30),
+           ("Gimnasia y Esgrima (M)", 31, 22, 0, 0, 31),
+           ("Independiente Rivadavia", 131, 95, 46, 43, 42),
+           ("Barracas Central", 128, 95, 49, 49, 30),
+           ("Unión", 127, 95, 60, 39, 28),
+           ("Defensa y Justicia", 126, 95, 58, 38, 30),
+           ("San Lorenzo", 125, 95, 45, 51, 29),
+           ("Belgrano", 122, 95, 49, 37, 36),
+           ("Gimnasia y Esgrima (LP)", 121, 95, 48, 38, 35),
+           ("Instituto", 121, 95, 53, 34, 34),
+           ("Tigre", 119, 95, 39, 49, 31),
+           ("Deportivo Riestra", 118, 95, 48, 52, 18),
+           ("Platense", 116, 95, 57, 35, 24),
+           ("Atlético Tucumán", 107, 95, 50, 34, 23),
+           ("Newell's Old Boys", 107, 95, 49, 33, 25),
+           ("Central Córdoba (SdE)", 106, 95, 42, 42, 22),
+           ("Banfield", 101, 95, 41, 35, 25),
+           ("Sarmiento (J)", 101, 95, 35, 35, 31),
+           ("Aldosivi", 43, 54, 0, 33, 10),
+           ("Estudiantes (RC)", 10, 22, 0, 0, 10)]
+_filasP = [{"team": {"name": n}, "pts": pts, "pj": pj,
             "p2024": a, "p2025": b, "p2026": c,
-            "prom": round(pts / (_A + _B + _C), 4)}
-           for n, pts, a, b, c in _REALES]
+            "prom": round(pts / pj, 4)}
+           for n, pts, pj, a, b, c in _REALES]
 # Lo primero: que los tres años sumen el total en cada club. Si esto no
 # diera, el resto de la cuenta no tendría sentido.
 chequear("los tres años suman el total en cada club",
          all(r["p2024"] + r["p2025"] + r["p2026"] == r["pts"] for r in _filasP))
+# Y que la muestra tenga de verdad las tres cohortes: sin un ascendido
+# adentro, esta prueba no probaría lo que se rompió.
+chequear("la tabla de prueba tiene ascendidos, que es donde fallaba",
+         sorted({r["pj"] for r in _filasP}) == [_C, _B + _C, _A + _B + _C],
+         sorted({r["pj"] for r in _filasP}))
 _pt = server.partidos_por_temporada(_filasP, {})
 chequear("los partidos de la temporada en curso salen restando",
          _pt == {"2024": _A, "2025": _B, "2026": _C}, _pt)
+# Cada club cae en la cohorte que le corresponde, deducida de los partidos.
+chequear("y cada club queda en las temporadas que jugó",
+         server.temporadas_jugadas(95, _pt) == ("2024", "2025", "2026")
+         and server.temporadas_jugadas(54, _pt) == ("2025", "2026")
+         and server.temporadas_jugadas(22, _pt) == ("2026",)
+         and server.temporadas_jugadas(70, _pt) is None)
 # Si a algún club no le cierra —otro formato, un descuento de puntos, un
 # ascendido con otro arranque— el modelo está mal, y una tabla de descensos
 # equivocada es mucho peor que no mostrarla.
 _roto = [dict(r) for r in _filasP]
-_roto[0]["pj"] += 1
+_roto[0]["pj"] -= 1
 _falla = server.partidos_por_temporada(_roto, {})
 chequear("y si a algún club no le cierra, no se muestra nada",
-         isinstance(_falla, dict) and "error" in _falla, _falla)
+         isinstance(_falla, dict) and "Boca Juniors" in _falla.get("error", ""),
+         _falla)
 # Nadie puede haber sacado más de tres puntos por partido.
 _imposible = [dict(r) for r in _filasP]
 _imposible[0] = dict(_imposible[0], p2024=3 * _A + 1)
 _falla2 = server.partidos_por_temporada(_imposible, {})
 chequear("ni si alguno sacó más puntos de los que se podían",
          isinstance(_falla2, dict) and "error" in _falla2, _falla2)
+# Ni puede tener puntos de una temporada en la que, por los partidos que
+# lleva, no estaba.
+_colado = [dict(r) for r in _filasP]
+_colado[11] = dict(_colado[11], p2024=5)
+_falla3 = server.partidos_por_temporada(_colado, {})
+chequear("ni puntos de una temporada que no jugó",
+         isinstance(_falla3, dict)
+         and "Gimnasia y Esgrima (M)" in _falla3.get("error", ""), _falla3)
 # Y que la tabla no se arme con un resultado que trae error adentro.
 chequear("y con ese error no se arma ninguna tabla",
          server.tabla_del_ano_que_viene(_filasP, _falla) is None)
 _prox = server.tabla_del_ano_que_viene(_filasP, _pt)
 _porNombre = {x["team"]["name"]: x for x in _prox}
+# Esto es lo que no aparecía nunca. Con los ascendidos leídos por los
+# puntos, a Gimnasia de Mendoza se le restaban 41 partidos que no jugó, le
+# quedaban -19 y la tabla entera se devolvía vacía.
+chequear("la tabla del año que viene se arma aunque haya ascendidos",
+         _prox is not None and len(_prox) == 30, _prox and len(_prox))
 # Lanús: 50 puntos en 2025 y 31 en lo que va de 2026, sobre 32 + 22 partidos.
 chequear("la tabla del año que viene es la de hoy sin 2024",
          _porNombre["Lanús"]["pts"] == 81
          and _porNombre["Lanús"]["pj"] == _B + _C
          and abs(_porNombre["Lanús"]["prom"] - 81 / 54) < 1e-9,
          _porNombre["Lanús"])
-# Y lo que la hace interesante: el orden cambia. Independiente Rivadavia
-# está 13° hoy y primero el año que viene, porque de 2024 pierde 46 puntos
-# y Talleres pierde 72.
+# Al que subió para 2026 no se le saca nada: ya no tenía 2024.
+chequear("al ascendido no se le resta una temporada que no jugó",
+         _porNombre["Gimnasia y Esgrima (M)"]["pj"] == _C
+         and _porNombre["Gimnasia y Esgrima (M)"]["pts"] == 31
+         and _porNombre["Gimnasia y Esgrima (M)"]["pierde"] == 0
+         and _porNombre["Gimnasia y Esgrima (M)"]["jugo2024"] is False,
+         _porNombre["Gimnasia y Esgrima (M)"])
+# Y al que subió para 2025 tampoco, aunque lleve más partidos.
+chequear("y al de 2025 tampoco, aunque lleve más partidos",
+         _porNombre["Aldosivi"]["pj"] == _B + _C
+         and _porNombre["Aldosivi"]["pts"] == 43, _porNombre["Aldosivi"])
+# Y lo que la hace interesante: el orden cambia. Rosario Central está 5°
+# hoy y primero el año que viene, porque de 2024 pierde 47 puntos y Boca
+# pierde 67.
 chequear("y el orden cambia, que es de lo que se trata",
-         _prox[0]["team"]["name"] == "Independiente Rivadavia"
-         and _porNombre["Talleres (C)"]["pierde"] == 72,
+         _prox[0]["team"]["name"] == "Rosario Central"
+         and _porNombre["Boca Juniors"]["pierde"] == 67,
          [x["team"]["name"] for x in _prox[:3]])
 chequear("sin la deducción no se arma la tabla",
          server.tabla_del_ano_que_viene(_filasP, None) is None)
@@ -5382,21 +5509,32 @@ chequear("y el último de la tabla no figura salvado",
 # cuatro.
 def _marcados(faltan):
     filas = []
-    for n, pts, _a, _b, _c in _REALES:
-        r = {"team": {"name": n}, "pts": pts, "pj": 95, "restantes": faltan,
-             "prom": round(pts / 95, 4)}
-        base = 95 + faltan
+    for n, pts, pj, _a, _b, _c in _REALES:
+        r = {"team": {"name": n}, "pts": pts, "pj": pj, "restantes": faltan,
+             "prom": round(pts / pj, 4)}
+        base = pj + faltan
         r["promMax"] = round((pts + 3 * faltan) / base, 4)
         r["promMin"] = round(pts / base, 4)
         filas.append(r)
     filas.sort(key=lambda r: -r["prom"])
     server.puntos_para_salvarse(filas)
     zona = filas[-server.DESCIENDEN:]
-    return [r for r in filas if r.get("necesita") != 0 and r not in zona]
+    return filas, [i for i, r in enumerate(filas, 1)
+                   if r.get("necesita") != 0 and r not in zona]
 
-_m16, _m2 = _marcados(16), _marcados(2)
+_f16, _m16 = _marcados(16)
+_f2, _m2 = _marcados(2)
+# Lo que importa no es cuántos son —eso depende de lo abierta que esté la
+# tabla— sino que la marca no se corte por la mitad: los que todavía
+# necesitan puntos tienen que ser un tramo seguido que baja hasta el borde
+# del descenso. Un salteado en el medio sería una cuenta mal hecha.
+chequear("los marcados son un tramo seguido hasta el descenso",
+         bool(_m16)
+         and _m16 == list(range(_m16[0], len(_f16) - server.DESCIENDEN + 1)),
+         _m16)
+# Y a media temporada ese tramo es la mayoría de la tabla: no son "algunos".
 chequear("se marca a todos los que necesitan puntos, no a algunos",
-         len(_m16) == len(_REALES) - server.DESCIENDEN, len(_m16))
+         len(_m16) >= 2 * len(_REALES) // 3, len(_m16))
 # Y se achica solo: sobre el final, casi todos ya están salvados.
 chequear("y sobre el final quedan muy pocos", len(_m2) <= 2, len(_m2))
 chequear("el color sale de si necesita puntos, sin umbrales inventados",
@@ -5408,14 +5546,12 @@ chequear("la tabla dice cuántos puntos necesita",
          and "los ${(rows[0]||{}).disponibles ?? 0} que quedan en juego" in HTML)
 # Cuando la cuenta de los promedios no cierra, que diga POR QUÉ: sin eso,
 # la pantalla sólo dice "no se puede" y no hay con qué arreglarlo.
-_malos = [dict(r) for r in _filasP]
-_malos[0]["pj"] += 1
-# Un ascendido —sin 2024— al que los partidos no le cuadran. Los demás
-# siguen coincidiendo, así que el error tiene que salir de la comprobación
-# club por club y nombrarlo.
+# Un ascendido al que los partidos no le cuadran con ninguna cohorte. Los
+# demás siguen coincidiendo, así que el error tiene que salir de la
+# comprobación club por club y nombrarlo.
 _malos = [dict(r) for r in _filasP] + [
-    {"team": {"name": "Recién Ascendido"}, "pts": 30, "pj": 99,
-     "p2024": None, "p2025": None, "p2026": 30, "prom": 0.3}]
+    {"team": {"name": "Recién Ascendido"}, "pts": 30, "pj": 30,
+     "p2024": 0, "p2025": 0, "p2026": 30, "prom": 1.0}]
 _motivo = server.partidos_por_temporada(_malos, {})
 chequear("y cuando no cierra, dice qué club no cuadra",
          isinstance(_motivo, dict) and "Recién Ascendido" in _motivo.get("error", ""),
@@ -5601,6 +5737,138 @@ App.init();
         chequear("y completa todos los que quedaban sin marcar",
                  _ca["marcadosTrasSortear"] == 3,
                  _ca["marcadosTrasSortear"])
+
+# ── Los campeones históricos ─────────────────────────────────────────────
+#
+# Esta es la única lista del sitio escrita a mano, y una lista de campeones
+# equivocada es de las peores cosas que se pueden publicar en un sitio de
+# fútbol. Así que no se comprueba que "ande": se comprueba que sea CIERTA,
+# cruzándola contra los totales por club que publica la propia fuente al
+# pie de su lista. Si al transcribir se me hubiera escapado un año, o
+# hubiera puesto un club por otro, esos totales no darían.
+import historia                                                  # noqa: E402
+
+# Los totales por club de la era profesional, tal como los publica RSSSF.
+_RSSSF = {"River Plate": 37, "Boca Juniors": 29, "Independiente": 14,
+          "San Lorenzo": 12, "Vélez Sarsfield": 11, "Racing": 9,
+          "Newell's Old Boys": 6, "Estudiantes (LP)": 6,
+          "Rosario Central": 5, "Argentinos Juniors": 3,
+          "Ferro Carril Oeste": 2, "Lanús": 2, "Arsenal": 1, "Banfield": 1,
+          "Belgrano": 1, "Chacarita Juniors": 1, "Huracán": 1,
+          "Platense": 1, "Quilmes": 1}
+_mios = {c["club"]: c["titulos"] for c in historia.por_club()}
+chequear("los títulos por club dan exactamente los de la fuente",
+         _mios == _RSSSF,
+         {k: (_mios.get(k), _RSSSF.get(k)) for k in set(_mios) | set(_RSSSF)
+          if _mios.get(k) != _RSSSF.get(k)})
+chequear("y el total también", len(historia.LIGAS) == sum(_RSSSF.values()) == 143,
+         len(historia.LIGAS))
+# Un año repetido por error de copiado saldría acá y en ningún otro lado:
+# los totales por club seguirían dando si el error fuera cambiar un torneo
+# de lugar dentro del mismo año.
+_claves = [(t, to) for t, to, _c in historia.LIGAS]
+chequear("no hay ningún torneo cargado dos veces",
+         len(_claves) == len(set(_claves)),
+         [k for k in _claves if _claves.count(k) > 1])
+
+# Lo que pidió el pedido: Metropolitano y Nacional cuentan como dos por
+# año. Del 67 al 84 tienen que ser exactamente dos, siempre.
+_porAno = {f["temporada"]: f["titulos"] for f in historia.por_ano()}
+chequear("del 67 al 84 hay dos campeones por año",
+         all(len(_porAno[str(a)]) == 2 for a in range(1967, 1985)),
+         {str(a): len(_porAno[str(a)]) for a in range(1967, 1985)
+          if len(_porAno[str(a)]) != 2})
+# Y el caso que parece un error y no lo es: en 1972 San Lorenzo ganó los
+# dos. Si alguien "arreglara" el duplicado, esto lo frena.
+chequear("y en 1972 San Lorenzo ganó los dos",
+         [t["campeon"] for t in _porAno["1972"]] == ["San Lorenzo",
+                                                     "San Lorenzo"],
+         _porAno["1972"])
+# Apertura y Clausura, lo mismo.
+chequear("Apertura y Clausura también son dos por temporada",
+         len(_porAno["1995/96"]) == 2
+         and {t["torneo"] for t in _porAno["1995/96"]} == {"Apertura",
+                                                           "Clausura"})
+# La era amateur queda afuera: el pedido era el profesionalismo, y los
+# títulos de Alumni o Lomas Athletic son de otra cosa.
+chequear("la era amateur no está mezclada",
+         min(int(t[:4]) for t, _o, _c in historia.LIGAS) == 1931
+         and not {"Alumni", "Lomas Athletic Club"} & set(_mios))
+# 2025 tiene tres, incluida la Anual que AFA declaró campeona, y el 2026
+# el Apertura de Belgrano: lo último tiene que estar.
+chequear("2025 tiene los tres y 2026 el Apertura",
+         len(_porAno["2025"]) == 3
+         and {t["campeon"] for t in _porAno["2025"]} == {
+             "Platense", "Estudiantes (LP)", "Rosario Central"}
+         and [t["campeon"] for t in _porAno["2026"]] == ["Belgrano"],
+         (_porAno["2025"], _porAno["2026"]))
+# Y las discutidas llevan su aclaración al lado, no un pie que nadie lee.
+chequear("la Anual 2025 aclara de dónde sale",
+         any("20 de noviembre" in (t["nota"] or "") for t in _porAno["2025"]))
+
+# Año por año: del más nuevo al más viejo, y sin saltearse ninguno.
+_años = [f["temporada"] for f in historia.por_ano()]
+chequear("los años van del más nuevo al más viejo",
+         _años[0] == "2026" and _años[-1] == "1931"
+         and _años == sorted(_años, key=historia._clave, reverse=True))
+# Y el orden por club: de mayor a menor, y los que empatan comparten
+# posición —no es lo mismo "séptimo" que "séptimo entre dos de seis".
+_pc = historia.por_club()
+chequear("por club va de mayor a menor",
+         [c["titulos"] for c in _pc] == sorted(
+             (c["titulos"] for c in _pc), reverse=True))
+chequear("y los que empatan comparten posición",
+         [c["pos"] for c in _pc[6:8]] == [7, 7]
+         and {c["club"] for c in _pc[6:8]} == {"Estudiantes (LP)",
+                                               "Newell's Old Boys"},
+         [(c["pos"], c["club"], c["titulos"]) for c in _pc[6:8]])
+
+# Las copas, aparte. Que no se le haya escapado ninguna a la lista de
+# ligas es lo que hace que la separación signifique algo.
+_copas = historia.copas()
+_nombres = [c["copa"] for c in _copas]
+chequear("las copas están separadas de las ligas",
+         "Copa Argentina" in _nombres
+         and not any(to in ("Copa Argentina", "Supercopa Argentina")
+                     for _t, to, _c in historia.LIGAS), _nombres)
+_ca2024 = next(x for x in _copas if x["copa"] == "Copa Argentina")
+chequear("y la Copa Argentina tiene sus campeones, del más nuevo al más viejo",
+         _ca2024["campeones"][0]["temporada"] == "2025"
+         and _ca2024["campeones"][0]["campeon"] == "Independiente Rivadavia"
+         and any(x["temporada"] == "2024"
+                 and x["campeon"] == "Central Córdoba (SdE)"
+                 for x in _ca2024["campeones"]),
+         _ca2024["campeones"][:2])
+# La Copa de la Liga es copa y no liga: es el error más fácil de cometer
+# acá, porque la juegan los mismos treinta y sale en la misma tabla.
+chequear("la Copa de la Liga cuenta como copa, no como liga",
+         "Copa de la Liga Profesional" in _nombres
+         and not any(to == "Copa de la Liga" for _t, to, _c in historia.LIGAS))
+
+# Que se sirva, y sin pedir nada afuera.
+chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)
+_h = server.ROUTES["/api/historia"]({})
+chequear("y contesta las dos vistas y las copas",
+         _h["total"] == 143 and len(_h["porAno"]) == len(set(_años))
+         and _h["porClub"] and _h["copas"], sorted(_h))
+
+# La pantalla: las dos vistas, las copas abajo, y los escudos de los que
+# todavía existen.
+chequear("la sección de historia se dibuja",
+         "if(sec==='historia') return seccionHistoria();" in HTML
+         and "function histPorClub()" in HTML
+         and "function histPorAno()" in HTML
+         and "function histCopas()" in HTML)
+chequear("con las dos vistas en las pestañas",
+         "[['club','Por club'],['ano','Año por año']]" in HTML
+         and "hist(v){" in HTML)
+chequear("y las copas abajo, separadas",
+         '<div class="hist-sep">Copas nacionales</div>' in HTML)
+# Los clubes que ya no están en Primera no tienen escudo, y el hueco tiene
+# que ocupar lo mismo para que los nombres no se corran de columna.
+chequear("los campeones que ya no existen no descolocan la fila",
+         "span.hist-esc{border-radius:50%;background:var(--line)}" in HTML
+         and ".hist-esc{width:20px;height:20px;flex:none" in HTML)
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

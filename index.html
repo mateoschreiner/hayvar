@@ -384,6 +384,56 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .eq-item .nm{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 
+/* ── Los campeones históricos ── */
+.hist-esc{width:20px;height:20px;flex:none;object-fit:contain;display:block}
+span.hist-esc{border-radius:50%;background:var(--line)}
+/* Una fila por club, que se abre y muestra en qué temporadas fue. Se usa
+   <details> y no javascript: abre y cierra solo, y sale impreso y buscado
+   por el navegador aunque esté cerrado. */
+.hist-club{border-top:1px solid var(--line)}
+.hist-club > summary{display:flex;align-items:center;gap:10px;padding:9px 16px;
+  cursor:pointer;list-style:none;font-size:13.5px}
+.hist-club > summary::-webkit-details-marker{display:none}
+.hist-club > summary:hover{background:var(--bg)}
+.hist-club .pos{width:22px;flex:none;color:var(--txt3);font-size:12px;
+  font-variant-numeric:tabular-nums;text-align:right}
+.hist-club .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-weight:600}
+.hist-club .cant{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.hist-club .barra{flex:none;width:84px;height:6px;border-radius:3px;
+  background:var(--line);overflow:hidden}
+.hist-club .barra i{display:block;height:100%;background:var(--acc)}
+.hist-tit{display:flex;flex-wrap:wrap;gap:4px;padding:2px 16px 12px 48px}
+.hist-tit span{font-size:11.5px;color:var(--txt2);background:var(--bg);
+  border-radius:5px;padding:2px 7px;white-space:nowrap}
+.hist-tit span b{color:var(--txt);font-weight:700}
+/* Año por año. La temporada a la izquierda y al lado todos los campeones
+   de ese año, que es lo que hace ver de un vistazo que del 67 al 85 fueron
+   dos por temporada. */
+.hist-ano{display:grid;grid-template-columns:64px 1fr;gap:10px;
+  padding:7px 16px;border-top:1px solid var(--line);font-size:13px;
+  align-items:baseline}
+.hist-ano > .t{color:var(--txt3);font-size:12px;font-weight:700;
+  font-variant-numeric:tabular-nums}
+.hist-ano.doble > .t{color:var(--txt2)}
+.hist-ano .campeones{display:flex;flex-wrap:wrap;gap:4px 18px}
+.hist-ano .uno{display:flex;align-items:center;gap:7px;min-width:0}
+.hist-ano .uno .torneo{color:var(--txt3);font-size:11.5px}
+.hist-ano .uno .nm{font-weight:600}
+.hist-nota{color:var(--txt3);font-size:11px;cursor:help}
+.hist-sep{padding:22px 16px 6px;font-size:12px;font-weight:800;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);
+  border-top:1px solid var(--line)}
+.hist-copa{border-top:1px solid var(--line)}
+.hist-copa > summary{display:flex;align-items:baseline;gap:9px;padding:9px 16px;
+  cursor:pointer;list-style:none;font-size:13.5px}
+.hist-copa > summary::-webkit-details-marker{display:none}
+.hist-copa > summary:hover{background:var(--bg)}
+.hist-copa > summary .nm{font-weight:700}
+.hist-copa > summary .cuantas{color:var(--txt3);font-size:12px}
+.hist-copa > summary .ultimo{margin-left:auto;color:var(--txt2);font-size:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 /* ── El historial del club, un rival por fila ──
    Con <details>: abrir y cerrar lo hace el navegador solo, con el teclado
    incluido, y no hay estado propio que se pueda desincronizar. */
@@ -1306,10 +1356,11 @@ const App=(()=>{
   const SECCIONES={
     calculadora:{rotulo:'Calculadora de promedios', corto:'Promedios'},
     equipos:{rotulo:'Equipos', corto:'Equipos'},
+    historia:{rotulo:'Historia', corto:'Historia'},
   };
   // De qué torneos: los promedios son un invento argentino y treinta
   // equipos con ficha propia sólo los tiene la Liga Profesional.
-  const CON_SECCIONES={lpf:['calculadora','equipos']};
+  const CON_SECCIONES={lpf:['calculadora','equipos','historia']};
 
   const Rutas={
     /* de una pantalla a su dirección */
@@ -1415,6 +1466,129 @@ const App=(()=>{
     if(caja) caja.classList.add('sin-caja');
     if(sec==='equipos') return seccionEquipos();
     if(sec==='calculadora') return seccionCalculadora();
+    if(sec==='historia') return seccionHistoria();
+  }
+
+  /* ── Los campeones históricos ─────────────────────────────────────────
+
+     Dos vistas de lo mismo, porque son dos preguntas distintas: "¿cuántas
+     tiene Boca?" y "¿quién salió campeón en el 78?". Y abajo las copas,
+     separadas: mezclarlas con las ligas es la forma más común de que una
+     lista de campeones quede mal.
+
+     Los datos son una lista escrita a mano en el servidor —no hay API que
+     dé esto bien— y no cambian nunca, así que se piden una sola vez y
+     quedan en memoria. */
+  let hist=null, histVista='club';
+
+  // El escudo de un club en la historia. Muchos campeones ya no están en
+  // Primera —Chacarita, Ferro, Quilmes, Estudiantil Porteño— y para esos
+  // no hay escudo: va el hueco del mismo ancho para que los nombres no se
+  // corran de columna.
+  function escudoHist(nombre){
+    const e=(S.clubes||[]).find(x=>mismoNombre(x.name,nombre));
+    return (e&&e.logo)
+      ? `<img class="hist-esc" src="${esc(e.logo)}" alt="" loading="lazy">`
+      : '<span class="hist-esc"></span>';
+  }
+
+  // El nombre de un club, con enlace a su ficha sólo si la tiene.
+  function clubHist(nombre){
+    const e=(S.clubes||[]).find(x=>mismoNombre(x.name,nombre));
+    return e ? enlace({t:'club', slug:slugTexto(e.name)}, esc(nombre),
+                      'class="nm"')
+             : `<span class="nm">${esc(nombre)}</span>`;
+  }
+
+  async function seccionHistoria(){
+    const main=$('#matches');
+    main.innerHTML='<div class="skel"></div><div class="skel"></div>';
+    $('#right').innerHTML='';
+    $('#tabs').innerHTML=[['club','Por club'],['ano','Año por año']]
+      .map(([k,n])=>`<button data-t="${k}" class="${histVista===k?'on':''}"
+        onclick="App.hist('${k}')">${n}</button>`).join('');
+    if(!hist){
+      // La lista de clubes es la que trae los escudos. Si no está, la
+      // historia se dibuja igual, sin ellos: no vale la pena que una lista
+      // de campeones dependa de que carguen los escudos.
+      const [h]=await Promise.all([
+        get('/api/historia').catch(()=>null),
+        (S.clubes&&S.clubes.length) ? Promise.resolve()
+          : get('/api/clubes').then(r=>{S.clubes=r.clubes||[];}).catch(()=>{}),
+      ]);
+      hist=h;
+    }
+    if(!hist){
+      main.innerHTML='<div class="empty" style="padding:30px">No se pudo '
+        +'cargar la historia.</div>';
+      return;
+    }
+    pintarHistoria();
+  }
+
+  function pintarHistoria(){
+    const main=$('#matches'); if(!main||!hist) return;
+    main.innerHTML=(histVista==='ano' ? histPorAno() : histPorClub())
+      + histCopas()
+      + `<div class="note" style="padding:14px 16px 18px">
+           ${esc(hist.nota||'')} Fuente: ${esc(hist.fuente||'')}.</div>`;
+  }
+
+  /* Cuántas tiene cada uno. La barra es proporcional al que más tiene, que
+     es lo que hace ver de un vistazo lo lejos que están los dos primeros
+     del resto. */
+  function histPorClub(){
+    const tope=(hist.porClub[0]||{}).titulos||1;
+    return `<div class="hist-sep" style="border-top:0;padding-top:14px">
+        Ligas · ${hist.total} títulos desde ${esc(hist.desde)}</div>`
+      + hist.porClub.map(c=>`<details class="hist-club">
+        <summary>
+          <span class="pos">${c.pos}</span>
+          ${escudoHist(c.club)}
+          ${clubHist(c.club)}
+          <span class="barra"><i style="width:${Math.round(100*c.titulos/tope)}%"></i></span>
+          <span class="cant">${c.titulos}</span>
+        </summary>
+        <div class="hist-tit">${c.detalle.map(d=>
+          `<span><b>${esc(d.temporada)}</b>${d.torneo?' '+esc(d.torneo):''}</span>`
+        ).join('')}</div>
+      </details>`).join('');
+  }
+
+  /* Año por año. Los años de dos o tres títulos van en una sola fila, con
+     el nombre del torneo al lado de cada campeón: así se ve que el 72 lo
+     ganó San Lorenzo dos veces y no que está repetido por error. */
+  function histPorAno(){
+    return `<div class="hist-sep" style="border-top:0;padding-top:14px">
+        Ligas · año por año</div>`
+      + hist.porAno.map(f=>`<div class="hist-ano${f.titulos.length>1?' doble':''}">
+        <div class="t">${esc(f.temporada)}</div>
+        <div class="campeones">${f.titulos.map(t=>`<span class="uno">
+          ${escudoHist(t.campeon)}${clubHist(t.campeon)}
+          ${t.torneo?`<span class="torneo">${esc(t.torneo)}</span>`:''}
+          ${t.nota?`<span class="hist-nota" title="${esc(t.nota)}">ⓘ</span>`:''}
+        </span>`).join('')}</div>
+      </div>`).join('');
+  }
+
+  /* Las copas, abajo y aparte. Cerradas: son ocho y ninguna es lo que la
+     persona vino a ver, pero el que las busca las encuentra. */
+  function histCopas(){
+    return `<div class="hist-sep">Copas nacionales</div>`
+      + (hist.copas||[]).map(c=>{
+        const ult=c.campeones[0];
+        return `<details class="hist-copa">
+          <summary>
+            <span class="nm">${esc(c.copa)}</span>
+            <span class="cuantas">${c.campeones.length}</span>
+            ${ult?`<span class="ultimo">último: ${esc(ult.campeon)}
+                     (${esc(ult.temporada)})</span>`:''}
+          </summary>
+          <div class="hist-tit" style="padding-left:16px">${c.campeones.map(x=>
+            `<span><b>${esc(x.temporada)}</b> ${esc(x.campeon)}</span>`
+          ).join('')}</div>
+        </details>`;
+      }).join('');
   }
 
   /* Los equipos del torneo, con su escudo. Cada uno lleva a su ficha.
@@ -6493,6 +6667,15 @@ const App=(()=>{
     calcLimpiar(){
       for(const k of Object.keys(calcElegido)) delete calcElegido[k];
       pintarCalculadora();
+    },
+    /* Cambiar entre "por club" y "año por año". Es la misma lista mirada
+       de dos maneras y ya está toda en memoria: no se pide nada. */
+    hist(v){
+      histVista=v;
+      const t=$('#tabs');
+      if(t) t.querySelectorAll('button').forEach(b=>
+        b.classList.toggle('on', b.dataset.t===v));
+      pintarHistoria();
     },
     reload(){ clearTimeout(S.timer); loadAll(false); },
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';

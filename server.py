@@ -49,6 +49,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 import almacen
+import escudos
 import historia
 import tablas
 import visitas
@@ -3794,7 +3795,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · El gráfico del jugador se puede comparar por torneo y por copa, el DT dice DT en vez de -1, y el recolector va más rápido para que aparezcan los planteles que faltan"
+VERSION_APP = "2026-08-26 · Los colores de un club se pueden sacar de su escudo, sin pedirle nada a nadie: es lo que hace posible expandir el sitio a las otras trece competencias"
 
 
 def reparar_recorridos():
@@ -7754,6 +7755,124 @@ def api_club(q):
 
 # Clubes cuyo "VAR" del logo va en negro. El segundo color de la camiseta
 # no siempre sirve: el celeste de Belgrano sobre la barra celeste no se lee.
+def colores_del_escudo(canon, bajar=False):
+    """
+    Los colores de un club sacados de su escudo.
+
+    Para los treinta de Primera no hace falta: están cargados a mano y
+    revisados uno por uno. Esto es para los cientos de clubes de las otras
+    trece competencias, donde cargarlos a mano no se termina nunca.
+
+    `bajar` en False quiere decir "usá el escudo si ya lo tenemos, y si no,
+    no vayas a buscarlo". Es lo que corresponde cuando esto corre mientras
+    alguien espera una página: una lista de treinta y ocho equipos no puede
+    disparar treinta y ocho descargas. Y se arregla solo, porque el
+    navegador pide cada escudo para mostrarlo y ahí queda cacheado: la
+    segunda visita ya tiene los colores.
+
+    El resultado se guarda, así que la cuenta se hace una sola vez por club.
+    """
+    clave = "colores:%s" % norm(canon)
+    guardado, _ = almacen.leer(clave)
+    if guardado is not None:
+        return guardado or None         # {} guardado = "ya miré y no se pudo"
+
+    try:
+        url = (_logos().get(canon) or {}).get("logo") or ""
+    except Exception:
+        return None
+    m = re.match(r"^/img/competidor/([^/]+)/([^/]+)$", url)
+    if not m:
+        return None
+    ver, ident = m.group(1), m.group(2)
+    if not bajar and ("competidor", ver, ident) not in _IMG_CACHE:
+        # Todavía no lo tenemos a mano. No se guarda nada: cuando el escudo
+        # esté cacheado, esto vuelve a intentarlo.
+        if not almacen.leer("img:competidor:%s:%s" % (ver, ident))[0]:
+            return None
+    try:
+        datos, _ct = traer_imagen("competidor", ver, ident)
+        sale = escudos.colores_de(datos)
+    except Exception:
+        sale = None
+    # Se guarda también el fracaso, para no volver a intentar con un escudo
+    # que este lector no cubre.
+    almacen.guardar(clave, sale or {})
+    return sale
+
+
+def _dif_color(a, b):
+    """Cuán lejos están dos colores en hexa, de 0 a 765."""
+    try:
+        x = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+        y = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    except (ValueError, IndexError, TypeError):
+        return 765
+    return sum(abs(p - q) for p, q in zip(x, y))
+
+
+# Hasta acá dos colores son el mismo a los ojos de cualquiera. Es generoso
+# a propósito: lo que se está midiendo es si el método sirve, no si clava
+# el tono exacto.
+CERCA = 90
+
+
+def api_colores(q):
+    """
+    Los colores del escudo contra los cargados a mano, club por club.
+
+    Existe para decidir con datos y no de memoria: antes de sacarle los
+    colores a cientos de clubes de las otras competencias, conviene ver
+    cuánto acierta el método donde ya sabemos la respuesta.
+
+    Baja los escudos que falten, porque esto se mira una vez y a propósito.
+    """
+    filas = []
+    for canon in sorted(COLORES, key=norm):
+        a_mano = COLORES[canon]
+        sale = _sin_reventar(lambda c=canon: colores_del_escudo(c, bajar=True))
+        fila = {"club": canon, "aMano": list(a_mano), "delEscudo": None,
+                "parte": None, "pega": None}
+        if sale:
+            del_escudo = (sale["principal"], sale["acento"])
+            # Se comparan los dos colores como conjunto: que el escudo diga
+            # "oro y azul" donde la lista dice "azul y oro" no es un error,
+            # es el mismo club.
+            derecho = (_dif_color(a_mano[0], del_escudo[0])
+                       + _dif_color(a_mano[1], del_escudo[1]))
+            cruzado = (_dif_color(a_mano[0], del_escudo[1])
+                       + _dif_color(a_mano[1], del_escudo[0]))
+            fila.update(delEscudo=list(del_escudo),
+                        parte=[sale["parte"], sale["parteAcento"]],
+                        dado_vuelta=cruzado < derecho,
+                        distancia=min(derecho, cruzado),
+                        pega=min(derecho, cruzado) <= CERCA * 2)
+        filas.append(fila)
+    con = [f for f in filas if f["delEscudo"]]
+    return {"filas": filas, "total": len(filas), "leidos": len(con),
+            "pegan": sum(1 for f in con if f["pega"]),
+            "cerca": CERCA,
+            "nota": ("Los colores cargados a mano contra los que sale del "
+                     "escudo. Sirve para decidir si conviene sacarlos "
+                     "automáticamente en las competencias donde no están "
+                     "cargados. Acá no se cambia nada.")}
+
+
+def colores_de_club(canon, bajar=False):
+    """
+    El par (principal, acento) de un club, venga de donde venga.
+
+    Primero la lista cargada a mano, que es la buena y la que se corrige
+    cuando algo no pega. Después el escudo. Y si no hay ninguno, None: es
+    preferible que la página no pinte nada a que pinte de un color
+    inventado.
+    """
+    if canon in COLORES:
+        return COLORES[canon]
+    sale = colores_del_escudo(canon, bajar)
+    return (sale["principal"], sale["acento"]) if sale else None
+
+
 VAR_NEGRO = {"Belgrano", "Banfield", "Gimnasia y Esgrima (LP)", "Independiente",
              "Lanús", "Barracas Central", "Estudiantes (LP)",
              "Independiente Rivadavia", "Sarmiento (J)", "Unión",
@@ -8834,6 +8953,11 @@ ROUTES = {
     # Los campeones históricos. No pide nada afuera ni toca la base: es una
     # lista escrita a mano que se arma en microsegundos.
     "/api/historia": lambda q: historia.todo(),
+    # Los colores que saca el escudo contra los que están cargados a mano,
+    # para los treinta de Primera. Es la prueba de si el método sirve antes
+    # de aplicarlo a los cientos de clubes de las otras competencias: acá
+    # sabemos cuál es la respuesta correcta, porque la cargamos nosotros.
+    "/api/colores": lambda q: api_colores(q),
     "/api/scorers": api_scorers,
     "/api/match": api_match,
     # se resuelve al llamarla porque se define más abajo, junto al resto de

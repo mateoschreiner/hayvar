@@ -6140,6 +6140,174 @@ chequear("es_tecnico reconoce las formas que manda la fuente",
          and not any(server.es_tecnico(x) for x in ("Delantero", "Arquero",
                                                     "", None)))
 
+print("\n── los colores que salen del escudo ──")
+#
+# Los treinta de Primera tienen los colores cargados a mano y así está
+# bien. Esto es para los cientos de clubes de las otras trece
+# competencias, donde cargarlos a mano no se termina nunca.
+#
+# El servidor es sólo biblioteca estándar, así que el lector de PNG está
+# escrito acá y hay que probarlo como se prueba un lector de un formato
+# binario: armando archivos de verdad y viendo si vuelven idénticos. Un
+# error de un byte en el filtro Paeth no rompe nada, sólo devuelve
+# colores equivocados, que es la clase de error que nadie nota hasta que
+# hay ochenta clubes pintados mal.
+import struct                                                    # noqa: E402
+import zlib as _zlib                                             # noqa: E402
+import escudos                                                   # noqa: E402
+
+
+def _trozo(t, d):
+    c = t + d
+    return (struct.pack(">I", len(d)) + c
+            + struct.pack(">I", _zlib.crc32(c) & 0xffffffff))
+
+
+def _armar_png(w, h, tipo, filas, filtro, paleta=b"", transp=b""):
+    """Un PNG de verdad, con el filtro que se pida aplicado a mano."""
+    canales = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[tipo]
+    ancho = w * canales
+    crudo, previa = bytearray(), bytearray(ancho)
+    for y in range(h):
+        linea, sal = bytearray(filas[y]), bytearray(ancho)
+        for i in range(ancho):
+            a = linea[i - canales] if i >= canales else 0
+            b = previa[i]
+            c = previa[i - canales] if i >= canales else 0
+            if filtro == 0:
+                sal[i] = linea[i]
+            elif filtro == 1:
+                sal[i] = (linea[i] - a) & 0xFF
+            elif filtro == 2:
+                sal[i] = (linea[i] - b) & 0xFF
+            elif filtro == 3:
+                sal[i] = (linea[i] - ((a + b) >> 1)) & 0xFF
+            else:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                sal[i] = (linea[i] - pred) & 0xFF
+        crudo += bytes([filtro]) + sal
+        previa = linea
+    salida = escudos.FIRMA + _trozo(
+        b"IHDR", struct.pack(">IIBBBBB", w, h, 8, tipo, 0, 0, 0))
+    if paleta:
+        salida += _trozo(b"PLTE", paleta)
+    if transp:
+        salida += _trozo(b"tRNS", transp)
+    return (salida + _trozo(b"IDAT", _zlib.compress(bytes(crudo)))
+            + _trozo(b"IEND", b""))
+
+
+# Los cinco filtros, con ruido: si alguno estuviera mal, con una imagen
+# lisa no se notaría —todos los filtros dan lo mismo sobre un color
+# plano— y justamente por eso van bytes al azar.
+_rnd = __import__("random").Random(7)
+for _f in range(5):
+    _filas = [bytes(_rnd.randrange(256) for _ in range(24 * 4)) for _ in range(24)]
+    _leido = escudos.leer_png(_armar_png(24, 24, 6, _filas, _f))
+    chequear("el filtro %d de PNG se deshace exacto" % _f,
+             _leido is not None and _leido[2] == b"".join(_filas))
+
+# Los cinco tipos de color, que se expanden todos a RGBA.
+_rojo = (200, 30, 40)
+chequear("RGB se expande a RGBA opaco",
+         escudos.leer_png(_armar_png(2, 1, 2, [bytes(_rojo * 2)], 4))[2]
+         == bytes(_rojo) + b"\xff" + bytes(_rojo) + b"\xff")
+chequear("gris con alfa conserva el alfa",
+         escudos.leer_png(_armar_png(2, 1, 4, [bytes([90, 128, 200, 255])], 2))[2]
+         == bytes([90, 90, 90, 128, 200, 200, 200, 255]))
+chequear("la paleta se resuelve con su transparencia",
+         escudos.leer_png(_armar_png(
+             2, 1, 3, [bytes([1, 0])], 1,
+             paleta=bytes([10, 20, 30, 40, 50, 60]),
+             transp=bytes([0, 255])))[2]
+         == bytes([40, 50, 60, 255, 10, 20, 30, 0]))
+# Y lo que no cubre: rendirse limpio, nunca inventar.
+_ihdr = lambda **k: escudos.FIRMA + _trozo(b"IHDR", struct.pack(
+    ">IIBBBBB", 2, 2, k.get("prof", 8), 6, 0, 0, k.get("ent", 0))) \
+    + _trozo(b"IDAT", _zlib.compress(b"\0" * 40))
+chequear("un PNG entrelazado se rechaza en vez de salir mal",
+         escudos.leer_png(_ihdr(ent=1)) is None)
+chequear("uno de 16 bits también", escudos.leer_png(_ihdr(prof=16)) is None)
+for _basura, _que in ((b"GIF89a...", "algo que no es PNG"),
+                      (escudos.FIRMA + b"\x00\x01", "un PNG cortado"),
+                      (escudos.FIRMA + _trozo(b"IHDR", struct.pack(
+                          ">IIBBBBB", 2, 2, 8, 6, 0, 0, 0))
+                       + _trozo(b"IDAT", b"no soy zlib"), "datos podridos")):
+    chequear("%s no revienta" % _que, escudos.leer_png(_basura) is None)
+
+
+def _escudo(pinta, n=64):
+    """Un escudo redondo de mentira, con el fondo transparente."""
+    pix = bytearray()
+    for y in range(n):
+        for x in range(n):
+            pix += bytes(pinta(x, y))
+    filas = [bytes(pix[y * n * 4:(y + 1) * n * 4]) for y in range(n)]
+    return _armar_png(n, n, 6, filas, 0)
+
+
+def _dentro(x, y, n=64):
+    dx, dy = (x - n / 2) / (n / 2 * .86), (y - n / 2) / (n / 2 * .94)
+    return dx * dx + dy * dy <= 1
+
+
+_AZUL, _ORO = (10, 36, 114), (242, 201, 76)
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else ((20, 20, 25) if (not _dentro(x - 2, y) or not _dentro(x + 2, y))
+          else (_ORO if 26 <= (x + y) <= 38 else _AZUL)) + (255,)))
+# Con filete oscuro alrededor, como tienen casi todos los escudos: eso no
+# tiene que ganarle al color del club.
+chequear("un escudo azul con banda dorada da azul y oro",
+         _c and _c["principal"] == "#0a2472" and _c["acento"] == "#f2c94c", _c)
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else ((74, 163, 220) + (255,))))
+chequear("uno de un solo color no inventa un segundo",
+         _c and _c["principal"] == _c["acento"] == "#4aa3dc"
+         and _c["parteAcento"] == 0.0, _c)
+# El error que este umbral evita: un hilito de dos pixeles no es el color
+# de un club.
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else ((_ORO if 30 <= x <= 31 else _AZUL) + (255,))))
+chequear("un detalle chico no se toma como color del club",
+         _c and _c["acento"] == _c["principal"], _c)
+# Y dos tonos del mismo celeste son un color, no dos.
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else (((74, 163, 220) if x < 32 else (86, 175, 232)) + (255,))))
+chequear("dos tonos del mismo color cuentan como uno",
+         _c and _c["principal"] == _c["acento"], _c)
+# El fondo transparente es la mayor parte de la imagen y no cuenta.
+_c = escudos.colores_de(_escudo(
+    lambda x, y: ((200, 30, 40) + (255,)) if (28 <= x < 36 and 28 <= y < 36)
+    else (0, 0, 0, 0)))
+chequear("el fondo transparente no cuenta como color",
+         _c and _c["principal"] == "#c81e28" and _c["parte"] == 1.0, _c)
+chequear("y un escudo vacío devuelve nada, no negro",
+         escudos.colores_de(_escudo(lambda x, y: (0, 0, 0, 0), 8)) is None)
+
+# La lista cargada a mano manda siempre: esto es un respaldo para los
+# clubes que no están, no un reemplazo de lo que ya se revisó.
+chequear("los colores cargados a mano tienen prioridad",
+         "if canon in COLORES:" in _SRV
+         and "return COLORES[canon]" in _SRV)
+# Y mientras alguien espera una página no se sale a descargar nada: una
+# lista de treinta y ocho equipos no puede disparar treinta y ocho
+# descargas.
+chequear("y no se baja ningún escudo con alguien esperando",
+         "def colores_del_escudo(canon, bajar=False):" in _SRV
+         and "if not bajar and" in _SRV)
+# Comparar los dos colores como conjunto: "oro y azul" donde la lista dice
+# "azul y oro" es el mismo club, no un error.
+chequear("la comparación no se confunde si vienen al revés",
+         "dado_vuelta" in _SRV and "cruzado < derecho" in _SRV)
+chequear("la comparación de colores tiene su dirección",
+         "/api/colores" in server.ROUTES)
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

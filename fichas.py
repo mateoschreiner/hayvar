@@ -215,6 +215,27 @@ CLUBES = {
         # de casino inyectada. El bueno es éste.
         "sitio": "https://clubatleticosanmartin.com.ar",
     },
+    "Temperley": {
+        "nombre": "Club Atlético Temperley",
+        "apodo": "El Gasolero",
+        "fundado": 1912,
+        "estadio": "Estadio Alfredo Martín Beranger",
+        "estadioApodo": "El Teatro de Turdera",
+        "direccion": "Av. 9 de Julio 360, Temperley",
+        "ciudad": "Temperley, Lomas de Zamora, Buenos Aires",
+        "division": "Primera Nacional",
+        "sitio": "https://temperley.org.ar",
+    },
+    "Tristan Suárez": {
+        "nombre": "Club Tristán Suárez",
+        "apodo": "El Lechero",
+        "fundado": 1929,
+        "estadio": "Estadio 20 de Octubre",
+        "direccion": "Remedios de Escalada 170, Tristán Suárez",
+        "ciudad": "Tristán Suárez, Ezeiza, Buenos Aires",
+        "division": "Primera Nacional",
+        "sitio": "https://clubtsuarez.com.ar",
+    },
     "San Miguel": {
         "nombre": "Club Atlético San Miguel",
         "apodo": "El Trueno Verde",
@@ -278,6 +299,15 @@ CLUBES = {
     },
 
     # ── Primera C ───────────────────────────────────────────────────────
+    "Sportivo Barracas": {
+        # Sin cancha propia desde 1942: juega de prestado y va cambiando de
+        # estadio, así que no hay estadio ni capacidad que poner.
+        "nombre": "Club Sportivo Barracas",
+        "apodo": "El Arrabalero",
+        "fundado": 1913,
+        "ciudad": "Barracas, Ciudad de Buenos Aires",
+        "division": "Primera C",
+    },
     "Claypole": {
         "nombre": "Club Atlético Claypole",
         "apodo": "El Tambero",
@@ -354,6 +384,17 @@ CLUBES = {
         "direccion": "José María Amor y Obispo Scozzina, Formosa",
         "ciudad": "Formosa, Formosa",
         "division": "Torneo Federal A",
+    },
+    "Sportivo Belgrano": {
+        "nombre": "Club Sportivo Belgrano",
+        "apodo": "La Verde",
+        "fundado": 1914,
+        "estadio": "Estadio Juan Pablo Francia",
+        "capacidad": 15000,
+        "direccion": "Av. Rosario de Santa Fe 1459, San Francisco",
+        "ciudad": "San Francisco, Córdoba",
+        "division": "Torneo Federal A",
+        "sitio": "https://sportivobelgrano.com.ar",
     },
     "Sarmiento De La Banda": {
         "nombre": "Club Atlético Sarmiento",

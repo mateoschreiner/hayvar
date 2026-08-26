@@ -6280,7 +6280,21 @@ print("\n── las fichas de los clubes que no son de Primera ──")
 import fichas                                                    # noqa: E402
 
 chequear("hay fichas de los clubes de la Copa Argentina",
-         len(fichas.CLUBES) >= 30, len(fichas.CLUBES))
+         len(fichas.CLUBES) == 34, len(fichas.CLUBES))
+# Y la prueba que faltaba, que es la que se rompió en producción: la ficha
+# se abre por su dirección. El nombre vuelve de la URL en minúscula
+# —/deportivo-madryn → "deportivo madryn"— y estos clubes no están en el
+# índice general, así que sin su propio índice no se reconocía a ninguno y
+# la ficha salía en blanco.
+_no_abren = [(n, server.match_team(server._slug(n).replace("-", " "), False))
+             for n in fichas.CLUBES]
+chequear("y cada una se abre desde su propia dirección",
+         all(n == v for n, v in _no_abren),
+         [(n, v) for n, v in _no_abren if n != v])
+# La ficha de un club no es una competencia: pedirla no puede usar el
+# juego cerrado de Primera, o /estudiantes lleva al de La Plata.
+chequear("y pedir una ficha no asume que el club es de Primera",
+         _SRV.count("canon = match_team(nombre, False) or nombre") == 2)
 # Los campos que sí o sí tienen que estar: sin ellos la ficha no dice nada.
 _pelados = [n for n, f in fichas.CLUBES.items()
             if not (f.get("nombre") and f.get("ciudad") and f.get("division"))]
@@ -6353,10 +6367,13 @@ _ASCENSO = ["Gimnasia de Jujuy", "Sarmiento De La Banda",
             "Talleres de Remedios de Escalada", "Belgrano de Paraná",
             "Central Norte", "Huracán Las Heras", "Unión de Sunchales",
             "Tigre de Salta", "Platense de Zapala"]
+# Lo que importa no es que no resuelvan —los que tienen ficha propia
+# resuelven a SÍ MISMOS, y está bien— sino que ninguno termine pegado a un
+# club de Primera que no es.
 chequear("y fuera de Primera ninguno se funde con otro club",
-         all(server.match_team(n, False) is None for n in _ASCENSO),
+         all(server.match_team(n, False) in (None, n) for n in _ASCENSO),
          [(n, server.match_team(n, False)) for n in _ASCENSO
-          if server.match_team(n, False)])
+          if server.match_team(n, False) not in (None, n)])
 # Pero los de Primera que SÍ juegan la copa se siguen reconociendo, porque
 # están como alias exacto y no dependen del parecido.
 chequear("pero los de Primera que juegan la copa sí se reconocen",
@@ -6407,9 +6424,16 @@ chequear("y una abreviatura ambigua no elige por su cuenta",
 chequear("«Estudiantes» a secas es La Plata adentro de Primera",
          server.match_team("Estudiantes", True) == "Estudiantes (LP)",
          server.match_team("Estudiantes", True))
-chequear("y fuera de Primera no resuelve a ningún club",
-         server.match_team("Estudiantes", False) is None,
+# Y afuera es el de Caseros, que ahora tiene ficha propia. Lo que no puede
+# pasar nunca es que sea el de La Plata.
+chequear("y fuera de Primera es el de Caseros, no el de La Plata",
+         server.match_team("Estudiantes", False) == "Estudiantes",
          server.match_team("Estudiantes", False))
+# La ficha de cada uno se abre por su propia dirección.
+chequear("y cada Estudiantes se abre por su dirección",
+         server.match_team("estudiantes", False) == "Estudiantes"
+         and server.match_team("estudiantes lp", False) == "Estudiantes (LP)"
+         and server.match_team("estudiantes rc", False) == "Estudiantes (RC)")
 # Y los dos Estudiantes de Primera no se pisan entre sí.
 chequear("y los dos Estudiantes de Primera no se pisan",
          server.match_team("Estudiantes RC", True) == "Estudiantes (RC)"
@@ -6548,16 +6572,16 @@ chequear("pero los tres Estudiantes con nombre completo sí",
               ("Estudiantes RC", "Estudiantes (RC)"),
               ("Estudiantes de Río Cuarto", "Estudiantes (RC)")]))
 # Los casos de verdad que apareció la medición, todos de una sola vez.
+_MEDIDOS = ["Union Berlin", "Racing de Santander", "Independiente Medellín",
+            "Independiente Del Valle", "Independiente Santa Fe",
+            "Boca Unidos de Corrientes", "Tucumán Central", "Talleres RE",
+            "Central Norte", "Union St. Gilloise", "Gimnasia y Tiro",
+            "Racing Club Montevideo", "Sarmiento de Resistencia",
+            "Gimnasia de Concepción", "Independiente Petrolero"]
 chequear("los que aparecieron midiendo quedan todos sin fundirse",
-         all(server.match_team(n, False) is None for n in
-             ["Union Berlin", "Racing de Santander", "Independiente Medellín",
-              "Independiente Del Valle", "Independiente Santa Fe",
-              "Boca Unidos de Corrientes", "Tucumán Central", "Talleres RE",
-              "Central Norte", "Union St. Gilloise", "Gimnasia y Tiro",
-              "Racing Club Montevideo", "Sarmiento de Resistencia",
-              "Gimnasia de Concepción", "Independiente Petrolero"]),
-         [n for n in ["Union Berlin", "Racing de Santander", "Talleres RE"]
-          if server.match_team(n, False)])
+         all(server.match_team(n, False) in (None, n) for n in _MEDIDOS),
+         [(n, server.match_team(n, False)) for n in _MEDIDOS
+          if server.match_team(n, False) not in (None, n)])
 # El caso que demuestra que no se puede decidir por la forma del nombre:
 # los dos son "nombre del índice + de + lugar" y uno sí y el otro no.
 chequear("no se puede distinguir por la forma, y por eso el parámetro",

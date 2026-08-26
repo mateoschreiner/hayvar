@@ -2,7 +2,7 @@
 
 Copa Argentina 2026 · 27 de agosto de 2026
 
-Cargué 30 clubes en `fichas.py`. Esto es lo que **no** cargué y por qué,
+Cargué 34 clubes en `fichas.py`. Esto es lo que **no** cargué y por qué,
 para poder completarlo con una fuente mejor. La regla fue: si dos fuentes
 dan números que difieren más de un 20%, o hay una sola fuente floja, va
 vacío. Un dato equivocado se lee como un dato; un hueco se lee como un
@@ -10,20 +10,19 @@ hueco.
 
 ---
 
-## 1. Faltan 6 clubes
+## 1. Los 34 están completos
 
-La competencia tiene 36 clubes fuera de los 30 de Primera. Saqué la lista
-de la captura de `/copa-argentina/equipos`, que se cortaba en la S, así
-que **faltan los 6 que van después de "Sarmiento De La Banda"**.
+Están los 34 clubes de la Copa Argentina que no son de Primera: 19 de
+Primera Nacional, 8 del Federal A, 5 de la Primera B Metropolitana y 2 de
+la Primera C.
 
-Por las cuentas de AFA (15 Primera Nacional, 5 Primera B, 4 Primera C, 10
-Federal A) los que faltan son **3 de Primera C y 3 del Federal A**.
-
-Pasame esos seis nombres tal como los muestra la página y los completo.
+**Sportivo Barracas es un caso aparte**: no tiene cancha propia desde 1942
+y juega de prestado, cambiando de estadio entre fechas. Por eso su ficha
+va sin estadio ni capacidad, que es lo correcto.
 
 ---
 
-## 2. Capacidad: 18 de 30 sin cargar
+## 2. Capacidad: 21 de 34 sin cargar
 
 Es el dato peor documentado del ascenso argentino. Para el mismo estadio
 se encuentran cifras que difieren al doble, y varios están en obra ahora
@@ -50,6 +49,8 @@ mismo. Éstas son las que encontré, por si querés cerrarlas vos:
 | Godoy Cruz | 14.000 · 15.000 · 18.000 · 21.000 — **Gambarte en obra** | esperar |
 | Sarmiento de La Banda | 5.000 · 6.000 · 8.000 — tribuna nueva en 2026 | esperar |
 | Deportivo Rincón | 300 · 400 — remodelado para 2026, sin cifra nueva | esperar |
+| Temperley | club 26.000 · Wikipedia 18.000 · 13.000 · revisada ~17.000 | 17.000 |
+| Tristán Suárez | 7.500 · 13.500 · 15.000 · club 16.000 | 13.500 |
 
 Las que **sí** cargué, con la fuente que las respalda: Deportivo Morón
 32.000, Estudiantes de Caseros 16.740, Gimnasia de Jujuy 24.000, Gimnasia
@@ -60,7 +61,7 @@ de Merlo 11.000.
 
 ---
 
-## 3. Sitios oficiales: 12 sin cargar
+## 3. Sitios oficiales: 13 sin cargar
 
 **Dominios secuestrados — no usar.** Los dos sirven hoy sitios de casino:
 
@@ -86,7 +87,9 @@ HTTPS se agregan:
 - Deportivo Rincón — `deportivorincon.com.ar` (además abandonado desde
   2024, con contenido de relleno de la plantilla sin reemplazar)
 
-**Caídos o inexistentes.** Argentino de Merlo, Ciudad de Bolívar,
+**Caídos o inexistentes.** Sportivo Barracas (`sportivobarracas.com.ar` da
+error 522; el `spbarracas.com.ar` que aparece primero en Google aclara en
+su propio pie que **no es oficial**), Argentino de Merlo, Ciudad de Bolívar,
 Deportivo Armenio, Gimnasia y Tiro, Ituzaingó, Sarmiento de La Banda y San
 Martín de Formosa no tienen sitio propio vigente: sólo redes sociales, que
 no cargo.

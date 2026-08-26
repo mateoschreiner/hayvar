@@ -460,6 +460,24 @@ ALIAS_DE_PRIMERA = {
     "estudiantes": "Estudiantes (LP)",
 }
 
+# Los clubes que no son de Primera y tienen ficha propia.
+#
+# Hace falta para que la ficha se abra desde su dirección: /deportivo-madryn
+# vuelve como "deportivo madryn", en minúscula, y sin esto no se reconocía a
+# nadie —la ficha salía en blanco, que es justo lo que había pasado con
+# Estudiantes—. El índice general tiene sólo los treinta de Primera.
+#
+# Va aparte y NO adentro de NAME_INDEX a propósito: "Estudiantes" está en
+# los dos lados y significa clubes distintos según el torneo. Éste se
+# consulta después de ALIAS_DE_PRIMERA, así que adentro de Primera sigue
+# ganando el de La Plata.
+INDICE_FICHAS = {}
+for _n in fichas.CLUBES:
+    INDICE_FICHAS.setdefault(norm(_n), _n)
+    _sp = norm(_n).replace("(", "").replace(")", "")
+    if _sp != norm(_n):
+        INDICE_FICHAS.setdefault(_sp, _n)
+
 
 def match_team(name, difusa=True):
     """
@@ -510,6 +528,11 @@ def match_team(name, difusa=True):
     # apunta a dos clubes del índice y por eso se rinde.
     if difusa and n in ALIAS_DE_PRIMERA:
         return ALIAS_DE_PRIMERA[n]
+    # Los clubes con ficha que no son de Primera. Después del alias de
+    # Primera, así "Estudiantes" adentro de la Liga Profesional sigue
+    # siendo el de La Plata y afuera es el de Caseros.
+    if n in INDICE_FICHAS:
+        return INDICE_FICHAS[n]
     # El nombre que llega es más corto que el nuestro: una abreviatura. Se
     # exige que apunte a un solo club: "gimnasia" da dos y no resuelve.
     cortos = {v for k, v in NAME_INDEX.items() if k.startswith(n)}
@@ -3895,7 +3918,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Fichas de 30 clubes de la Copa Argentina: nombre, apodo, fundación, estadio, dónde juegan y en qué categoría. Lo que no se pudo confirmar quedó vacío a propósito"
+VERSION_APP = "2026-08-27 · Los 34 clubes de la Copa Argentina que no son de Primera ya tienen ficha, y se abre desde su dirección: antes el nombre volvía en minúscula y no se reconocía a ninguno"
 
 
 def reparar_recorridos():
@@ -7832,7 +7855,10 @@ def api_club(q):
     nombre = (q.get("name") or [""])[0].strip()
     if not nombre:
         return {"error": "falta el parámetro name"}
-    canon = match_team(nombre) or nombre
+    # Sin el juego cerrado de Primera: la ficha de un club no es una
+    # competencia. Con él, /estudiantes —que es el de Caseros— llevaba
+    # al de La Plata, porque adentro de Primera ese nombre es suyo.
+    canon = match_team(nombre, False) or nombre
 
     # Todas las competencias, no sólo la liga: si el club juega la Copa
     # Argentina el miércoles y la liga el domingo, el próximo partido es el
@@ -8593,7 +8619,10 @@ def api_club_info(q):
     nombre = (q.get("name") or [""])[0].strip()
     if not nombre:
         return {"error": "falta el parámetro name"}
-    canon = match_team(nombre) or nombre
+    # Sin el juego cerrado de Primera: la ficha de un club no es una
+    # competencia. Con él, /estudiantes —que es el de Caseros— llevaba
+    # al de La Plata, porque adentro de Primera ese nombre es suyo.
+    canon = match_team(nombre, False) or nombre
     return al_toque("club:%s" % canon, lambda: armar_club_info(canon),
                     frescura=90)
 

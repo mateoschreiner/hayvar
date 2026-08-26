@@ -240,7 +240,13 @@ ALIASES = {
     "velez sarsfield": ["velez"],
     "argentinos juniors": ["argentinos jrs", "argentinos"],
     "rosario central": ["central"],
-    "estudiantes (lp)": ["estudiantes de la plata", "estudiantes la plata", "estudiantes"],
+    # Ojo: "estudiantes" a secas NO va acá. Estaba, y hacía que los 37
+    # partidos de Estudiantes de Buenos Aires en la Primera Nacional se
+    # contaran como del de La Plata —que ni siquiera juega esa
+    # categoría—. Tampoco alcanzaría con mirar la competencia: en la Copa
+    # Argentina juegan los dos, más el de Río Cuarto. Un nombre que puede
+    # ser tres clubes no puede resolver a ninguno.
+    "estudiantes (lp)": ["estudiantes de la plata", "estudiantes la plata"],
     "talleres (c)": ["talleres de cordoba", "talleres cordoba", "talleres"],
     "independiente rivadavia": ["independiente riv", "ind rivadavia"],
     "barracas central": ["barracas"],
@@ -3857,7 +3863,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · La corrección dice de qué competencia es cada cambio: sin eso no se puede aprobar una fila como \"Estudiantes\", que en Primera es el de La Plata y en el ascenso puede ser otro"
+VERSION_APP = "2026-08-27 · \"Estudiantes\" a secas ya no es Estudiantes de La Plata: en la Primera Nacional es el de Buenos Aires, y eran 38 partidos a punto de ir al club equivocado"
 
 
 def reparar_recorridos():

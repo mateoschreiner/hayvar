@@ -6233,6 +6233,27 @@ chequear("y una abreviatura ambigua no elige por su cuenta",
          server.match_team("Gimnasia y Esgrima", False) is None
          and server.match_team("Gimnasia y Esgrima", True) is None,
          server.match_team("Gimnasia y Esgrima", False))
+# El caso que apareció al mirar la corrección antes de aplicarla:
+# "Estudiantes" a secas estaba cargado como alias de La Plata, y en la
+# Primera Nacional ese nombre es el de Buenos Aires —que juega esa
+# categoría, mientras que el de La Plata no—. Eran 37 partidos a punto de
+# ir al club equivocado, más uno de la Copa Argentina.
+#
+# No alcanzaba con mirar la competencia: en la Copa Argentina juegan los
+# tres Estudiantes. Un nombre que puede ser tres clubes no puede resolver
+# a ninguno, ni siquiera adentro de Primera.
+chequear("«Estudiantes» a secas no resuelve a ningún club",
+         server.match_team("Estudiantes", False) is None
+         and server.match_team("Estudiantes", True) is None,
+         (server.match_team("Estudiantes", True),
+          server.match_team("Estudiantes", False)))
+chequear("pero los tres Estudiantes con nombre completo sí",
+         all(server.match_team(n, False) == c for n, c in
+             [("Estudiantes de La Plata", "Estudiantes (LP)"),
+              ("Estudiantes La Plata", "Estudiantes (LP)"),
+              ("Estudiantes (LP)", "Estudiantes (LP)"),
+              ("Estudiantes RC", "Estudiantes (RC)"),
+              ("Estudiantes de Río Cuarto", "Estudiantes (RC)")]))
 # Los casos de verdad que apareció la medición, todos de una sola vez.
 chequear("los que aparecieron midiendo quedan todos sin fundirse",
          all(server.match_team(n, False) is None for n in

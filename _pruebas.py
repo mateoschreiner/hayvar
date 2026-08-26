@@ -2320,7 +2320,7 @@ chequear("lo que borra o gasta está en la lista de privadas",
          server.PRIVADAS == {"/api/recorrido", "/api/raw", "/api/contenido",
                              "/api/diagnostico", "/api/tiempos",
                              "/api/base", "/api/visitas", "/api/colores",
-                             "/admin"},
+                             "/api/nombres", "/admin"},
          sorted(server.PRIVADAS))
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")
@@ -5974,10 +5974,16 @@ chequear("la copa desplegada usa la misma fila que las ligas",
 # El total y el desglose, que es lo que hace que el número signifique algo.
 chequear("por club muestra el total y lo discrimina",
          '<span class="cant">${c.total}</span>' in HTML
-         and "c.ligas?plural(c.ligas,'liga'):''" in HTML
+         and "c.ligas?plural(c.ligas,unidad):''" in HTML
          and "c.copas?plural(c.copas,'copa'):''" in HTML
-         and '<div class="hist-grupo">Ligas</div>' in HTML
          and '<div class="hist-grupo">Copas</div>' in HTML)
+# Y que el rótulo lo mande el servidor: en la pantalla de una copa, decir
+# "3 ligas" abajo del campeón de la Copa Argentina es falso.
+chequear("y el rótulo cambia cuando la competencia es una copa",
+         "const unidad=hist.unidad||'liga';" in HTML
+         and "unidad==='copa'?'Ediciones':'Ligas'" in HTML
+         and _hist.de_copa("Copa Argentina")["unidad"] == "copa"
+         and "unidad" not in _hist.todo())
 
 # Los títulos en la ficha del club, en la misma fila que el estadio.
 chequear("la ficha del club muestra los títulos",
@@ -6170,6 +6176,53 @@ chequear("es_tecnico reconoce las formas que manda la fuente",
                                             "Coach", "Manager"))
          and not any(server.es_tecnico(x) for x in ("Delantero", "Arquero",
                                                     "", None)))
+
+print("\n── reconocer un club sin confundirlo con otro ──")
+#
+# El índice de nombres tiene sólo los treinta de Primera. Adentro de la
+# Liga Profesional el juego de clubes es cerrado y el parecido es seguro.
+# Afuera juegan clubes de todas las divisiones, y ahí el parecido mandaba
+# doce de trece nombres del ascenso a un club de Primera que no es. Y como
+# ese nombre es el que se guarda en la tabla de partidos, los partidos de
+# un club iban a parar al historial de otro.
+_CERRADO = [("Velez", "Vélez Sarsfield"), ("Boca Jrs", "Boca Juniors"),
+            ("River", "River Plate"),
+            ("Estudiantes de La Plata", "Estudiantes (LP)"),
+            ("Central Córdoba SdE", "Central Córdoba (SdE)")]
+chequear("adentro de Primera el parecido sigue funcionando igual",
+         all(server.match_team(n, True) == c for n, c in _CERRADO),
+         [(n, server.match_team(n, True)) for n, c in _CERRADO
+          if server.match_team(n, True) != c])
+# Los del ascenso: ninguno puede terminar pegado a un club de Primera.
+_ASCENSO = ["Gimnasia de Jujuy", "Sarmiento De La Banda",
+            "Independiente de Chivilcoy", "Racing de Córdoba",
+            "Talleres de Remedios de Escalada", "Belgrano de Paraná",
+            "Central Norte", "Huracán Las Heras", "Unión de Sunchales",
+            "Tigre de Salta", "Platense de Zapala"]
+chequear("y fuera de Primera ninguno se funde con otro club",
+         all(server.match_team(n, False) is None for n in _ASCENSO),
+         [(n, server.match_team(n, False)) for n in _ASCENSO
+          if server.match_team(n, False)])
+# Pero los de Primera que SÍ juegan la copa se siguen reconociendo, porque
+# están como alias exacto y no dependen del parecido.
+chequear("pero los de Primera que juegan la copa sí se reconocen",
+         all(server.match_team(n, False) == c for n, c in
+             [("Estudiantes de La Plata", "Estudiantes (LP)"),
+              ("Boca Juniors", "Boca Juniors"),
+              ("Vélez Sarsfield", "Vélez Sarsfield"),
+              ("Central Córdoba SdE", "Central Córdoba (SdE)")]))
+# El caso que demuestra que no se puede decidir por la forma del nombre:
+# los dos son "nombre del índice + de + lugar" y uno sí y el otro no.
+chequear("no se puede distinguir por la forma, y por eso el parámetro",
+         server.match_team("San Lorenzo de Almagro", True) == "San Lorenzo"
+         and server.match_team("Belgrano de Paraná", True) == "Belgrano")
+# Y quién decide: el partido dice a qué competencia pertenece.
+chequear("la decisión sale de la competencia del partido",
+         'difusa = g.get("competitionId") == COMPETITION' in _SRV
+         and "def match_team(name, difusa=True):" in _SRV
+         and "if not difusa:" in _SRV)
+chequear("y hay con qué medir lo ya guardado",
+         "/api/nombres" in server.ROUTES)
 
 print("\n── el botón de sólo en vivo, en todas las pantallas ──")
 #

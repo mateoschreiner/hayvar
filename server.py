@@ -151,6 +151,7 @@ PRIVADAS = {
     "/api/base",          # dónde vive la base, cuánto pesa y cuánto tiene
     "/api/visitas",       # quién entró, de dónde y qué miró
     "/api/colores",       # baja los treinta escudos para comparar colores
+    "/api/nombres",       # recorre el calendario de las trece competencias
     "/admin",             # la página que junta todo lo de arriba
 }
 # Ojo: /api/visita —sin la ese— NO va acá. Es la que usa la página para
@@ -426,11 +427,44 @@ for _n in ZONA_B:
     ZONE_OF[_n] = "B"
 
 
-def match_team(name):
-    """Nombre canónico de un club, o None si no lo reconocemos."""
+def match_team(name, difusa=True):
+    """
+    Nombre canónico de un club, o None si no lo reconocemos.
+
+    `difusa` decide si además del alias exacto se acepta el parecido, y
+    hay que pasarla en False fuera de la Liga Profesional. El motivo:
+
+    El índice tiene sólo los treinta de Primera. Adentro de la Liga
+    Profesional eso es un juego cerrado —los que juegan son ésos y ningún
+    otro— y por eso el parecido es seguro: si llega "Velez" o "Boca Jrs",
+    no puede ser otra cosa. Pero en la Copa Argentina juegan sesenta y
+    cuatro clubes de todas las divisiones, y ahí el parecido se convierte
+    en un desastre silencioso:
+
+        Gimnasia de Jujuy          → Gimnasia y Esgrima (LP)
+        Sarmiento de La Banda      → Sarmiento (J)
+        Independiente de Chivilcoy → Independiente
+        Talleres de Remedios       → Talleres (C)
+        Belgrano de Paraná         → Belgrano
+        Central Norte              → Rosario Central
+
+    Doce de trece nombres del ascenso terminaban pegados a un club de
+    Primera, y como este nombre es el que se guarda en la tabla de
+    partidos, los partidos de un club iban a parar al historial de otro.
+
+    No se puede distinguir por la forma del nombre: "San Lorenzo de
+    Almagro" SÍ es San Lorenzo y "Belgrano de Paraná" NO es Belgrano, y
+    los dos son "nombre del índice + de + lugar". Lo único que distingue
+    es contra qué juego de clubes se está comparando. De ahí el parámetro.
+
+    Sin el parecido, un club que no reconocemos queda sin canon: se ve, se
+    puede arreglar agregando el alias, y no se funde con nadie.
+    """
     n = norm(name)
     if n in NAME_INDEX:
         return NAME_INDEX[n]
+    if not difusa:
+        return None
     bare = re.sub(r"\s*\([^)]*\)\s*$", "", n).strip()
     if bare in NAME_INDEX:
         return NAME_INDEX[bare]
@@ -1205,12 +1239,12 @@ def status_of(g):
     return "PROG"
 
 
-def side(c):
+def side(c, difusa=True):
     sc = c.get("score")
     return {
         "id": c.get("id"),
         "name": c.get("name") or "",
-        "canon": match_team(c.get("name")),
+        "canon": match_team(c.get("name"), difusa),
         "short": c.get("symbolicName") or "",
         "logo": logo(c),
         # El país sirve para detectar el clásico internacional: dos clubes
@@ -1230,7 +1264,13 @@ def side(c):
 
 def map_game(g):
     st = status_of(g)
-    h, a = side(g.get("homeCompetitor") or {}), side(g.get("awayCompetitor") or {})
+    # El parecido de nombres sólo vale adentro de la Liga Profesional, que
+    # es el único juego de clubes cerrado que tenemos. El partido ya dice a
+    # qué competencia pertenece, así que la decisión se toma acá y no hay
+    # que arrastrar el dato por los seis lugares que llaman a esto.
+    difusa = g.get("competitionId") == COMPETITION
+    h = side(g.get("homeCompetitor") or {}, difusa)
+    a = side(g.get("awayCompetitor") or {}, difusa)
     gt = g.get("gameTime")
     live_min = int(gt) if st == "LIVE" and isinstance(gt, (int, float)) and gt > 0 else None
     za, zb = ZONE_OF.get(h["canon"]), ZONE_OF.get(a["canon"])
@@ -3803,7 +3843,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · La Copa Argentina tiene Equipos e Historia, y los colores del escudo llegan a la cancha y al historial: las canchas de las otras competencias ya no salen en blanco y negro"
+VERSION_APP = "2026-08-27 · Los clubes del ascenso ya no se confunden con los de Primera: Gimnasia de Jujuy era Gimnasia LP, Belgrano de Paraná era Belgrano, y sus partidos iban al historial del otro"
 
 
 def reparar_recorridos():
@@ -8564,6 +8604,55 @@ def armar_club_info(canon):
     }
 
 
+def api_nombres(q):
+    """
+    Qué clubes se estaban confundiendo con otro, competencia por competencia.
+
+    Existe para decidir con números qué hacer con lo ya guardado. Un club
+    aparece acá si el parecido de nombres lo mandaba a un club de Primera
+    que no es: es lo que estuvo pasando fuera de la Liga Profesional, donde
+    juegan clubes de todas las divisiones y el índice sólo tiene treinta.
+
+    No corrige nada. Sólo cuenta.
+    """
+    filas, total = [], 0
+    for lid, cfg in LIGAS.items():
+        if lid == "lpf":
+            continue                      # ahí el parecido es correcto
+        try:
+            juegos = api_liga_games({"id": [lid]}).get("games", [])
+        except Exception:
+            continue
+        confundidos, partidos = {}, {}
+        for m in juegos:
+            for s in ("home", "away"):
+                nombre = ((m.get(s) or {}).get("name") or "").strip()
+                if not nombre:
+                    continue
+                partidos[nombre] = partidos.get(nombre, 0) + 1
+                con = match_team(nombre, True)
+                if con and not match_team(nombre, False):
+                    confundidos[nombre] = con
+        if confundidos:
+            afectados = sorted(
+                ({"club": n, "loTomabaPor": c, "partidos": partidos.get(n, 0)}
+                 for n, c in confundidos.items()),
+                key=lambda x: -x["partidos"])
+            total += sum(x["partidos"] for x in afectados)
+            filas.append({"liga": lid,
+                          "nombre": cfg.get("nombre") or lid,
+                          "clubes": afectados,
+                          "partidos": sum(x["partidos"] for x in afectados)})
+    filas.sort(key=lambda f: -f["partidos"])
+    return {"competencias": filas, "partidos": total,
+            "clubes": sum(len(f["clubes"]) for f in filas),
+            "nota": ("Clubes que el parecido de nombres mandaba a un club de "
+                     "Primera que no es. Los partidos guardados de estos "
+                     "clubes quedaron en el historial del otro. Acá no se "
+                     "corrige nada: es para decidir con el número a la "
+                     "vista.")}
+
+
 def api_historia(q):
     """
     Los campeones de una competencia. /api/historia?liga=ca
@@ -9057,6 +9146,9 @@ ROUTES = {
     # de aplicarlo a los cientos de clubes de las otras competencias: acá
     # sabemos cuál es la respuesta correcta, porque la cargamos nosotros.
     "/api/colores": lambda q: api_colores(q),
+    # Qué clubes se estaban confundiendo con otro por el parecido de
+    # nombres. Cuenta, no corrige.
+    "/api/nombres": lambda q: api_nombres(q),
     "/api/scorers": api_scorers,
     "/api/match": api_match,
     # se resuelve al llamarla porque se define más abajo, junto al resto de

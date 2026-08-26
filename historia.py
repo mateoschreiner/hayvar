@@ -409,6 +409,10 @@ def de_copa(nombre):
     return {
         "copa": nombre,
         "titulo": nombre,
+        # Cómo se llama cada título en esta pantalla. En Primera son ligas
+        # y copas; acá son todas copas, y decir "3 ligas" abajo del nombre
+        # de un campeón de la Copa Argentina es sencillamente falso.
+        "unidad": "copa",
         "desde": min(t for t, _c in filas),
         "total": len(filas),
         "porAno": por_ano,

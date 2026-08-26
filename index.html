@@ -1552,9 +1552,14 @@ const App=(()=>{
       // Los escudos salen de la lista de equipos, y se piden en paralelo:
       // no vale la pena que una lista de campeones espere por los escudos,
       // así que si fallan la historia se dibuja igual sin ellos.
+      /* Los escudos salen de las listas de equipos, y hacen falta las dos:
+         un campeón de la Copa Argentina puede no estar jugándola este año
+         —Huracán, Arsenal, Patronato— y en cambio sí estar en Primera. Con
+         la lista de la copa sola, esos campeones salían sin escudo. */
       const [h]=await Promise.all([
         get('/api/historia?liga='+encodeURIComponent(liga)).catch(()=>null),
         equipos(liga),
+        liga==='lpf'?Promise.resolve():equipos('lpf'),
       ]);
       histDe[liga]=h;
     }
@@ -1582,6 +1587,10 @@ const App=(()=>{
      que después alguien discute en un bar. */
   function histPorClub(){
     const plural=(n,s)=>n+' '+s+(n===1?'':'s');
+    // En Primera son ligas y copas; en la pantalla de una copa son todas
+    // copas. Decir "3 ligas" abajo de un campeón de la Copa Argentina es
+    // sencillamente falso, así que el nombre lo manda el servidor.
+    const unidad=hist.unidad||'liga';
     return `<div class="globo">
       <div class="cl-sec">Títulos por club</div>
       ${hist.porClub.map(c=>`<details class="hist-club">
@@ -1591,12 +1600,12 @@ const App=(()=>{
           <span class="quien">
             ${clubHist(c.club)}
             <span class="desglose">${[
-              c.ligas?plural(c.ligas,'liga'):'',
+              c.ligas?plural(c.ligas,unidad):'',
               c.copas?plural(c.copas,'copa'):''].filter(Boolean).join(' · ')}</span>
           </span>
           <span class="cant">${c.total}</span>
         </summary>
-        ${c.ligas?`<div class="hist-grupo">Ligas</div>
+        ${c.ligas?`<div class="hist-grupo">${unidad==='copa'?'Ediciones':'Ligas'}</div>
           <div class="hist-tit">${c.detalleLigas.map(d=>
             `<span><b>${esc(d.temporada)}</b>${d.torneo?' '+esc(d.torneo):''}</span>`
           ).join('')}</div>`:''}

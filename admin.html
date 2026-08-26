@@ -495,12 +495,40 @@ function colores(c){
       Primera siguen usando los colores cargados a mano.</footer>`;
 }
 
+/* Qué clubes se estaban confundiendo con otro por el parecido de nombres.
+
+   El índice tiene sólo los treinta de Primera, y fuera de la Liga
+   Profesional juegan clubes de todas las divisiones: "Gimnasia de Jujuy"
+   terminaba pegado a Gimnasia LP. Como ese nombre es el que se guarda en
+   la tabla de partidos, esos partidos quedaron en el historial del otro
+   club. Esta tabla no corrige: cuenta, para poder decidir con el número
+   a la vista. */
+function nombres(n){
+  if(!n || !n.competencias) return '<div class="vacio">No se pudo leer.</div>';
+  if(!n.competencias.length)
+    return '<div class="tarj"><b style="font-size:22px">Ninguno</b>'
+      + '<span>Ningún club se está confundiendo con otro.</span></div>';
+  return `<div class="tarj" style="margin-bottom:10px">
+      <b style="font-size:22px">${n.clubes} clubes</b>
+      <span>se estaban tomando por otro, en ${n.partidos} partidos
+      guardados.</span></div>
+    ${n.competencias.map(c => `<h3 style="margin:14px 0 4px;font-size:13px">
+        ${esc(c.nombre)} <span class="vacio">· ${c.partidos} partidos</span></h3>
+      <table><thead><tr><th>Club</th><th>Lo tomaba por</th>
+        <th style="text-align:right">Partidos</th></tr></thead><tbody>
+      ${c.clubes.map(x => `<tr><td>${esc(x.club)}</td>
+        <td>${esc(x.loTomabaPor)}</td>
+        <td style="text-align:right">${x.partidos}</td></tr>`).join('')}
+      </tbody></table>`).join('')}
+    <footer>${esc(n.nota || '')}</footer>`;
+}
+
 async function cargar(){
   $('#app').innerHTML = '<div class="vacio" style="padding:60px">Cargando…</div>';
-  let t, base, cont, rec, diag, vis, col;
+  let t, base, cont, rec, diag, vis, col, nom;
   try{
     // se piden todas juntas: es la misma idea que usamos en la portada
-    [t, base, cont, rec, diag, vis, col] = await Promise.all([
+    [t, base, cont, rec, diag, vis, col, nom] = await Promise.all([
       pedir('/api/tiempos'),
       pedir('/api/base'),
       pedir('/api/contenido'),
@@ -510,6 +538,9 @@ async function cargar(){
       // La primera vez baja treinta escudos, así que puede tardar. Si no
       // contesta, el resto del admin se muestra igual.
       pedir('/api/colores').catch(() => null),
+      // Recorre el calendario de las trece competencias; si tarda o falla,
+      // el resto del admin se muestra igual.
+      pedir('/api/nombres').catch(() => null),
     ]);
   }catch(e){
     return pedirLlave(e.message === '403'
@@ -560,6 +591,8 @@ async function cargar(){
       ${contenido(cont)}
       <h2>Cuánto lleva bajado cada torneo</h2>
       ${recorrido(rec)}
+      ${nom ? `<h2>Clubes que se confunden con otro</h2>
+        ${nombres(nom)}` : ''}
       ${col ? `<h2>¿Sirve sacar los colores del escudo?</h2>
         ${colores(col)}` : ''}
       <footer>Base: ${esc(base.archivo || '—')}${

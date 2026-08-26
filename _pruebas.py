@@ -4614,6 +4614,172 @@ chequear("el administrador muestra cuánto falta",
          "faltanFormaciones=tablas.cuantos_sin_formacion(" in _SRV
          and "Historia por completar" in _ADM)
 
+print("\n── cómo les fue las veces anteriores ──")
+# Es la primera pregunta que contesta la tabla de partidos y que con los
+# bloques no se podía hacer: los cruces entre dos equipos están repartidos
+# entre los dieciséis calendarios y hay que atravesarlos todos.
+_guion7 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import server, tablas
+
+    # A es el local de HOY. En estos partidos jugó de los dos lados.
+    def pg(i, loc, lid, vis, vid, dia, gh, ga, liga="lpf"):
+        return {"id": i, "temporada": 1, "round": 1, "start": dia + "T20:00:00",
+                "status": "FIN", "gh": gh, "ga": ga,
+                "home": {"id": lid, "canon": loc}, "away": {"id": vid, "canon": vis}}
+    # Ojo con estos datos: tres de las cuatro victorias de A son de
+    # visitante, a propósito. Con un reparto simétrico, contar "desde el
+    # local de hoy" y contar "desde el local de cada partido" dan el mismo
+    # número por casualidad, y la prueba no prueba nada.
+    tablas.guardar("lpf", 7, [
+        pg(1, "A", 1, "B", 2, "2026-05-11", 2, 0),     # A ganó de local
+        pg(2, "B", 2, "A", 1, "2025-11-02", 0, 1),     # A ganó de visitante
+        pg(3, "A", 1, "B", 2, "2025-09-21", 1, 1),     # empate
+        pg(4, "B", 2, "A", 1, "2025-04-10", 0, 2),     # A ganó de visitante
+        pg(9, "A", 1, "B", 2, "2026-08-25", None, None)])  # todavía no se jugó
+    tablas.guardar("ca", 640, [
+        pg(5, "A", 1, "B", 2, "2025-02-02", 0, 2, "ca")])  # ganó B, otro torneo
+
+    h = server.historial_entre(1, 2)
+    sinHoy = server.historial_entre(1, 2, excluir=1)
+    print(json.dumps({
+        "resumen": [h["gano"], h["empates"], h["perdio"], h["jugados"]],
+        "cuantos": len(h["partidos"]),
+        "orden": [p["dia"] for p in h["partidos"]],
+        "torneos": sorted({p["liga"] for p in h["partidos"]}),
+        "nombraElTorneo": h["partidos"][0]["ligaNombre"],
+        "sinJugarNoCuenta": all(p["gh"] is not None for p in h["partidos"]),
+        "sinHoy": [sinHoy["jugados"],
+                   any(p["id"] == 1 for p in sinHoy["partidos"])],
+        "nuncaSeCruzaron": server.historial_entre(1, 999),
+        "sinEquipo": server.historial_entre(None, 2),
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion7); _gp9 = _f.name
+_db7 = os.path.join(_tp2.gettempdir(), "hayvar_hist_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db7 + _ext):
+        os.unlink(_db7 + _ext)
+_ph = _sb2.run([sys.executable, _gp9, _db7, AQUI],
+               capture_output=True, text=True, timeout=120)
+os.unlink(_gp9)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db7 + _ext):
+        os.unlink(_db7 + _ext)
+_hi = None
+for _linea in _ph.stdout.splitlines():
+    if _linea.startswith("{"):
+        _hi = json.loads(_linea)
+chequear("el historial corre entero", _hi is not None,
+         (_ph.stdout[-200:], _ph.stderr[-400:]))
+if _hi:
+    # A ganó dos —una de local y una de visitante—, un empate, y B ganó dos.
+    # La cuenta se lee parada en esta página: el primer número es del que
+    # HOY es local, sin importar de qué lado jugó cada una de esas veces.
+    # A ganó tres —una de local y dos de visitante—, un empate, y B ganó
+    # una. La cuenta se lee parada en esta página: el primer número es del
+    # que HOY es local, sin importar de qué lado jugó cada una de esas veces.
+    chequear("cuenta desde el lado del local de hoy, jugara donde jugara",
+             _hi["resumen"] == [3, 1, 1, 5], _hi["resumen"])
+    chequear("y junta los cruces de todos los torneos",
+             _hi["torneos"] == ["ca", "lpf"], _hi["torneos"])
+    chequear("del más nuevo al más viejo",
+             _hi["orden"] == sorted(_hi["orden"], reverse=True), _hi["orden"])
+    # Un partido que todavía no se jugó no dice nada de cómo les fue.
+    chequear("los que no se jugaron no entran", _hi["sinJugarNoCuenta"])
+    chequear("con el nombre del torneo de cada uno",
+             _hi["nombraElTorneo"] == "Liga Profesional", _hi["nombraElTorneo"])
+    # El partido que se está mirando no puede estar en su propio historial.
+    chequear("y el partido de hoy no aparece en su propio historial",
+             _hi["sinHoy"] == [4, False], _hi["sinHoy"])
+    # Dos que nunca se cruzaron no muestran una caja vacía: no muestran nada.
+    chequear("si nunca se cruzaron, no se muestra nada",
+             _hi["nuncaSeCruzaron"] is None and _hi["sinEquipo"] is None)
+chequear("el partido lo lleva puesto, sin un pedido más",
+         'out["historial"] = historial_entre(' in _SRV)
+# Va después de la tabla del torneo y aparte: si una tarda o falla, la otra
+# se ve igual.
+chequear("y la página lo cuelga abajo de lo que ya está",
+         "function historialAlCostado(m)" in HTML
+         and "insertAdjacentHTML('beforeend'" in HTML
+         and ".then(()=>historialAlCostado(current())," in HTML)
+
+# Y dibujándolo de verdad, que es donde se ve si la cuenta quedó de qué lado.
+if _sh.which("node"):
+    _mh = json.dumps({
+        "id": "99", "liveId": "99", "liga": "lpf",
+        "ligaNombre": "Liga Profesional", "torneo": "Clausura", "round": 5,
+        "status": "FIN", "gh": 2, "ga": 1, "start": "2026-08-25T21:30:00Z",
+        "events": [], "stats": [], "tv": [],
+        "home": {"name": "Boca Juniors", "canon": "Boca Juniors"},
+        "away": {"name": "River Plate", "canon": "River Plate"},
+        "lineups": {"home": [], "away": []}, "banco": {"home": [], "away": []},
+        "confirmada": {}, "bancoReal": {}, "formation": {},
+        "historial": {"gano": 3, "empates": 1, "perdio": 2, "jugados": 6,
+          "partidos": [
+            {"id": 91, "dia": "2026-05-11", "liga": "lpf",
+             "local": "River Plate", "visita": "Boca Juniors", "gh": 1, "ga": 2},
+            {"id": 92, "dia": "2025-11-02", "liga": "ca",
+             "local": "Boca Juniors", "visita": "River Plate", "gh": 0, "ga": 0},
+            {"id": 93, "dia": "2025-09-21", "liga": "lpf",
+             "local": "Boca Juniors", "visita": "River Plate", "gh": 2,
+             "ga": 3}]}}, ensure_ascii=False)
+    _jh = ("""
+process.on('unhandledRejection',()=>{});
+const RESP={'/api/match': __M__, '/api/liga/games':{llaves:[]},
+  '/api/liga':{zonas:[],anual:[],goleadores:[]}, '/api/standings':{zones:[]},
+  '/api/annual':{rows:[]}, '/api/promedios':{rows:[]},
+  '/api/ligas':{ligas:[]}, '/api/clubes':{clubes:[]}, '/api/visita':{v:'x'}};
+globalThis.fetch=async(u)=>{
+  const k=Object.keys(RESP).sort((a,b)=>b.length-a.length).find(x=>u.startsWith(x));
+  return {ok:true, status:200, json:async()=>(k?RESP[k]:{})};};
+loc.pathname='/partido/boca-juniors-vs-river-plate-99';
+App.init();
+(async()=>{
+  for(let i=0;i<90;i++) await new Promise(r=>setImmediate(r));
+  const d=doc.querySelector('#right').innerHTML||'';
+  console.log(JSON.stringify({
+    hay: d.indexOf('Cómo les fue') >= 0,
+    cuantos: d.indexOf('6 partidos') >= 0,
+    cuenta: (d.match(/<b>\\d<\\/b> (?:Boca Juniors|empates|River Plate)/g) || []),
+    filas: (d.match(/class="hist-p"/g) || []).length,
+    marcados: (d.match(/eq[^"]*gano/g) || []).length,
+    linkea: d.indexOf('river-plate-vs-boca-juniors-91') >= 0}));
+})();
+""").replace("__M__", _mh)
+    _gh2 = (open(_DOMSITO, encoding="utf-8").read()
+            + "\nglobalThis.document=doc; globalThis.window=win;"
+              "\nglobalThis.location=loc; globalThis.history=historial;"
+              "\nglobalThis.localStorage=almacenLocal;"
+              "\nglobalThis.MutationObserver=MutationObserver;"
+              "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+              "\nglobalThis.requestAnimationFrame=f=>0;"
+              "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+            + _app.replace("const App=(()=>{", "App=(()=>{") + _jh)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gh2); _rh = _f.name
+    _phh = _sub.run(["node", _rh], capture_output=True, text=True, timeout=60)
+    os.unlink(_rh)
+    _hd = json.loads(_phh.stdout) if _phh.returncode == 0 and _phh.stdout else None
+    chequear("la página dibuja el historial", _hd is not None,
+             _phh.stderr.strip().splitlines()[:2])
+    if _hd:
+        chequear("con cuántos se cruzaron", _hd["hay"] and _hd["cuantos"], _hd)
+        # El orden de la cuenta importa: primero el local de hoy.
+        chequear("y la cuenta del lado que corresponde",
+                 _hd["cuenta"] == ["<b>3</b> Boca Juniors", "<b>1</b> empates",
+                                   "<b>2</b> River Plate"], _hd["cuenta"])
+        chequear("un renglón por cruce", _hd["filas"] == 3, _hd["filas"])
+        # Los dos que ganó River; el empate no marca a nadie.
+        chequear("con el que ganó cada uno resaltado", _hd["marcados"] == 2,
+                 _hd["marcados"])
+        chequear("y cada cruce lleva a su partido", _hd["linkea"], _hd)
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

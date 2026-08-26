@@ -1992,6 +1992,15 @@ def api_match(q):
     # el criterio correcto, porque son justo los que a alguien le importan.
     anotar_formacion(liga_id, gid, g)
 
+    # Cómo les fue las veces anteriores. Sale de la tabla de partidos con
+    # una consulta indexada, así que no cuesta ni un pedido ni un
+    # milisegundo que se note.
+    try:
+        out["historial"] = historial_entre(out["home"].get("id"),
+                                           out["away"].get("id"), gid)
+    except Exception:
+        out["historial"] = None
+
     # colores del club, para pintar la cancha
     for key, lado in (("home", out["home"]), ("away", out["away"])):
         c = COLORES.get(lado.get("canon") or "")
@@ -3519,7 +3528,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · la historia vieja se completa sola: el recolector llena las formaciones que faltan en sus ratos libres, de a cinco"
+VERSION_APP = "2026-08-25 · la página del partido dice cómo les fue las veces anteriores, en cualquier torneo"
 
 
 def reparar_recorridos():
@@ -6039,6 +6048,51 @@ def rellenar_formaciones(cuantos=POR_VUELTA):
 
 
 _LIGA_DE_COMP = {}
+
+
+def historial_entre(a, b, excluir=None, tope=6):
+    """
+    Cómo les fue las veces anteriores que se cruzaron, en cualquier torneo.
+
+    Es la primera pregunta que contesta la tabla de partidos y que con los
+    bloques no se podía hacer: los cruces entre dos equipos están repartidos
+    entre los dieciséis calendarios y hay que atravesarlos todos.
+
+    El resumen va desde el lado del local de HOY, que es como uno lo lee
+    parado en esta página: "ganó 3, empataron 1, ganó 2". Da igual quién
+    fue local en cada uno de esos partidos.
+    """
+    if not a or not b:
+        return None
+    # Se piden algunos de más porque los que todavía no se jugaron y el
+    # partido de hoy se descartan después.
+    crudos = tablas.entre(a, b, tope + 6)
+    filas, gano_a, empates, gano_b = [], 0, 0, 0
+    for m in crudos:
+        if m.get("gh") is None or str(m.get("id")) == str(excluir or ""):
+            continue
+        # Quién ganó, mirado desde `a`, sea que jugó de local o de visitante.
+        casa = m.get("local_id") == a
+        gf, gc = (m["gh"], m["ga"]) if casa else (m["ga"], m["gh"])
+        if gf > gc:
+            gano_a += 1
+        elif gf == gc:
+            empates += 1
+        else:
+            gano_b += 1
+        if len(filas) < tope:
+            filas.append({"id": m["id"], "dia": m.get("dia"),
+                          "liga": m.get("liga"),
+                          "ligaNombre": (LIGAS.get(m.get("liga")) or {}).get("nombre"),
+                          "local": m.get("local"), "visita": m.get("visita"),
+                          "gh": m["gh"], "ga": m["ga"],
+                          "localId": m.get("local_id"),
+                          "visitaId": m.get("visita_id")})
+    if not filas:
+        return None
+    return {"partidos": filas,
+            "gano": gano_a, "empates": empates, "perdio": gano_b,
+            "jugados": gano_a + empates + gano_b}
 
 
 def liga_de_comp(comp):

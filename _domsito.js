@@ -9,6 +9,13 @@ function nodo(tag){
       contains(c){return this._s.has(c);}},
     get innerHTML(){return this._html;}, set innerHTML(v){this._html=String(v);},
     textContent:'', value:'', offsetHeight:56,
+    /* Agregar sin rehacer lo que ya está. La página lo usa para colgar el
+       historial abajo de la tabla del torneo sin volver a dibujarla. Sólo
+       se implementan las dos posiciones que se usan. */
+    insertAdjacentHTML(donde,html){
+      if(donde==='beforeend') this._html += String(html);
+      else if(donde==='afterbegin') this._html = String(html) + this._html;
+    },
     setAttribute(k,v){this.attrs[k]=v;}, getAttribute(k){return this.attrs[k];},
     appendChild(){}, remove(){}, blur(){}, focus(){},
     addEventListener(){}, querySelector(){return null;}, querySelectorAll(){return [];},

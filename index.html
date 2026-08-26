@@ -293,6 +293,36 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .cuadro-et{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);
   font-weight:700;margin:12px 0 6px}
 .cuadro-et:first-child{margin-top:0}
+/* ── El historial entre dos equipos, al costado del partido ──
+   La barra es lo que se lee de un vistazo: tres pedazos proporcionales a
+   ganados, empatados y perdidos, mirados desde el local de hoy. */
+.hist{padding:14px 14px 12px;border-top:1px solid var(--line)}
+.hist-barra{display:flex;height:6px;border-radius:3px;overflow:hidden;
+  background:var(--line);margin:2px 0 7px}
+.hist-barra i{display:block;height:100%}
+.hist-barra .g{background:var(--acc)}
+.hist-barra .e{background:var(--txt3)}
+.hist-barra .p{background:var(--red,#e5484d)}
+.hist-cuenta{display:flex;justify-content:space-between;gap:8px;
+  font-size:11px;color:var(--txt2);margin-bottom:9px}
+.hist-cuenta b{color:var(--txt);font-weight:800}
+.hist-cuenta span{min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.hist-cuenta span:nth-child(2){text-align:center}
+.hist-cuenta span:last-child{text-align:right}
+.hist-p{display:grid;grid-template-columns:40px 1fr 34px 1fr;align-items:center;
+  gap:6px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
+  border-top:1px solid var(--line)}
+.hist-p .cuando{color:var(--txt3);font-size:10px}
+.hist-p .eq{min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;color:var(--txt2)}
+.hist-p .eq.der{text-align:right}
+.hist-p .eq.gano{color:var(--txt);font-weight:700}
+.hist-p b{text-align:center;font-variant-numeric:tabular-nums}
+a.hist-p:hover{color:var(--acc)}
+.hist-pie{font-size:10px;color:var(--txt3);margin-top:8px;
+  text-transform:uppercase;letter-spacing:.5px}
+
 /* Las mismas cajas, pero apiladas en una columna: así entran al costado de
    la página de un partido, donde el cuadro entero no tiene lugar. */
 .brk-lado{position:static;display:block;margin:0 0 6px;color:inherit;
@@ -3816,7 +3846,13 @@ const App=(()=>{
     mData=dato;
     if(!mBase) mBase=(dato&&dato.id)?dato:{home:{},away:{}};
     drawModal(current(),false);
-    if(comoPagina){ medirCabecera(); panelDelTorneo(current()); }
+    if(comoPagina){
+      medirCabecera();
+      // El historial va después y aparte: si la tabla del torneo tarda o
+      // falla, igual se ve, y al revés también.
+      panelDelTorneo(current()).then(()=>historialAlCostado(current()),
+                                     ()=>historialAlCostado(current()));
+    }
   }
 
   /* Cuánto mide el marcador, para que las pestañas se peguen justo abajo.
@@ -4013,6 +4049,47 @@ const App=(()=>{
       return `<${r?'a':'div'} class="brk brk-lado${suya?' brk-suya':''}"${
         r?` href="${esc(Rutas.url(r))}" data-ir`:''}>${filas}</${r?'a':'div'}>`;
     }).join('');
+  }
+
+  /* Cómo les fue las veces anteriores, en cualquier torneo.
+
+     Es lo primero que uno quiere saber antes de un clásico, y hasta ahora
+     no se podía: los cruces entre dos equipos están repartidos entre los
+     dieciséis calendarios. Con los partidos en una tabla, es una consulta.
+
+     El resumen se lee parado en esta página: el primer número es del que
+     hoy es local, aunque en aquellos partidos haya sido visitante. */
+  function historialAlCostado(m){
+    const el=$('#right'), h=m&&m.historial;
+    if(!el||!h||!h.partidos||!h.partidos.length) return;
+    const local=m.home.canon||m.home.name, visita=m.away.canon||m.away.name;
+    const barra=(n,clase)=>h.jugados
+      ? `<i class="${clase}" style="width:${100*n/h.jugados}%"></i>` : '';
+    el.insertAdjacentHTML('beforeend', `
+      <div class="hist">
+        <div class="cuadro-et">Cómo les fue · ${h.jugados} ${
+          h.jugados===1?'partido':'partidos'}</div>
+        <div class="hist-barra">${barra(h.gano,'g')}${barra(h.empates,'e')}${barra(h.perdio,'p')}</div>
+        <div class="hist-cuenta">
+          <span><b>${h.gano}</b> ${esc(local)}</span>
+          <span><b>${h.empates}</b> empates</span>
+          <span><b>${h.perdio}</b> ${esc(visita)}</span>
+        </div>
+        ${h.partidos.map(p=>{
+          const r=rutaPartido({liveId:p.id, home:{canon:p.local},
+                               away:{canon:p.visita}});
+          const gano=p.gh>p.ga?'l':p.gh<p.ga?'v':'';
+          return `<${r?'a':'div'} class="hist-p"${r
+              ? ` href="${esc(Rutas.url(r))}" data-ir`:''}>
+            <span class="cuando">${esc((p.dia||'').split('-').reverse()
+                                        .slice(0,2).join('/'))}</span>
+            <span class="eq ${gano==='l'?'gano':''}">${esc(p.local)}</span>
+            <b>${p.gh}-${p.ga}</b>
+            <span class="eq der ${gano==='v'?'gano':''}">${esc(p.visita)}</span>
+          </${r?'a':'div'}>`;
+        }).join('')}
+        <div class="hist-pie">En todos los torneos</div>
+      </div>`);
   }
 
   // comparar nombres de club sin volverse loco con acentos y paréntesis

@@ -240,12 +240,8 @@ ALIASES = {
     "velez sarsfield": ["velez"],
     "argentinos juniors": ["argentinos jrs", "argentinos"],
     "rosario central": ["central"],
-    # Ojo: "estudiantes" a secas NO va acá. Estaba, y hacía que los 37
-    # partidos de Estudiantes de Buenos Aires en la Primera Nacional se
-    # contaran como del de La Plata —que ni siquiera juega esa
-    # categoría—. Tampoco alcanzaría con mirar la competencia: en la Copa
-    # Argentina juegan los dos, más el de Río Cuarto. Un nombre que puede
-    # ser tres clubes no puede resolver a ninguno.
+    # Ojo: "estudiantes" a secas NO va acá, va en ALIAS_DE_PRIMERA. Ver el
+    # comentario de allá abajo, que explica por qué depende del torneo.
     "estudiantes (lp)": ["estudiantes de la plata", "estudiantes la plata"],
     "talleres (c)": ["talleres de cordoba", "talleres cordoba", "talleres"],
     "independiente rivadavia": ["independiente riv", "ind rivadavia"],
@@ -434,6 +430,25 @@ for _n in ZONA_B:
     ZONE_OF[_n] = "B"
 
 
+# Nombres que adentro de la Liga Profesional significan un club y afuera
+# no significan nada.
+#
+# "Estudiantes" es el caso. AFA lo nombra así, a secas, en el fixture y en
+# la tabla de Primera —donde el otro se llama "Estudiantes RC"— así que ahí
+# no hay duda. Pero en la Primera Nacional ese mismo nombre es el de Buenos
+# Aires, que sí juega esa categoría mientras que el de La Plata no.
+#
+# Lo saqué del índice general y rompí Primera entera: la tabla quedó con
+# catorce equipos y la ficha del club sin sus partidos. La lección es que
+# no es un alias equivocado, es un alias que depende del torneo.
+#
+# Van acá y no en ALIASES porque el índice general lo usa todo el sitio;
+# esto se consulta sólo cuando el juego de clubes está cerrado.
+ALIAS_DE_PRIMERA = {
+    "estudiantes": "Estudiantes (LP)",
+}
+
+
 def match_team(name, difusa=True):
     """
     Nombre canónico de un club, o None si no lo reconocemos.
@@ -478,6 +493,11 @@ def match_team(name, difusa=True):
     n = norm(name)
     if n in NAME_INDEX:
         return NAME_INDEX[n]
+    # Los nombres que sólo significan algo adentro de Primera. Van antes
+    # del parecido porque el parecido no los puede resolver: "estudiantes"
+    # apunta a dos clubes del índice y por eso se rinde.
+    if difusa and n in ALIAS_DE_PRIMERA:
+        return ALIAS_DE_PRIMERA[n]
     # El nombre que llega es más corto que el nuestro: una abreviatura. Se
     # exige que apunte a un solo club: "gimnasia" da dos y no resuelve.
     cortos = {v for k, v in NAME_INDEX.items() if k.startswith(n)}
@@ -3863,7 +3883,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · \"Estudiantes\" a secas ya no es Estudiantes de La Plata: en la Primera Nacional es el de Buenos Aires, y eran 38 partidos a punto de ir al club equivocado"
+VERSION_APP = "2026-08-27 · Vuelve Estudiantes a la tabla de Primera: AFA lo nombra a secas y sacarlo del índice lo borró del fixture, de la tabla y de su ficha. No era un alias equivocado, era uno que depende del torneo"
 
 
 def reparar_recorridos():

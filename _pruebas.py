@@ -6242,11 +6242,44 @@ chequear("y una abreviatura ambigua no elige por su cuenta",
 # No alcanzaba con mirar la competencia: en la Copa Argentina juegan los
 # tres Estudiantes. Un nombre que puede ser tres clubes no puede resolver
 # a ninguno, ni siquiera adentro de Primera.
-chequear("«Estudiantes» a secas no resuelve a ningún club",
-         server.match_team("Estudiantes", False) is None
-         and server.match_team("Estudiantes", True) is None,
-         (server.match_team("Estudiantes", True),
-          server.match_team("Estudiantes", False)))
+# Pero ojo con la primera versión de este arreglo, que sacó "estudiantes"
+# del índice general y ROMPIÓ PRIMERA ENTERA: AFA nombra así, a secas, al
+# de La Plata en el fixture y en la tabla, y la Zona A quedó con catorce
+# equipos y la ficha del club sin ninguno de sus partidos.
+#
+# O sea que no es un alias equivocado: es un alias que depende del torneo.
+# Adentro de Primera significa La Plata —el otro se llama "Estudiantes
+# RC"— y afuera no significa nada.
+chequear("«Estudiantes» a secas es La Plata adentro de Primera",
+         server.match_team("Estudiantes", True) == "Estudiantes (LP)",
+         server.match_team("Estudiantes", True))
+chequear("y fuera de Primera no resuelve a ningún club",
+         server.match_team("Estudiantes", False) is None,
+         server.match_team("Estudiantes", False))
+# Y los dos Estudiantes de Primera no se pisan entre sí.
+chequear("y los dos Estudiantes de Primera no se pisan",
+         server.match_team("Estudiantes RC", True) == "Estudiantes (RC)"
+         and server.match_team("Estudiantes de La Plata", True)
+         == "Estudiantes (LP)")
+# Y la prueba que habría atajado el desastre, que no es sobre nombres sino
+# sobre la tabla: AFA manda las filas con el nombre a secas, y `df_rows`
+# DESCARTA la fila del club que no reconoce. Por eso sacar el alias no dio
+# un nombre raro: hizo desaparecer a Estudiantes de la tabla, del fixture y
+# de su propia ficha, y la Zona A quedó con catorce equipos.
+_FILA_AFA = [
+    ["1", "", "Estudiantes", "13", "6", "5", "2", "+3"],
+    ["2", "", "Estudiantes RC", "12", "6", "9", "5", "+4"],
+    ["3", "", "Boca Juniors", "11", "6", "8", "8", "0"],
+]
+_leidas = server.df_rows(_FILA_AFA)
+chequear("ninguna fila de la tabla de AFA se pierde por el nombre",
+         len(_leidas) == len(_FILA_AFA), [f[1] for f in _leidas])
+chequear("y cada una va al club que corresponde",
+         [f[0] for f in _leidas] == ["Estudiantes (LP)", "Estudiantes (RC)",
+                                     "Boca Juniors"], [f[0] for f in _leidas])
+chequear("el parser de AFA lee Primera con el juego cerrado",
+         "canon = match_team(row[idx])" in _SRV
+         and "if difusa and n in ALIAS_DE_PRIMERA:" in _SRV)
 chequear("pero los tres Estudiantes con nombre completo sí",
          all(server.match_team(n, False) == c for n, c in
              [("Estudiantes de La Plata", "Estudiantes (LP)"),

@@ -166,6 +166,22 @@ def _lejos(a, b):
     return sum(abs(x - y) for x, y in zip(a, b))
 
 
+# Cuánto tiene que separarse un color del gris para contar como color. Por
+# debajo de esto es blanco, negro o gris: puede ser el color de un club
+# —Central Córdoba, Riestra— pero también es lo que usan todos los escudos
+# para el contorno y las letras.
+GRIS = 45
+# Y cuánto de lo que ocupa el gris tiene que llegar a ocupar un color para
+# ganarle el lugar. Con esto la banda roja de River le gana al filete negro
+# del borde, sin que el negro de Newell's o el de Central Córdoba pierdan
+# el suyo: ahí el negro es el club, no el contorno.
+VENTAJA_DEL_COLOR = 0.45
+
+
+def _es_gris(c):
+    return max(c) - min(c) < GRIS
+
+
 def colores_de(png, minimo=PARTE_MINIMA):
     """
     Los dos colores dominantes de un escudo.
@@ -215,14 +231,34 @@ def colores_de(png, minimo=PARTE_MINIMA):
 
     principal = medio(orden[0])
     parte = orden[0][0] / total
-    acento, parte_acento = principal, 0.0
+    # Todos los candidatos a segundo color: bien distintos del primero y
+    # que ocupen algo. De acá para abajo son detalles del dibujo.
+    candidatos = []
     for c in orden[1:]:
         if c[0] / total < minimo:
-            break                       # de acá para abajo son detalles
+            break
         cand = medio(c)
         if _lejos(cand, principal) >= DISTANCIA_MINIMA:
-            acento, parte_acento = cand, c[0] / total
-            break
+            candidatos.append((cand, c[0] / total))
+
+    acento, parte_acento = principal, 0.0
+    if candidatos:
+        acento, parte_acento = candidatos[0]
+        # Si el que ganó es un gris —negro, blanco, plateado— puede ser el
+        # contorno del escudo y no el color del club. Le cede el lugar al
+        # primer color de verdad que ocupe una parte parecida.
+        #
+        # Esto salió de mirar los treinta de Primera: a River el filete
+        # negro del borde le ganaba a la banda roja. Con la condición de
+        # que el color ocupe casi tanto como el gris, el negro de Newell's
+        # y el de Central Córdoba se quedan donde estaban, porque ahí el
+        # negro ocupa mucho más que cualquier otro color.
+        if _es_gris(acento):
+            for cand, parte_c in candidatos[1:]:
+                if (not _es_gris(cand)
+                        and parte_c >= parte_acento * VENTAJA_DEL_COLOR):
+                    acento, parte_acento = cand, parte_c
+                    break
 
     hex_ = lambda c: "#%02x%02x%02x" % c
     return {"principal": hex_(principal), "acento": hex_(acento),

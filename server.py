@@ -3796,7 +3796,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · Los colores de un club se pueden sacar de su escudo, sin pedirle nada a nadie: es lo que hace posible expandir el sitio a las otras trece competencias"
+VERSION_APP = "2026-08-26 · Los colores del escudo, ahora sin que el filete del contorno le gane al color del club, y la comparación justa con los clubes de un solo color"
 
 
 def reparar_recorridos():
@@ -7843,11 +7843,23 @@ def api_colores(q):
                        + _dif_color(a_mano[1], del_escudo[1]))
             cruzado = (_dif_color(a_mano[0], del_escudo[1])
                        + _dif_color(a_mano[1], del_escudo[0]))
+            distancia = min(derecho, cruzado)
+            # Los clubes de un solo color están cargados con el color
+            # repetido —Independiente rojo y rojo, Lanús granate y
+            # granate— y así la cuenta los castigaba siempre: el escudo
+            # devuelve el segundo color que la camiseta sí tiene y eso
+            # sumaba una distancia enorme aunque el principal estuviera
+            # perfecto. Cuando la lista repite, se mira sólo ese color.
+            unico = _dif_color(a_mano[0], a_mano[1]) <= CERCA
+            if unico:
+                distancia = min(_dif_color(a_mano[0], del_escudo[0]),
+                                _dif_color(a_mano[0], del_escudo[1]))
             fila.update(delEscudo=list(del_escudo),
                         parte=[sale["parte"], sale["parteAcento"]],
                         dado_vuelta=cruzado < derecho,
-                        distancia=min(derecho, cruzado),
-                        pega=min(derecho, cruzado) <= CERCA * 2)
+                        unSoloColor=unico,
+                        distancia=distancia,
+                        pega=distancia <= (CERCA if unico else CERCA * 2))
         filas.append(fila)
     con = [f for f in filas if f["delEscudo"]]
     return {"filas": filas, "total": len(filas), "leidos": len(con),

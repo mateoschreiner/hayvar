@@ -6249,8 +6249,10 @@ def _escudo(pinta, n=64):
     return _armar_png(n, n, 6, filas, 0)
 
 
-def _dentro(x, y, n=64):
-    dx, dy = (x - n / 2) / (n / 2 * .86), (y - n / 2) / (n / 2 * .94)
+def _dentro(x, y, k=1.0, n=64):
+    """Si el punto cae adentro del óvalo del escudo. `k` lo achica, que es
+    como se dibuja un contorno: lo de afuera del óvalo chico es el filete."""
+    dx, dy = (x - n / 2) / (n / 2 * .86 * k), (y - n / 2) / (n / 2 * .94 * k)
     return dx * dx + dy * dy <= 1
 
 
@@ -6290,6 +6292,45 @@ chequear("el fondo transparente no cuenta como color",
          _c and _c["principal"] == "#c81e28" and _c["parte"] == 1.0, _c)
 chequear("y un escudo vacío devuelve nada, no negro",
          escudos.colores_de(_escudo(lambda x, y: (0, 0, 0, 0), 8)) is None)
+
+# El contorno del escudo contra el color del club. Casi todos los escudos
+# tienen filete negro y letras oscuras, y eso puede ocupar más que el color
+# que la gente reconoce: mirando los treinta de Primera, a River el filete
+# le ganaba a la banda roja. Pero el negro de Newell's o el de Central
+# Córdoba SÍ son el club, así que no se puede simplemente descartar el
+# gris.
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else ((17, 17, 17, 255) if not _dentro(x, y, 0.80)
+          else ((200, 30, 50) if 20 <= (x + y * 0.6) <= 44
+                else (245, 245, 245)) + (255,))))
+chequear("el filete oscuro no le gana al color del club",
+         _c and _c["principal"] == "#f5f5f5" and _c["acento"].startswith("#c"),
+         _c)
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else (((17, 17, 17) if x < 32 else (200, 30, 50)) + (255,))))
+chequear("pero el negro que ES el club se queda",
+         _c and {_c["principal"], _c["acento"]} == {"#111111", "#c81e32"}, _c)
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else (((17, 17, 17) if (x // 8) % 2 == 0 else (245, 245, 245)) + (255,))))
+chequear("y un escudo sin ningún color no inventa uno",
+         _c and {_c["principal"], _c["acento"]} == {"#111111", "#f5f5f5"}, _c)
+_c = escudos.colores_de(_escudo(
+    lambda x, y: (0, 0, 0, 0) if not _dentro(x, y)
+    else ((17, 17, 17, 255) if not _dentro(x, y, 0.55)
+          else ((200, 30, 50) if x == 32 else (245, 245, 245)) + (255,))))
+chequear("y un color mínimo no desplaza al gris que ocupa mucho",
+         _c and not _c["acento"].startswith("#c8"), _c)
+
+# Los clubes cargados con el color repetido —Independiente rojo y rojo—
+# estaban castigados siempre en la comparación: el escudo devuelve el
+# segundo color que la camiseta sí tiene y eso sumaba una distancia enorme
+# aunque el principal estuviera perfecto.
+chequear("al club de un solo color se le mira sólo ese color",
+         "unico = _dif_color(a_mano[0], a_mano[1]) <= CERCA" in _SRV
+         and "if unico:" in _SRV)
 
 # La lista cargada a mano manda siempre: esto es un respaldo para los
 # clubes que no están, no un reemplazo de lo que ya se revisó.

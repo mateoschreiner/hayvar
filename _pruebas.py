@@ -3471,8 +3471,12 @@ print("\n── el filtro de \"en vivo\" en la portada ──")
 # Apretar "en vivo" en la portada llamaba al dibujante de un torneo, que
 # agrupa por zonas: quedaban los partidos correctos con los títulos de otra
 # cosa —"Interzonal" arriba de la Europa League—.
+# El arreglo de entonces cubrió la portada y dejó afuera las otras trece
+# competencias, donde pasaba lo mismo. Ahora la elección vive en una sola
+# función, que es lo que evita que se vuelva a arreglar a medias.
 chequear("cada pantalla usa su propio dibujante",
-         "if(S.liga==='home') pintarPortada(); else drawMatches();" in HTML)
+         "onlyLive(){ S.onlyLive=!S.onlyLive; repintarPartidos(); }" in HTML
+         and "function repintarPartidos(){" in HTML)
 if _sh.which("node"):
     _i = HTML.index("  function pintarPortada(){")
     _j = HTML.index("  async function loadHome(){")
@@ -6140,6 +6144,63 @@ chequear("es_tecnico reconoce las formas que manda la fuente",
                                             "Coach", "Manager"))
          and not any(server.es_tecnico(x) for x in ("Delantero", "Arquero",
                                                     "", None)))
+
+print("\n── el botón de sólo en vivo, en todas las pantallas ──")
+#
+# Hay tres dibujantes —la portada agrupa por torneo, la Liga Profesional
+# por zonas, y las otras trece por fecha o etapa— y el botón conocía dos.
+# En cualquier competencia que no fuera la Liga Profesional redibujaba con
+# el molde de la liga: se perdían las etapas de la copa y aparecía el
+# rótulo "Fecha de clásicos interzonales", que ahí no existe. Apagarlo no
+# lo arreglaba, porque volvía a llamar al mismo dibujante.
+chequear("la elección del dibujante vive en un solo lugar",
+         "function repintarPartidos(){" in HTML
+         and "onlyLive(){ S.onlyLive=!S.onlyLive; repintarPartidos(); }" in HTML)
+chequear("y contempla las tres pantallas",
+         "if(S.liga==='home') return pintarPortada();" in HTML
+         and "if(S.liga==='lpf') return drawMatches();" in HTML
+         and "return pintarFecha();" in HTML)
+# Y el filtro tiene que existir fuera de la Liga Profesional: antes el
+# botón se encendía y no filtraba nada, porque `pintarFecha` ni miraba
+# `S.onlyLive`.
+chequear("el filtro de en vivo existe fuera de la liga",
+         "const dela=S.onlyLive?todos.filter(m=>m.status==='LIVE'):todos;" in HTML
+         and "if(S.onlyLive&&!dela.length){" in HTML)
+# Y el rótulo de la liga no puede aparecer en el dibujante de las demás:
+# es lo que se veía en la foto.
+# Se busca el rótulo tal como se escribe en la plantilla —entre comillas—
+# y no la frase suelta: el comentario que explica el bug la contiene, y
+# buscarla a secas se encontraba a sí misma.
+_pf = HTML[HTML.find("  function pintarFecha(){"):
+           HTML.find("  async function loadOtra()")]
+chequear("y el rótulo de la liga no se cuela en las otras competencias",
+         "'Fecha de clásicos interzonales'" not in _pf and len(_pf) > 500,
+         len(_pf))
+
+if _sh.which("node"):
+    # Y que despache de verdad, no que el texto esté escrito. Se saca la
+    # función sola y se le ponen tres dibujantes de mentira: lo único que
+    # importa es a cuál llama en cada pantalla.
+    _i = HTML.find("  function repintarPartidos(){")
+    _j = HTML.find("  function pintarFecha(){")
+    _js = ("let S={liga:null}; const llamo=[];\n"
+           "const pintarPortada=()=>llamo.push('portada');\n"
+           "const drawMatches=()=>llamo.push('liga');\n"
+           "const pintarFecha=()=>llamo.push('fecha');\n"
+           + HTML[_i:_j] +
+           "for (const l of ['home','lpf','ca','laliga','lib','nacional']){"
+           "  S.liga=l; repintarPartidos(); }\n"
+           "console.log(JSON.stringify(llamo));")
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_js)
+        _rr = _f.name
+    _p = _sub.run(["node", _rr], capture_output=True, text=True, timeout=30)
+    os.unlink(_rr)
+    _quien = json.loads(_p.stdout) if _p.returncode == 0 and _p.stdout else None
+    chequear("cada pantalla llama al dibujante que le toca",
+             _quien == ["portada", "liga", "fecha", "fecha", "fecha", "fecha"],
+             _quien or _p.stderr[:300])
 
 print("\n── los colores que salen del escudo ──")
 #

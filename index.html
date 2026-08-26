@@ -5305,11 +5305,45 @@ const App=(()=>{
   }
 
   // agrupa los partidos de la fecha por zona (sirve para cualquier liga)
+  /* Redibujar la lista de partidos con el molde de la pantalla en la que
+     estás.
+
+     Hay tres dibujantes y no uno: la portada agrupa por torneo, la Liga
+     Profesional por zonas, y todo lo demás por fecha o por etapa. El botón
+     de "sólo en vivo" conocía dos —se había arreglado el caso de la
+     portada y quedó sin arreglar el de las otras trece competencias— así
+     que en LaLiga, en la Copa Argentina o en la Libertadores redibujaba
+     con el molde de la liga: se perdían las etapas y aparecía el rótulo
+     "Fecha de clásicos interzonales", que ahí no existe.
+
+     Ahora la elección del dibujante vive en un solo lugar. Si mañana se
+     agrega una cuarta pantalla, se agrega acá y no en cada botón que
+     redibuje. */
+  function repintarPartidos(){
+    if(S.liga==='home') return pintarPortada();
+    if(S.liga==='lpf') return drawMatches();
+    return pintarFecha();
+  }
+
   function pintarFecha(){
     // con fases, la fecha 3 de la reválida y la 3 de la primera fase son
     // distintas: hay que filtrar por las dos cosas
-    const dela=S.games.filter(m=>String(m.round)===String(S.round)
+    const todos=S.games.filter(m=>String(m.round)===String(S.round)
       && (!S.fasesLiga || S.fase==null || m.fase===S.fase));
+    /* Y el botón de arriba, que acá no existía: el filtro de "sólo en
+       vivo" estaba escrito nada más que en el dibujante de la Liga
+       Profesional, así que en las demás competencias apretarlo no hacía
+       nada —y peor, redibujaba con el molde de la liga y le pegaba
+       "Fecha de clásicos interzonales" a una etapa de copa—. */
+    const dela=S.onlyLive?todos.filter(m=>m.status==='LIVE'):todos;
+    const enVivo=todos.filter(m=>m.status==='LIVE').length;
+    if($('#liveCnt')) $('#liveCnt').textContent=enVivo;
+    if($('#liveBtn')) $('#liveBtn').classList.toggle('on',S.onlyLive||enVivo>0);
+    if(S.onlyLive&&!dela.length){
+      $('#matches').innerHTML='<div class="empty"><span class="big">⚽</span>'
+        +'No hay partidos en vivo en este momento.</div>';
+      return;
+    }
     const etapa=S.etapas&&S.etapas[S.round-1];
     /* Una etapa de copa existe antes de tener partidos: los cuartos se
        sortean cuando terminan los octavos. En vez de dejarla vacía se
@@ -6639,11 +6673,7 @@ const App=(()=>{
          pestañas se marcaban y no pasaba nada más. */
       if(S.modal&&S.modal.t==='partido') return drawRight();
       S.liga==='lpf'?drawRight():drawOtra(); },
-    // Cada pantalla tiene su dibujante: la portada agrupa por torneo y un
-    // torneo agrupa por zonas. Llamar siempre al de torneo dejaba la
-    // portada con títulos de Zona A y Interzonal encima de la Europa League.
-    onlyLive(){ S.onlyLive=!S.onlyLive;
-      if(S.liga==='home') pintarPortada(); else drawMatches(); },
+    onlyLive(){ S.onlyLive=!S.onlyLive; repintarPartidos(); },
     mtab(t){ mTab=t; drawModal(current(),false); },
     // Los partidos que 365scores no tiene no se pueden abrir aparte: no
     // hay nada que mostrar del otro lado del link. Ésos siguen siendo un

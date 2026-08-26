@@ -3796,7 +3796,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · Los colores del escudo, ahora sin que el filete del contorno le gane al color del club, y la comparación justa con los clubes de un solo color"
+VERSION_APP = "2026-08-26 · El botón de en vivo anda en todas las competencias, no sólo en la Liga Profesional: antes las dejaba con el molde de la liga y con un rótulo que ahí no existe"
 
 
 def reparar_recorridos():

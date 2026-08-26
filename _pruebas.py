@@ -2319,7 +2319,8 @@ print("\n── las puertas de servicio están cerradas ──")
 chequear("lo que borra o gasta está en la lista de privadas",
          server.PRIVADAS == {"/api/recorrido", "/api/raw", "/api/contenido",
                              "/api/diagnostico", "/api/tiempos",
-                             "/api/base", "/api/visitas", "/admin"},
+                             "/api/base", "/api/visitas", "/api/colores",
+                             "/admin"},
          sorted(server.PRIVADAS))
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")

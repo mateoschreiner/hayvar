@@ -150,6 +150,7 @@ PRIVADAS = {
     "/api/tiempos",       # cuánto tarda cada cosa y cuánto tráfico hay
     "/api/base",          # dónde vive la base, cuánto pesa y cuánto tiene
     "/api/visitas",       # quién entró, de dónde y qué miró
+    "/api/colores",       # baja los treinta escudos para comparar colores
     "/admin",             # la página que junta todo lo de arriba
 }
 # Ojo: /api/visita —sin la ese— NO va acá. Es la que usa la página para

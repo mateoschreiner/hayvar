@@ -460,18 +460,56 @@ function queOcupa(base){
 }
 
 /* ── armar todo ──────────────────────────────────────────────────────── */
+/* Los colores que salen del escudo contra los cargados a mano.
+
+   Va con las muestras al lado y no con los códigos: nadie puede decidir si
+   un color está bien leyendo "#0a2472". La pregunta que esta tabla
+   contesta es una sola —¿conviene sacarlos automáticamente en las otras
+   trece competencias?— y para eso hay que verlos. */
+function colores(c){
+  if(!c || !c.filas) return '<div class="vacio">No se pudo leer.</div>';
+  const muestra = (a, b) => `<span style="display:inline-flex;vertical-align:middle;
+    border-radius:4px;overflow:hidden;border:1px solid rgba(0,0,0,.25)">
+    <i style="display:block;width:22px;height:16px;background:${esc(a)}"></i>
+    <i style="display:block;width:22px;height:16px;background:${esc(b)}"></i></span>`;
+  const filas = c.filas.map(f => `<tr>
+    <td>${esc(f.club)}</td>
+    <td>${muestra(f.aMano[0], f.aMano[1])}</td>
+    <td>${f.delEscudo ? muestra(f.delEscudo[0], f.delEscudo[1])
+        : '<span class="vacio">no se pudo leer</span>'}</td>
+    <td style="text-align:right">${f.delEscudo
+        ? Math.round(f.parte[0]*100) + '% / ' + Math.round(f.parte[1]*100) + '%' : '—'}</td>
+    <td style="text-align:right">${f.distancia != null ? f.distancia : '—'}</td>
+    <td>${f.delEscudo ? (f.pega ? '✓ pega' : '✗ no pega')
+        + (f.dado_vuelta ? ' (al revés)' : '') : ''}</td></tr>`).join('');
+  const pc = c.leidos ? Math.round(c.pegan / c.leidos * 100) : 0;
+  return `<div class="tarj" style="margin-bottom:10px">
+      <b style="font-size:22px">${c.pegan} de ${c.leidos}</b>
+      <span>escudos que dan el color del club (${pc}%).
+      ${c.total - c.leidos} no se pudieron leer.</span></div>
+    <table><thead><tr><th>Club</th><th>A mano</th><th>Del escudo</th>
+      <th style="text-align:right">Cuánto ocupa</th>
+      <th style="text-align:right">Distancia</th><th></th></tr></thead>
+      <tbody>${filas}</tbody></table>
+    <footer>${esc(c.nota || '')} Acá no se cambia nada: los clubes de
+      Primera siguen usando los colores cargados a mano.</footer>`;
+}
+
 async function cargar(){
   $('#app').innerHTML = '<div class="vacio" style="padding:60px">Cargando…</div>';
-  let t, base, cont, rec, diag, vis;
+  let t, base, cont, rec, diag, vis, col;
   try{
     // se piden todas juntas: es la misma idea que usamos en la portada
-    [t, base, cont, rec, diag, vis] = await Promise.all([
+    [t, base, cont, rec, diag, vis, col] = await Promise.all([
       pedir('/api/tiempos'),
       pedir('/api/base'),
       pedir('/api/contenido'),
       pedir('/api/recorrido').catch(() => ({})),
       pedir('/api/diagnostico').catch(() => ({error: 'no contestó'})),
       pedir('/api/visitas').catch(() => ({})),
+      // La primera vez baja treinta escudos, así que puede tardar. Si no
+      // contesta, el resto del admin se muestra igual.
+      pedir('/api/colores').catch(() => null),
     ]);
   }catch(e){
     return pedirLlave(e.message === '403'
@@ -522,6 +560,8 @@ async function cargar(){
       ${contenido(cont)}
       <h2>Cuánto lleva bajado cada torneo</h2>
       ${recorrido(rec)}
+      ${col ? `<h2>¿Sirve sacar los colores del escudo?</h2>
+        ${colores(col)}` : ''}
       <footer>Base: ${esc(base.archivo || '—')}${
         base.sobrevive_al_deploy ? ' · sobrevive a las publicaciones' : ''}</footer>
     </main>`;

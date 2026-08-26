@@ -546,9 +546,11 @@ async function corregir(){
       Todavía no se tocó nada.</span></div>
     ${listaDeCopias(r.copias)}
     <table><thead><tr><th>Se le sacan a</th><th>Y pasan a</th>
+      <th>Competencia</th>
       <th style="text-align:right">Partidos</th></tr></thead><tbody>
     ${r.cambios.map(c => `<tr><td>${esc(c.leSacamosA)}</td>
       <td>${esc(c.club)}</td>
+      <td style="color:var(--txt2)">${esc(c.liga || '')}</td>
       <td style="text-align:right">${c.partidos}</td></tr>`).join('')}
     </tbody></table>
     <div style="padding:12px 14px">

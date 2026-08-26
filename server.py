@@ -3857,7 +3857,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · La corrección ahora compara lo que de verdad queda guardado: contaba ocho mil cambios donde el antes y el después eran el mismo nombre, y los de verdad quedaban perdidos en el medio"
+VERSION_APP = "2026-08-27 · La corrección dice de qué competencia es cada cambio: sin eso no se puede aprobar una fila como \"Estudiantes\", que en Primera es el de La Plata y en el ascenso puede ser otro"
 
 
 def reparar_recorridos():
@@ -8687,9 +8687,13 @@ def corregir_nombres(aplicar=False):
 
     # Un resumen por club, que es como se mira: "a Independiente le sacamos
     # 26 partidos que no eran suyos".
+    # El resumen lleva la competencia, y no es un adorno: "Estudiantes" es
+    # Estudiantes de La Plata en Primera y puede ser el de Buenos Aires en
+    # el ascenso. Sin saber de qué torneo son los partidos, la fila no se
+    # puede aprobar.
     resumen = {}
     for c in cambios:
-        k = (c["antes"], c["ahora"])
+        k = (c["antes"], c["ahora"], c["liga"])
         resumen[k] = resumen.get(k, 0) + 1
     return {
         "aplicado": bool(aplicar),
@@ -8697,8 +8701,9 @@ def corregir_nombres(aplicar=False):
         "calendarios": len(tocadas),
         "escritos": escritos,
         "cambios": sorted(
-            ({"leSacamosA": a, "club": n, "partidos": v}
-             for (a, n), v in resumen.items()),
+            ({"leSacamosA": a, "club": n, "partidos": v,
+              "liga": (LIGAS.get(g) or {}).get("nombre") or g}
+             for (a, n, g), v in resumen.items()),
             key=lambda x: -x["partidos"]),
         "nota": ("Se recalculó a qué club pertenece cada partido usando el "
                  "nombre que mandó la fuente, que siempre estuvo guardado. "

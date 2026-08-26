@@ -6329,6 +6329,12 @@ try:
     chequear("y ninguna fila dice lo mismo de los dos lados",
              all(c["leSacamosA"] != c["club"] for c in _antes["cambios"]),
              [c for c in _antes["cambios"] if c["leSacamosA"] == c["club"]])
+    # Y de qué competencia es cada cambio, que no es un adorno: "Estudiantes"
+    # es el de La Plata en Primera y puede ser el de Buenos Aires en el
+    # ascenso. Sin eso, la fila no se puede aprobar.
+    chequear("y dice de qué competencia es cada cambio",
+             _antes["cambios"][0].get("liga") == "Copa Argentina",
+             _antes["cambios"][0])
     with _alm.conexion() as _c:
         _sin_tocar = _c.execute(
             "SELECT local FROM partidos WHERE id=90001").fetchone()[0]

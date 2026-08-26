@@ -3529,7 +3529,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-25 · cómo les fue las veces anteriores, en la página del partido: cuenta también el que estás mirando si ya terminó"
+VERSION_APP = "2026-08-26 · la barra del historial con los colores de cada club, y en la ficha del club el historial contra cada rival de su torneo"
 
 
 def reparar_recorridos():
@@ -6121,6 +6121,63 @@ def historial_entre(a, b, excluir=None, tope=6, dia=None):
             "jugados": gano_a + empates + gano_b}
 
 
+def _sin_reventar(hacer, porDefecto=None):
+    """
+    Corre algo y, si falla, devuelve lo de siempre.
+
+    Es para lo que se agrega a una pantalla que ya funcionaba: que la parte
+    nueva no pueda llevarse puesta la ficha entera de un club.
+    """
+    try:
+        return hacer()
+    except Exception:
+        return porDefecto
+
+
+def historial_del_club(equipo, liga, tope_por_rival=10):
+    """
+    El historial de un club contra cada rival de su propio torneo.
+
+    Sólo su torneo, sin los internacionales: en la Libertadores se cruza
+    con equipos que no vuelve a ver, y eso no es un historial, es una
+    anécdota. Contra los de su liga se cruza dos veces por año, todos los
+    años, y ahí el número dice algo.
+
+    Todo se lee desde el lado del club: ganó, empató o perdió él, haya
+    jugado de local o de visitante.
+    """
+    if not equipo or not liga:
+        return []
+    rivales = {}
+    for m in tablas.contra_cada_rival(equipo, liga):
+        casa = m.get("local_id") == equipo
+        rid = m.get("visita_id") if casa else m.get("local_id")
+        rnombre = m.get("visita") if casa else m.get("local")
+        if not rid or rid == equipo:
+            continue
+        gf, gc = (m["gh"], m["ga"]) if casa else (m["ga"], m["gh"])
+        r = rivales.setdefault(rid, {
+            "id": rid, "rival": rnombre, "pj": 0, "g": 0, "e": 0, "p": 0,
+            "gf": 0, "gc": 0, "partidos": [],
+            # Los rivales son de la misma liga, así que sus colores están
+            # cargados: la barra de cada fila se pinta como en el partido.
+            "colores": list(COLORES.get(rnombre) or ()) or None})
+        r["pj"] += 1
+        r["gf"] += gf
+        r["gc"] += gc
+        r["g" if gf > gc else "e" if gf == gc else "p"] += 1
+        if len(r["partidos"]) < tope_por_rival:
+            r["partidos"].append({
+                "id": m["id"], "dia": m.get("dia"), "ronda": m.get("ronda"),
+                "temporada": m.get("temporada"),
+                "local": m.get("local"), "visita": m.get("visita"),
+                "gh": m["gh"], "ga": m["ga"], "casa": casa})
+    # De los que más se jugaron a los que menos, y a igualdad por nombre:
+    # los clásicos de toda la vida arriba y los recién ascendidos abajo.
+    return sorted(rivales.values(),
+                  key=lambda r: (-r["pj"], norm(r["rival"])))
+
+
 def liga_de_comp(comp):
     """
     De qué torneo es una competencia de 365scores, y si es la principal.
@@ -7824,6 +7881,12 @@ def armar_club_info(canon):
         "accent": colores[1] if colores else None,
         "var": "#111111" if canon in VAR_NEGRO else (colores[1] if colores else None),
         "info": ficha,
+        # El historial contra cada rival de su propio torneo. Sale de la
+        # tabla de partidos con dos consultas indexadas, así que no cuesta
+        # ni un pedido a la fuente ni una espera.
+        "historial": _sin_reventar(
+            lambda: historial_del_club(tablas.equipo_id(canon, "lpf"), "lpf"),
+            []),
         "plantel": plantel_de(canon),
         "partidos": api_club({"name": [canon]}),
         "sitio": ficha.get("sitio") or SITIOS.get(canon),

@@ -6,6 +6,7 @@ No pega contra 365scores: las respuestas de la fuente se simulan. Lo que
 prueba es lo nuestro —cómo se ordena, se filtra y se cuenta— que es donde
 estuvieron todos los errores.
 """
+import itertools
 import json, os, random, re, sys
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -4878,6 +4879,221 @@ App.init();
         # Y no se pega de nuevo encima del que ya estaba.
         chequear("y queda una sola copia", _tb2["copias"] == 1, _tb2["copias"])
         chequear("con la tabla nueva arriba", _tb2["sigueLaTabla"], _tb2)
+
+print("\n── los colores de la barra ──")
+# Cada pedazo del color de su club. Tiene dos trampas: hay clubes con el
+# principal casi blanco —Argentinos— que sobre la tarjeta blanca
+# desaparecen, y hay pares con colores parecidos —dos verdes— donde la
+# barra no dice nada y conviene el azul y rojo de siempre.
+if _sh.which("node"):
+    _frag = HTML[HTML.index("  const _rgb=c=>{"):
+                 HTML.index("  function historialAlCostado(m){")]
+    _pares = json.dumps([[a, list(server.COLORES[a]), b, list(server.COLORES[b])]
+                         for a, b in itertools.combinations(
+                             sorted(server.COLORES), 2)])
+    _jc = ("const esc=s=>String(s==null?'':s);\n" + _frag + """
+let conColor=0, sinColor=0, seePierden=0;
+for(const [na,ca,nb,cb] of __P__){
+  const r=coloresDelHistorial({home:{colores:ca}, away:{colores:cb}});
+  if(!r) sinColor++;
+  else { conColor++; if(_claro(r.local)||_claro(r.visita)) seePierden++; }
+}
+const arg=coloresDelHistorial({home:{colores:['#f2f2f2','#c8102e']},
+                               away:{colores:['#0a2472','#f2c94c']}});
+console.log(JSON.stringify({conColor, sinColor, seePierden,
+  casiBlanco: arg && arg.local,
+  sinColores: coloresDelHistorial({home:{}, away:{}})}));
+""").replace("__P__", _pares)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_jc); _rc2 = _f.name
+    _pc2 = _sub.run(["node", _rc2], capture_output=True, text=True, timeout=60)
+    os.unlink(_rc2)
+    _co = json.loads(_pc2.stdout) if _pc2.returncode == 0 and _pc2.stdout else None
+    chequear("los colores se eligen", _co is not None,
+             _pc2.stderr.strip().splitlines()[:2])
+    if _co:
+        # De los 435 pares posibles entre los treinta de Primera, la
+        # mayoría se distingue y el resto cae al azul y rojo de siempre.
+        chequear("la mayoría de los pares se pinta con sus colores",
+                 _co["conColor"] > _co["sinColor"] * 2, _co)
+        # Ninguna barra puede quedar tan clara que se pierda en la tarjeta.
+        chequear("y ninguna barra se pierde en el fondo blanco",
+                 _co["seePierden"] == 0, _co["seePierden"])
+        # Argentinos es casi blanco y tiene que usar su segundo color.
+        chequear("un club de camiseta casi blanca usa su segundo color",
+                 _co["casiBlanco"] == "#c8102e", _co["casiBlanco"])
+        chequear("y sin colores cargados queda el de siempre",
+                 _co["sinColores"] is None)
+# Dos verdes parecidos no se distinguen, y una barra que no se distingue no
+# dice nada: ahí es mejor el par de siempre.
+chequear("dos clubes de colores parecidos caen al par de siempre",
+         "if(!a||!b||!_lejos(a,b)) return null;" in HTML)
+# El empate no es de nadie: se llama sin color y se queda con el gris.
+chequear("y el empate va en gris, no en el color de nadie",
+         "barra(h.empates,'e')}" in HTML
+         and ".hist-barra .e{background:var(--txt3)}" in HTML)
+
+
+print("\n── el historial del club, contra cada rival ──")
+# Una fila por rival y no un partido por renglón: contra veinte equipos y
+# dos temporadas serían ochenta renglones y no se lee nada.
+_guion8 = _tw2.dedent("""
+    import os, json, sys
+    os.environ["HAYVAR_DB"] = sys.argv[1]
+    sys.path.insert(0, sys.argv[2])
+    import server, tablas
+
+    def pg(i, loc, lid, vis, vid, dia, gh, ga, liga="lpf", comp=7):
+        return {"id": i, "temporada": 1, "round": 1, "start": dia + "T20:00:00",
+                "status": "FIN", "gh": gh, "ga": ga,
+                "home": {"id": lid, "canon": loc}, "away": {"id": vid, "canon": vis}}
+    # El club es A. Contra B jugó tres veces —una de local ganando, una de
+    # visitante ganando y un empate— y contra C una sola, perdiendo.
+    tablas.guardar("lpf", 7, [
+        pg(1, "A", 1, "B", 2, "2026-05-11", 2, 0),
+        pg(2, "B", 2, "A", 1, "2025-11-02", 0, 1),
+        pg(3, "A", 1, "B", 2, "2025-09-21", 1, 1),
+        pg(4, "C", 3, "A", 1, "2025-08-01", 3, 0),
+        pg(8, "A", 1, "B", 2, "2026-09-01", None, None),   # sin jugar
+        pg(9, "B", 2, "C", 3, "2025-07-01", 1, 0)])        # sin A: no va
+    # y un partido suyo en otro torneo, que no cuenta acá
+    tablas.guardar("lib", 102, [pg(5, "A", 1, "Z", 9, "2026-03-01", 4, 0, "lib")])
+
+    h = server.historial_del_club(1, "lpf")
+    porRival = {r["rival"]: r for r in h}
+    print(json.dumps({
+        "rivales": [r["rival"] for r in h],
+        "contraB": [porRival["B"]["pj"], porRival["B"]["g"], porRival["B"]["e"],
+                    porRival["B"]["p"], porRival["B"]["gf"], porRival["B"]["gc"]],
+        "contraC": [porRival["C"]["pj"], porRival["C"]["g"], porRival["C"]["e"],
+                    porRival["C"]["p"]],
+        "partidosDeB": len(porRival["B"]["partidos"]),
+        "deLocal": [p["casa"] for p in porRival["B"]["partidos"]],
+        "sinTorneo": server.historial_del_club(1, None),
+        "sinEquipo": server.historial_del_club(None, "lpf"),
+        "idPorNombre": tablas.equipo_id("A", "lpf"),
+        "idQueNoEsta": tablas.equipo_id("No Existe"),
+    }))
+""")
+with _tp2.NamedTemporaryFile("w", suffix=".py", delete=False,
+                             encoding="utf-8") as _f:
+    _f.write(_guion8); _gp10 = _f.name
+_db8 = os.path.join(_tp2.gettempdir(), "hayvar_club_%d.db" % os.getpid())
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db8 + _ext):
+        os.unlink(_db8 + _ext)
+_pc3 = _sb2.run([sys.executable, _gp10, _db8, AQUI],
+                capture_output=True, text=True, timeout=120)
+os.unlink(_gp10)
+for _ext in ("", "-wal", "-shm"):
+    if os.path.exists(_db8 + _ext):
+        os.unlink(_db8 + _ext)
+_cl = None
+for _linea in _pc3.stdout.splitlines():
+    if _linea.startswith("{"):
+        _cl = json.loads(_linea)
+chequear("el historial del club corre entero", _cl is not None,
+         (_pc3.stdout[-200:], _pc3.stderr[-400:]))
+if _cl:
+    # Sólo los rivales de su torneo, y el de más cruces primero.
+    chequear("un rival por fila, del más jugado al menos",
+             _cl["rivales"] == ["B", "C"], _cl["rivales"])
+    # Ganó dos —una de local y una de visitante— y empató una.
+    chequear("la cuenta se lee desde el lado del club",
+             _cl["contraB"] == [3, 2, 1, 0, 4, 1], _cl["contraB"])
+    chequear("y el que le ganó cuenta como perdido",
+             _cl["contraC"] == [1, 0, 0, 1], _cl["contraC"])
+    chequear("con sus partidos adentro para abrir",
+             _cl["partidosDeB"] == 3, _cl["partidosDeB"])
+    chequear("y cada uno sabe si fue de local o de visitante",
+             _cl["deLocal"] == [True, False, True], _cl["deLocal"])
+    # El de la Libertadores no entra: contra un equipo que no vuelve a ver
+    # no hay historial, hay una anécdota.
+    chequear("los torneos internacionales no entran acá",
+             "Z" not in _cl["rivales"], _cl["rivales"])
+    chequear("sin club o sin torneo no devuelve nada",
+             _cl["sinTorneo"] == [] and _cl["sinEquipo"] == [])
+    chequear("el club se encuentra por su nombre",
+             _cl["idPorNombre"] == 1 and _cl["idQueNoEsta"] is None, _cl)
+chequear("la ficha del club lo lleva puesto",
+         '"historial": _sin_reventar(' in _SRV
+         and "historial_del_club(tablas.equipo_id(canon" in _SRV)
+# Es una sección nueva sobre una pantalla que ya andaba: si algo falla, que
+# no se lleve puesta la ficha entera.
+chequear("y si falla, la ficha del club sigue saliendo",
+         "def _sin_reventar(" in _SRV)
+
+# Y dibujada. Los partidos van adentro de un <details>: cerrados de entrada,
+# y abrir uno es cosa del navegador, sin javascript propio ni estado que se
+# pueda desincronizar.
+if _sh.which("node"):
+    _dclub = json.dumps({
+        "club": "A", "primary": "#0a2472", "accent": "#f2c94c",
+        "historial": [
+            {"id": 2, "rival": "B", "pj": 3, "g": 2, "e": 1, "p": 0,
+             "gf": 4, "gc": 1, "colores": ["#f2f2f2", "#e2001a"], "partidos": [
+                {"id": 1, "dia": "2026-05-11", "local": "A", "visita": "B",
+                 "gh": 2, "ga": 0, "casa": True},
+                {"id": 2, "dia": "2025-11-02", "local": "B", "visita": "A",
+                 "gh": 0, "ga": 1, "casa": False},
+                {"id": 3, "dia": "2025-09-21", "local": "A", "visita": "B",
+                 "gh": 1, "ga": 1, "casa": True}]},
+            {"id": 3, "rival": "C", "pj": 1, "g": 0, "e": 0, "p": 1,
+             "gf": 0, "gc": 3, "colores": None, "partidos": [
+                {"id": 4, "dia": "2025-08-01", "local": "C", "visita": "A",
+                 "gh": 3, "ga": 0, "casa": False}]}]}, ensure_ascii=False)
+    _jcl = ("""
+globalThis.fetch=async()=>({ok:true, status:200, json:async()=>({})});
+const html=historialDelClub(__D__);
+const nombres=(html.match(/<span class="nm">([^<]+)<\\/span>/g)||[])
+  .map(s=>s.replace(/<[^>]+>/g,''));
+console.log(JSON.stringify({
+  filas: (html.match(/<details class="riv">/g) || []).length,
+  abiertas: (html.match(/<details class="riv" open/g) || []).length,
+  nombres,
+  partidos: (html.match(/class="hist-p"/g) || []).length,
+  enlaces: (html.match(/data-ir/g) || []).length,
+  usaElSegundoColor: html.indexOf('#e2001a') >= 0,
+  registro: (html.match(/<b>2<\\/b>-1-<b>0<\\/b>/) || []).length,
+  vacio: historialDelClub({historial: []})}));
+""").replace("__D__", _dclub)
+    _gcl = (open(_DOMSITO, encoding="utf-8").read()
+            + "\nglobalThis.document=doc; globalThis.window=win;"
+              "\nglobalThis.location=loc; globalThis.history=historial;"
+              "\nglobalThis.localStorage=almacenLocal;"
+              "\nglobalThis.MutationObserver=MutationObserver;"
+              "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+              "\nglobalThis.requestAnimationFrame=f=>0;"
+              "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+            + _app.replace("const App=(()=>{", "App=(()=>{")
+                  .replace("  function historialDelClub(d){",
+                           "  globalThis.historialDelClub=historialDelClub;\n"
+                           "  function historialDelClub(d){") + _jcl)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_gcl); _rcl = _f.name
+    _pcl = _sub.run(["node", _rcl], capture_output=True, text=True, timeout=60)
+    os.unlink(_rcl)
+    _dc = json.loads(_pcl.stdout) if _pcl.returncode == 0 and _pcl.stdout else None
+    chequear("la sección del club se dibuja", _dc is not None,
+             _pcl.stderr.strip().splitlines()[:2])
+    if _dc:
+        chequear("una fila por rival, con su nombre",
+                 _dc["filas"] == 2 and _dc["nombres"] == ["B", "C"], _dc)
+        # Cerradas de entrada: lo que pidió Mateo es que los partidos no
+        # estén a la vista hasta que uno toque el rival.
+        chequear("y ninguna abierta de entrada", _dc["abiertas"] == 0,
+                 _dc["abiertas"])
+        chequear("los partidos están adentro, listos para abrirse",
+                 _dc["partidos"] == 4 and _dc["enlaces"] == 4, _dc)
+        chequear("con el registro contra ese rival a la vista",
+                 _dc["registro"] == 1, _dc["registro"])
+        # El rival de camiseta casi blanca también usa su segundo color acá.
+        chequear("y el color del rival, con la misma regla del partido",
+                 _dc["usaElSegundoColor"], _dc)
+        # Un club sin nada guardado no muestra una sección vacía.
+        chequear("sin historial no se muestra la sección", _dc["vacio"] == "")
 
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))

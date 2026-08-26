@@ -329,6 +329,27 @@ a.hist-p:hover{color:var(--acc)}
 .hist-pie{font-size:10px;color:var(--txt3);margin-top:8px;
   text-transform:uppercase;letter-spacing:.5px}
 
+/* ── El historial del club, un rival por fila ──
+   Con <details>: abrir y cerrar lo hace el navegador solo, con el teclado
+   incluido, y no hay estado propio que se pueda desincronizar. */
+.rivales{padding:0 16px 4px}
+.riv{border-top:1px solid var(--line)}
+.riv:first-child{border-top:0}
+.riv summary{display:grid;grid-template-columns:1fr auto 72px;align-items:center;
+  gap:10px;padding:7px 0;cursor:pointer;list-style:none;font-size:12.5px}
+.riv summary::-webkit-details-marker{display:none}
+.riv summary:hover .nm{color:var(--acc)}
+.riv summary .nm{min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.riv summary .rec{font-size:11px;color:var(--txt2);
+  font-variant-numeric:tabular-nums}
+.riv summary .rec b{color:var(--txt);font-weight:800}
+.riv summary .hist-barra{margin:0}
+.riv[open] summary .nm{font-weight:700}
+.riv-p{padding:2px 0 10px}
+.riv-tot{font-size:10.5px;color:var(--txt3);padding-bottom:3px}
+.riv-p .hist-p{grid-template-columns:38px 1fr 34px 1fr}
+
 /* Las mismas cajas, pero apiladas en una columna: así entran al costado de
    la página de un partido, donde el cuadro entero no tiene lugar. */
 .brk-lado{position:static;display:block;margin:0 0 6px;color:inherit;
@@ -2739,9 +2760,64 @@ const App=(()=>{
           aparecieron en las formaciones. Puede faltar alguno que todavía no jugó.</div>`
         :`<div class="note" style="padding:0 16px 14px">Todavía sin datos: se arma solo
           a medida que el servidor lee las formaciones de cada partido.</div>`}
-      </div>`;
+      </div>
+      ${historialDelClub(d)}`;
     const caja=$('#right').parentElement; if(caja) caja.classList.add('sin-caja');
     $('#tabs').innerHTML='';
+  }
+
+  /* El historial del club contra cada rival de su liga.
+
+     Una fila por rival, no un partido por renglón: contra veinte equipos y
+     dos temporadas serían ochenta renglones y no se lee nada. La fila dice
+     lo que uno quiere de un vistazo —cuántas ganó, empató y perdió— y al
+     tocarla se abren sus partidos.
+
+     Va con `<details>`, que hace eso solo: sin javascript propio, con el
+     teclado andando y sin estado que se pueda desincronizar. */
+  function historialDelClub(d){
+    const h=d&&d.historial;
+    if(!h||!h.length) return '';
+    const mio=[d.primary,d.accent].filter(Boolean);
+    const fila=r=>{
+      // la misma regla del partido: el color del club, salvo que se pierda
+      const col=coloresDelHistorial({home:{colores:mio},
+                                     away:{colores:r.colores||[]}});
+      const p=n=>r.pj?`width:${100*n/r.pj}%`:'width:0';
+      return `<details class="riv">
+        <summary>
+          <span class="nm">${esc(r.rival)}</span>
+          <span class="rec"><b>${r.g}</b>-${r.e}-<b>${r.p}</b></span>
+          <span class="hist-barra">
+            <i class="g" style="${p(r.g)}${col?';background:'+esc(col.local):''}"></i>
+            <i class="e" style="${p(r.e)}"></i>
+            <i class="p" style="${p(r.p)}${col?';background:'+esc(col.visita):''}"></i>
+          </span>
+        </summary>
+        <div class="riv-p">
+          <div class="riv-tot">${r.pj} ${r.pj===1?'partido':'partidos'} ·
+            ${r.gf}-${r.gc} en goles</div>
+          ${r.partidos.map(m=>{
+            const ruta=rutaPartido({liveId:m.id, home:{canon:m.local},
+                                    away:{canon:m.visita}});
+            const gano=m.gh>m.ga?'l':m.gh<m.ga?'v':'';
+            return `<${ruta?'a':'div'} class="hist-p"${ruta
+                ? ` href="${esc(Rutas.url(ruta))}" data-ir`:''}>
+              <span class="cuando">${esc((m.dia||'').split('-').reverse()
+                                          .slice(0,2).join('/'))}</span>
+              <span class="eq ${gano==='l'?'gano':''}">${esc(m.local)}</span>
+              <b>${m.gh}-${m.ga}</b>
+              <span class="eq der ${gano==='v'?'gano':''}">${esc(m.visita)}</span>
+            </${ruta?'a':'div'}>`;
+          }).join('')}
+        </div>
+      </details>`;
+    };
+    return `<div class="globo"><div class="cl-sec">Historial</div>
+      <div class="rivales">${h.map(fila).join('')}</div>
+      <div class="note" style="padding:6px 16px 14px">Contra cada rival de su
+      torneo, con lo que hay guardado. Tocá uno para ver los partidos.</div>
+    </div>`;
   }
 
   // el mismo bloque de último y próximo, pero con datos que le pasan
@@ -4072,19 +4148,57 @@ const App=(()=>{
 
      El resumen se lee parado en esta página: el primer número es del que
      hoy es local, aunque en aquellos partidos haya sido visitante. */
+  /* Los colores de la barra del historial.
+
+     La idea es obvia —cada pedazo del color del club— pero tiene dos
+     trampas. Una: hay clubes cuyo color principal es casi blanco, como
+     Argentinos, y sobre la tarjeta blanca ese pedazo desaparece; para
+     ésos vale el segundo color. Y dos: si los dos clubes terminan con
+     colores parecidos —dos rojos— la barra no dice nada, y ahí es mejor
+     el azul y rojo de siempre, que al menos se distinguen. */
+  const _rgb=c=>{
+    const h=String(c||'').replace('#','');
+    if(h.length!==6) return null;
+    const n=parseInt(h,16);
+    return isNaN(n)?null:[n>>16&255, n>>8&255, n&255];
+  };
+  const _claro=c=>{
+    const v=_rgb(c); if(!v) return false;
+    return (0.299*v[0] + 0.587*v[1] + 0.114*v[2])/255 > .82;
+  };
+  const _lejos=(a,b)=>{
+    const x=_rgb(a), y=_rgb(b);
+    if(!x||!y) return true;
+    return Math.hypot(x[0]-y[0], x[1]-y[1], x[2]-y[2]) > 90;
+  };
+  function coloresDelHistorial(m){
+    const suyo=t=>{
+      const c=(t&&t.colores)||[];
+      if(!c.length) return null;
+      // el principal, salvo que sea tan claro que se pierda en la tarjeta
+      return (_claro(c[0]) && c[1] && !_claro(c[1])) ? c[1] : c[0];
+    };
+    const a=suyo(m.home), b=suyo(m.away);
+    if(!a||!b||!_lejos(a,b)) return null;    // el de siempre
+    return {local:a, visita:b};
+  }
+
   function historialAlCostado(m){
     const el=$('#right'), h=m&&m.historial;
     if(!el||!h||!h.partidos||!h.partidos.length) return;
     // Que llamarla de más no lo pegue dos veces.
     if(String(el.innerHTML).indexOf('class="hist"')>=0) return;
     const local=m.home.canon||m.home.name, visita=m.away.canon||m.away.name;
-    const barra=(n,clase)=>h.jugados
-      ? `<i class="${clase}" style="width:${100*n/h.jugados}%"></i>` : '';
+    const col=coloresDelHistorial(m);
+    const barra=(n,clase,color)=>h.jugados
+      ? `<i class="${clase}" style="width:${100*n/h.jugados}%${
+          color?';background:'+esc(color):''}"></i>` : '';
     el.insertAdjacentHTML('beforeend', `
       <div class="hist">
         <div class="cuadro-et">Cómo les fue · ${h.jugados} ${
           h.jugados===1?'partido':'partidos'}</div>
-        <div class="hist-barra">${barra(h.gano,'g')}${barra(h.empates,'e')}${barra(h.perdio,'p')}</div>
+        <div class="hist-barra">${barra(h.gano,'g',col&&col.local)}${
+          barra(h.empates,'e')}${barra(h.perdio,'p',col&&col.visita)}</div>
         <div class="hist-cuenta">
           <span><b>${h.gano}</b> ${esc(local)}</span>
           <span><b>${h.empates}</b> empates</span>

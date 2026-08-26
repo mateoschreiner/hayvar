@@ -456,6 +456,45 @@ def once_de(partido, lado):
                 "                   THEN 1 ELSE 2 END, dorsal", (partido, lado))}
 
 
+def equipo_id(nombre, liga=None):
+    """
+    El identificador de un club a partir de su nombre canónico.
+
+    Las fichas de club trabajan con el nombre; las tablas, con el número
+    que le pone la fuente. Se busca de los dos lados porque un club puede
+    no haber jugado nunca de local en lo que tenemos guardado.
+    """
+    if not nombre:
+        return None
+    p = [nombre, nombre, nombre]
+    cond = ""
+    if liga:
+        cond = " AND liga=?"
+        p.append(liga)
+    f = _filas("SELECT CASE WHEN local=? THEN local_id ELSE visita_id END AS id "
+               "  FROM partidos WHERE (local=? OR visita=?)%s "
+               " ORDER BY cuando DESC LIMIT 1" % cond, p)
+    return f[0]["id"] if f else None
+
+
+def contra_cada_rival(equipo, liga):
+    """
+    Todos los partidos de un equipo en un torneo, para armar el historial
+    contra cada rival.
+
+    Devuelve los partidos crudos y no el resumen: el resumen se calcula
+    afuera, donde ya se sabe leerlo desde el lado del club —quién ganó
+    depende de si jugó de local o de visitante, y eso en SQL queda
+    ilegible—.
+    """
+    if not equipo or not liga:
+        return []
+    return _filas(
+        "SELECT * FROM partidos "
+        " WHERE liga=? AND (local_id=? OR visita_id=?) AND gh IS NOT NULL "
+        " ORDER BY cuando DESC", (liga, equipo, equipo))
+
+
 def sin_formacion(ligas, tope=5, saltear=()):
     """
     Partidos ya jugados de estos torneos a los que todavía no les guardamos

@@ -3382,6 +3382,12 @@ const App=(()=>{
              liga y una Supercopa no son lo mismo y el total solo no lo
              dice. Los que nunca salieron campeones no muestran nada. */''}
         ${dato('Títulos', titulosClub(i.titulos))}
+        ${/* Para un club del ascenso, dónde juega y en qué categoría ubican
+             bastante más que el nombre del estadio: a Deportivo Rincón lo
+             sitúa "Rincón de los Sauces, Neuquén", no "Elías Moisés
+             Gómez". Por eso van antes. */''}
+        ${dato('Dónde juega', i.ciudad?esc(i.ciudad)
+          +(i.division?`<div class="pie">${esc(i.division)}</div>`:''):'')}
         ${dato('Estadio', i.estadio?esc(i.estadio)+(i.estadioApodo?`<div class="pie">${esc(i.estadioApodo)}</div>`:''):'')}
         ${dato('Capacidad', i.capacidad?i.capacidad.toLocaleString('es-AR')+`<div class="pie">personas</div>`:'')}
         ${dato('Dónde queda', i.direccion||i.mapa?esc(i.direccion||'Ver en el mapa')

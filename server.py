@@ -50,6 +50,7 @@ from urllib.error import URLError, HTTPError
 
 import almacen
 import escudos
+import fichas
 import historia
 import tablas
 import visitas
@@ -3894,7 +3895,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · La ficha de un club sin datos cargados ya no queda pelada: escudo y colores salen de sus propios partidos, y la camiseta va provisoria, traslúcida y con su cartelito"
+VERSION_APP = "2026-08-27 · Fichas de 30 clubes de la Copa Argentina: nombre, apodo, fundación, estadio, dónde juegan y en qué categoría. Lo que no se pudo confirmar quedó vacío a propósito"
 
 
 def reparar_recorridos():
@@ -8064,6 +8065,17 @@ CLUBES_INFO = {
         },
     },
 }
+
+# Y las de los clubes que no son de Primera, que viven en su propio módulo.
+#
+# Van aparte porque son de otra naturaleza: éstas se buscaron en la web y
+# tienen huecos a propósito —donde no había una fuente decente quedó
+# vacío— mientras que las de arriba llevan además las camisetas dibujadas
+# a mano. Se cargan después para que, si algún día un club se repite, mande
+# lo cargado acá.
+for _n, _f in fichas.CLUBES.items():
+    CLUBES_INFO.setdefault(_n, _f)
+
 
 
 # El resto de Primera. Acá va lo que no cambia de un año al otro: nombre,

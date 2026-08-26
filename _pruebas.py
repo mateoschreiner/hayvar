@@ -63,14 +63,22 @@ print("\n── camisetas ──")
 SABE = set(re.findall(r"k\.patron\s*===?\s*'(\w+)'", HTML)) | {"liso"}
 # Todas las camisetas de todos los clubes, no sólo las dos primeras: un club
 # puede tener tercera y esa también hay que saber dibujarla.
+# Ya no todos los clubes tienen camiseta dibujada: los del ascenso entran
+# con ficha pero sin camisetas, y la pantalla les muestra una provisoria.
+# Lo que se prueba es que las que EXISTEN estén bien.
 TODAS = [(n, c, k) for n, d in server.CLUBES_INFO.items()
-         for c, k in d["camisetas"].items()]
+         for c, k in (d.get("camisetas") or {}).items()]
 malos = [(n, c) for n, c, k in TODAS if k["patron"] not in SABE]
-chequear("los 30 clubes tienen ficha", len(server.CLUBES_INFO) == 30,
-         len(server.CLUBES_INFO))
+chequear("los 30 de Primera tienen su camiseta dibujada",
+         len([n for n, d in server.CLUBES_INFO.items() if d.get("camisetas")])
+         == 30,
+         len([n for n, d in server.CLUBES_INFO.items() if d.get("camisetas")]))
 chequear("todos los patrones se saben dibujar", not malos, malos)
-chequear("nadie quedó sin sitio oficial",
-         all(d.get("sitio") for d in server.CLUBES_INFO.values()))
+# El sitio oficial sí es obligatorio para los de Primera; para los demás
+# hay clubes que directamente no tienen, o que lo tienen caído.
+chequear("nadie de Primera quedó sin sitio oficial",
+         all(d.get("sitio") for d in server.CLUBES_INFO.values()
+             if d.get("camisetas")))
 
 # Lo que el diseño de una camiseta pide y el dibujo tiene que entender. Es
 # el mismo error de siempre: se agrega una opción en la configuración y el
@@ -6262,6 +6270,66 @@ chequear("es_tecnico reconoce las formas que manda la fuente",
                                             "Coach", "Manager"))
          and not any(server.es_tecnico(x) for x in ("Delantero", "Arquero",
                                                     "", None)))
+
+print("\n── las fichas de los clubes que no son de Primera ──")
+#
+# Se buscaron en la web, una por una, con una regla: si no hay una fuente
+# decente, va vacío. Lo que se prueba acá no es que los datos sean
+# correctos —eso no se puede probar desde adentro— sino que estén bien
+# formados y que no se contradigan con lo que ya había.
+import fichas                                                    # noqa: E402
+
+chequear("hay fichas de los clubes de la Copa Argentina",
+         len(fichas.CLUBES) >= 30, len(fichas.CLUBES))
+# Los campos que sí o sí tienen que estar: sin ellos la ficha no dice nada.
+_pelados = [n for n, f in fichas.CLUBES.items()
+            if not (f.get("nombre") and f.get("ciudad") and f.get("division"))]
+chequear("todas dicen al menos nombre, ciudad y división", not _pelados,
+         _pelados)
+# Y los que no: nunca una cadena vacía ni un cero, que en la pantalla se
+# ven como un dato. O está o no está la clave.
+_vacios = [(n, k) for n, f in fichas.CLUBES.items() for k, v in f.items()
+           if v == "" or v == 0]
+chequear("y lo que no se pudo confirmar no está, en vez de estar vacío",
+         not _vacios, _vacios)
+# Las divisiones son las cuatro que existen abajo de Primera.
+_divs = {f["division"] for f in fichas.CLUBES.values()}
+chequear("las divisiones son las que existen",
+         _divs <= {"Primera Nacional", "Primera B Metropolitana",
+                   "Primera C", "Torneo Federal A"}, _divs)
+# Todos los sitios por HTTPS: mandar a alguien a una página sin cifrar
+# desde un link nuestro no está bueno.
+_sitios = [f["sitio"] for f in fichas.CLUBES.values() if f.get("sitio")]
+chequear("los sitios que se enlazan van por https",
+         all(s.startswith("https://") for s in _sitios),
+         [s for s in _sitios if not s.startswith("https://")])
+# Y ningún sitio repetido: dos clubes con el mismo dominio es un dato mal
+# atribuido. Pasó de verdad —a Gimnasia de Chivilcoy le habían puesto el
+# de Gimnasia La Plata— y por eso está esta prueba.
+_todos = _sitios + [s for s in server.SITIOS.values() if s]
+_norm = [s.rstrip("/").lower() for s in _todos]
+_repes = sorted({s for s in _norm if _norm.count(s) > 1})
+chequear("y ningún club usa el sitio de otro", not _repes, _repes)
+# Los dominios que encontramos secuestrados no pueden estar enlazados.
+_prohibidos = ("clubdeportivomoron.com.ar", "realpilarfutbolclub.com")
+chequear("y no se enlaza ningún dominio secuestrado",
+         not [s for s in _todos for m in _prohibidos if m in s],
+         [s for s in _todos for m in _prohibidos if m in s])
+# Se cargan en CLUBES_INFO sin pisar lo que ya estaba.
+chequear("se suman a las fichas sin pisar las de Primera",
+         all(n in server.CLUBES_INFO for n in fichas.CLUBES)
+         and server.CLUBES_INFO["Belgrano"].get("camisetas"),
+         len(server.CLUBES_INFO))
+# Y cada una tiene su dirección web, que es como se llega a la ficha.
+_sin_ruta = [n for n in fichas.CLUBES
+             if server.RUTAS_CLUB.get(slug_js(n)) != n]
+chequear("y cada club nuevo tiene su propia dirección", not _sin_ruta,
+         _sin_ruta)
+# La pantalla: dónde juega y en qué categoría, que para un club del
+# ascenso ubican más que el nombre del estadio.
+chequear("la ficha muestra dónde juega y en qué categoría",
+         "${dato('Dónde juega', i.ciudad?esc(i.ciudad)" in HTML
+         and "i.division?`<div class=\"pie\">${esc(i.division)}" in HTML)
 
 print("\n── reconocer un club sin confundirlo con otro ──")
 #

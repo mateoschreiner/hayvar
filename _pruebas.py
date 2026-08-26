@@ -5293,39 +5293,61 @@ print("\n── los promedios: el año que viene y lo que necesita cada uno ─�
 # jugados todos juntos. Para la tabla del año que viene hay que poder
 # restarle los partidos de 2024, no sólo los puntos: se deducen por
 # diferencia usando a los ascendidos, que no jugaron todas las temporadas.
-_A, _B, _C = 27, 30, 20
+# Los partidos de cada temporada no salen de ningún lado: AFA publica los
+# tres juntos en una sola columna. Están cargados a mano —41 en 2024 y 32
+# en 2025— y lo que hace el servidor es comprobar que cierren con lo que
+# publica AFA antes de mostrar nada.
+_A = server.PARTIDOS_DE_TEMPORADA["2024"]
+_B = server.PARTIDOS_DE_TEMPORADA["2025"]
+_C = 22                                   # lo que va de 2026
 
-
-def _fp(n, p24, p25, p26):
-    pts = (p24 or 0) + (p25 or 0) + p26
-    pj = (_A if p24 is not None else 0) + (_B if p25 is not None else 0) + _C
-    return {"team": {"name": n}, "p2024": p24, "p2025": p25, "p2026": p26,
-            "pts": pts, "pj": pj, "prom": round(pts / pj, 4)}
-
-
-_filasP = [_fp("Veterano", 40, 45, 30), _fp("Otro Viejo", 30, 30, 20),
-           _fp("Subio2025", None, 44, 28), _fp("Subio2026", None, None, 35),
-           _fp("Flojo", 20, 22, 12)]
-_anual = {r["team"]["name"]: _C for r in _filasP}
-_pt = server.partidos_por_temporada(_filasP, _anual)
-chequear("los partidos de cada temporada se deducen por diferencia",
+# La tabla real, tal como se ve hoy en el sitio: total, y los tres años.
+_REALES = [("Lanús", 140, 59, 50, 31), ("Huracán", 139, 62, 47, 30),
+           ("Talleres (C)", 136, 72, 34, 30),
+           ("Independiente Rivadavia", 131, 46, 43, 42),
+           ("Barracas Central", 128, 49, 49, 30), ("Unión", 127, 60, 39, 28),
+           ("San Lorenzo", 125, 45, 51, 29), ("Belgrano", 122, 49, 37, 36),
+           ("Instituto", 121, 53, 34, 34), ("Tigre", 119, 39, 49, 31),
+           ("Platense", 116, 57, 35, 24), ("Banfield", 101, 41, 35, 25),
+           ("Sarmiento (J)", 101, 35, 35, 31)]
+_filasP = [{"team": {"name": n}, "pts": pts, "pj": _A + _B + _C,
+            "p2024": a, "p2025": b, "p2026": c,
+            "prom": round(pts / (_A + _B + _C), 4)}
+           for n, pts, a, b, c in _REALES]
+# Lo primero: que los tres años sumen el total en cada club. Si esto no
+# diera, el resto de la cuenta no tendría sentido.
+chequear("los tres años suman el total en cada club",
+         all(r["p2024"] + r["p2025"] + r["p2026"] == r["pts"] for r in _filasP))
+_pt = server.partidos_por_temporada(_filasP, {})
+chequear("los partidos de la temporada en curso salen restando",
          _pt == {"2024": _A, "2025": _B, "2026": _C}, _pt)
-# Si dos clubes de la misma cohorte no coinciden, el modelo está mal —un
-# partido suspendido, un descuento de puntos— y una tabla de descensos
+# Si a algún club no le cierra —otro formato, un descuento de puntos, un
+# ascendido con otro arranque— el modelo está mal, y una tabla de descensos
 # equivocada es mucho peor que no mostrarla.
 _roto = [dict(r) for r in _filasP]
 _roto[0]["pj"] += 1
-chequear("y si a algún club no le cierra, no se deduce nada",
-         server.partidos_por_temporada(_roto, _anual) is None)
+chequear("y si a algún club no le cierra, no se muestra nada",
+         server.partidos_por_temporada(_roto, {}) is None)
+# Nadie puede haber sacado más de tres puntos por partido.
+_imposible = [dict(r) for r in _filasP]
+_imposible[0] = dict(_imposible[0], p2024=3 * _A + 1)
+chequear("ni si alguno sacó más puntos de los que se podían",
+         server.partidos_por_temporada(_imposible, {}) is None)
 _prox = server.tabla_del_ano_que_viene(_filasP, _pt)
+_porNombre = {x["team"]["name"]: x for x in _prox}
+# Lanús: 50 puntos en 2025 y 31 en lo que va de 2026, sobre 32 + 22 partidos.
 chequear("la tabla del año que viene es la de hoy sin 2024",
-         [(x["team"]["name"], x["pts"], x["pj"]) for x in _prox[:2]]
-         == [("Subio2026", 35, 20), ("Veterano", 75, 50)], _prox[:2])
-# Veterano: 45+30 puntos sobre 30+20 partidos.
-chequear("con la cuenta hecha a mano",
-         abs(_prox[1]["prom"] - (45 + 30) / (30 + 20)) < 1e-9, _prox[1])
-chequear("y el que subió este año no pierde nada",
-         _prox[0]["pierde"] == 0 and _prox[0]["jugo2024"] is False, _prox[0])
+         _porNombre["Lanús"]["pts"] == 81
+         and _porNombre["Lanús"]["pj"] == _B + _C
+         and abs(_porNombre["Lanús"]["prom"] - 81 / 54) < 1e-9,
+         _porNombre["Lanús"])
+# Y lo que la hace interesante: el orden cambia. Independiente Rivadavia
+# está 13° hoy y primero el año que viene, porque de 2024 pierde 46 puntos
+# y Talleres pierde 72.
+chequear("y el orden cambia, que es de lo que se trata",
+         _prox[0]["team"]["name"] == "Independiente Rivadavia"
+         and _porNombre["Talleres (C)"]["pierde"] == 72,
+         [x["team"]["name"] for x in _prox[:3]])
 chequear("sin la deducción no se arma la tabla",
          server.tabla_del_ano_que_viene(_filasP, None) is None)
 
@@ -5347,6 +5369,48 @@ chequear("los puntos que necesita cada uno salen bien",
 # el último se quedara sin nadie a quien superar y figurara salvado.
 chequear("y el último de la tabla no figura salvado",
          _nec["Ultimo"] is None)
+
+# Cuándo se pinta de amarillo.
+#
+# "Todavía lo pueden alcanzar" es cierto casi siempre: a mitad de
+# temporada quedan cuarenta y ocho puntos en juego y una tabla que se abre
+# en cuarenta, así que cualquiera puede terminar en cualquier lado. Con esa
+# regla quedaban diecisiete equipos marcados, y el escenario que lo
+# justificaba era que el último ganara sus dieciséis partidos y el otro
+# perdiera los dieciséis. Ahora se pinta por lo que le costaría salvarse.
+def _amarillos(faltan):
+    filas = []
+    for n, pts, _a, _b, _c in _REALES:
+        r = {"team": {"name": n}, "pts": pts, "pj": 95, "restantes": faltan,
+             "prom": round(pts / 95, 4)}
+        base = 95 + faltan
+        r["promMax"] = round((pts + 3 * faltan) / base, 4)
+        r["promMin"] = round(pts / base, 4)
+        filas.append(r)
+    filas.sort(key=lambda r: -r["prom"])
+    server.puntos_para_salvarse(filas)
+    zona = filas[-server.DESCIENDEN:]
+    marcados = 0
+    for r in filas:
+        d = 3 * faltan
+        exige = (1.0 if r.get("necesita") is None or not d
+                 else r["necesita"] / d)
+        if exige > 1.0 / 3 and r not in zona:
+            marcados += 1
+    return marcados
+
+_a16, _a6, _a2 = _amarillos(16), _amarillos(6), _amarillos(2)
+chequear("el amarillo se achica solo a medida que avanza el torneo",
+         _a16 > _a6 >= _a2, (_a16, _a6, _a2))
+# Faltando dos fechas, con seis puntos en juego, casi nadie está en duda.
+chequear("y sobre el final queda en muy pocos", _a2 <= 2, _a2)
+chequear("se pinta por lo que le costaría, no por si es alcanzable",
+         'r["enRiesgo"] = exige > UN_TERCIO' in _SRV
+         and 'r["exige"] = round(exige, 3)' in _SRV)
+# Y que la tabla muestre el número, para que el color signifique algo.
+chequear("la tabla dice cuántos puntos necesita",
+         '<td class="nec">${r.necesita===0?' in HTML
+         and "los ${(rows[0]||{}).disponibles ?? 0} que quedan en juego" in HTML)
 # El mismo cruce en la misma instancia, pero de dos ediciones distintas:
 # la Copa Argentina es a partido único y guardamos dos temporadas, así que
 # Instituto–Platense de una edición y de la otra aparecían como "Ida" y
@@ -5375,6 +5439,48 @@ chequear("y la de ida y vuelta de verdad se sigue marcando",
          (_id.get("tramo"), _vu.get("tramo")))
 chequear("el cuadro tampoco junta dos ediciones en una llave",
          "(m.get(\"temporada\"), llave_de(m)), []).append(m)" in _SRV)
+
+# El caso de verdad que apareció en la Copa Argentina: el mismo partido
+# llegando dos veces, con dos identificadores distintos, el mismo día y el
+# mismo local. Se mostraba como "Partidos de ida" y "Partidos de vuelta" de
+# una llave que no existe.
+def _pca(i, loc, vis, dia, gh=None, live=None):
+    return {"id": i, "start": dia + "T21:15:00", "gh": gh,
+            "ga": 0 if gh is not None else None, "liveId": live,
+            "round": 3, "temporada": 16,
+            "home": {"canon": loc, "name": loc},
+            "away": {"canon": vis, "name": vis}}
+
+_dupes = [_pca(1, "Platense", "Instituto", "2026-08-27"),
+          _pca(2, "Platense", "Instituto", "2026-08-27", live=99)]
+_limpio = server.sin_repetidos(_dupes)
+chequear("el mismo partido dos veces queda en una sola fila",
+         len(_limpio) == 1, len(_limpio))
+# Se queda el que más sabe, para que el repetido no se lleve ningún dato.
+chequear("y se queda el que trae más información",
+         _limpio[0]["id"] == 2, _limpio[0]["id"])
+# Segunda red: aunque un repetido sobreviva, no puede volverse una llave.
+_dos = [_pca(1, "Platense", "Instituto", "2026-08-27"),
+        _pca(2, "Platense", "Instituto", "2026-08-27")]
+server.marcar_ida_vuelta(_dos)
+chequear("dos partidos el mismo día no son ida y vuelta",
+         [x.get("tramo") for x in _dos] == [None, None], _dos)
+# En una llave de verdad el local se invierte: el que recibe la ida visita
+# la vuelta. Dos con el mismo local son el mismo partido repetido.
+_mismoLocal = [_pca(1, "Platense", "Instituto", "2026-08-27"),
+               _pca(2, "Platense", "Instituto", "2026-09-03")]
+server.marcar_ida_vuelta(_mismoLocal)
+chequear("ni dos con el mismo local, aunque sean de días distintos",
+         [x.get("tramo") for x in _mismoLocal] == [None, None], _mismoLocal)
+_llave = [_pca(1, "Boca Juniors", "Flamengo", "2026-08-12"),
+          _pca(2, "Flamengo", "Boca Juniors", "2026-08-19")]
+server.marcar_ida_vuelta(_llave)
+chequear("y la llave de verdad se sigue marcando",
+         [x.get("tramo") for x in _llave] == ["Ida", "Vuelta"], _llave)
+chequear("el fixture se limpia antes de armar el cuadro",
+         "games = sin_repetidos(games)" in _SRV
+         and _SRV.index("games = sin_repetidos(games)")
+             < _SRV.index('res = {"games": games'))
 
 chequear("la calculadora se sirve de un solo pedido",
          '"/api/calculadora": api_calculadora,' in _SRV

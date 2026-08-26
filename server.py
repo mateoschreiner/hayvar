@@ -1437,6 +1437,11 @@ def api_games(q):
     rnd = (q.get("round") or [None])[0]
     if date:
         games = [g for g in games if (g["start"] or "")[:10] == date]
+    # Un partido, una fila. Va antes de filtrar y antes de armar el cuadro:
+    # si un repetido llega hasta ahí, se convierte en una llave de ida y
+    # vuelta que no existe.
+    games = sin_repetidos(games)
+
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]
     logos = _logos()
@@ -1707,14 +1712,35 @@ def api_promedios(q):
         r["promMin"] = round(r["pts"] / base_pj, 4) if base_pj else 0.0
 
     en_descenso = rows[-DESCIENDEN:] if rows else []
-    techo = max((r["promMax"] for r in en_descenso), default=0.0)
-    for r in rows:
-        salvado = r["promMin"] > techo
-        r["enRiesgo"] = (not salvado) and r not in en_descenso
-        r["descendiendo"] = r in en_descenso
-        r["salvado"] = salvado
-    riesgo = [r["team"]["name"] for r in rows if r["enRiesgo"]]
     puntos_para_salvarse(rows)
+    # Cuándo pintar de amarillo.
+    #
+    # "Todavía lo pueden alcanzar" es cierto casi siempre y por eso no
+    # sirve: a mitad de temporada quedan cuarenta y ocho puntos en juego y
+    # una tabla que se abre en cuarenta, así que cualquiera puede terminar
+    # en cualquier lado. Mirándolo así quedaban diecisiete equipos en
+    # amarillo, y el escenario que lo justificaba era que el último ganara
+    # sus dieciséis partidos y el otro perdiera los dieciséis.
+    #
+    # Lo que sí dice algo es cuánto le costaría salvarse: no es lo mismo
+    # necesitar diez puntos de cuarenta y ocho que necesitar cuarenta y
+    # cuatro. Se pinta por eso — por la exigencia, no por la posibilidad—.
+    UN_TERCIO = 1.0 / 3
+    for r in rows:
+        n = r.get("restantes") or 0
+        disponibles = 3 * n
+        r["disponibles"] = disponibles
+        # Salvado sigue queriendo decir lo de siempre: ya no puede
+        # descender haga lo que haga.
+        r["salvado"] = r.get("necesita") == 0
+        r["descendiendo"] = r in en_descenso
+        # Y en riesgo, el que para salvarse necesita más de un tercio de lo
+        # que queda en juego. El que no llega ni ganando todo, también.
+        exige = (1.0 if r.get("necesita") is None or not disponibles
+                 else r["necesita"] / disponibles)
+        r["exige"] = round(exige, 3)
+        r["enRiesgo"] = exige > UN_TERCIO and not r["descendiendo"]
+    riesgo = [r["team"]["name"] for r in rows if r["enRiesgo"]]
 
     # La tabla que va a regir el año que viene: la misma sin 2024. Necesita
     # deducir cuántos partidos se jugaron cada temporada, y si esa
@@ -1729,6 +1755,20 @@ def api_promedios(q):
             "nota": ("Promedio oficial: puntos de las últimas 3 temporadas sobre "
                      "partidos jugados. En rojo el que hoy desciende; en amarillo, "
                      "los que todavía pueden ser alcanzados según los partidos que faltan.")}
+
+
+# Cuántos partidos cuentan para el promedio en cada temporada.
+#
+# AFA publica los puntos de las tres por separado pero los partidos jugados
+# todos juntos, en una sola columna, así que este número no sale de ningún
+# lado: hay que saberlo. Son 41 en 2024 y 32 en 2025 —los dos torneos del
+# año más lo que sumó cada uno—, y los de la temporada en curso se calculan
+# restando, porque van cambiando fecha a fecha.
+#
+# Al empezar 2027 hay que correr la lista: sacar 2024, poner 2025 y 2026
+# con sus totales. Mientras tanto, si algún club no cuadra con estos
+# números, no se muestra ninguna tabla.
+PARTIDOS_DE_TEMPORADA = {"2024": 41, "2025": 32}
 
 
 def partidos_por_temporada(rows, pj_de_este_ano):
@@ -1759,25 +1799,39 @@ def partidos_por_temporada(rows, pj_de_este_ano):
     """
     if not rows:
         return None
+    a, b = PARTIDOS_DE_TEMPORADA["2024"], PARTIDOS_DE_TEMPORADA["2025"]
 
     def unico(valores):
         """El valor si todos coinciden; None si no hay o si discrepan."""
         v = {x for x in valores if x is not None}
         return v.pop() if len(v) == 1 else None
 
-    # 2026: lo que dice la tabla anual, que es Apertura más Clausura.
-    c = unico(pj_de_este_ano.get(r["team"]["name"]) for r in rows)
-    if not c:
-        return None
-    # 2025: los que sólo jugaron 2025 y 2026.
-    b = unico(r["pj"] - c for r in rows
-              if r.get("p2024") is None and r.get("p2025") is not None)
-    if not b:
-        return None
-    # 2024: los que jugaron las tres.
-    a = unico(r["pj"] - b - c for r in rows
+    # Los de la temporada en curso salen restando, y tienen que dar lo
+    # mismo para todos los clubes que jugaron las tres.
+    c = unico(r["pj"] - a - b for r in rows
               if r.get("p2024") is not None and r.get("p2025") is not None)
-    if not a:
+    if not c or c < 0:
+        return None
+
+    # Y la comprobación que decide si esto se muestra o no: para cada club,
+    # los partidos que dice AFA tienen que ser exactamente los de las
+    # temporadas que jugó. Si alguno no cuadra —un ascendido con otro
+    # arranque, un descuento, un año con otro formato— el modelo está mal y
+    # es preferible no mostrar nada.
+    for r in rows:
+        esperado = (a if r.get("p2024") is not None else 0) \
+                 + (b if r.get("p2025") is not None else 0) + c
+        if r["pj"] != esperado:
+            return None
+        # Y nadie puede haber sacado más de tres puntos por partido.
+        for temporada, jugados in (("p2024", a), ("p2025", b), ("p2026", c)):
+            pts = r.get(temporada)
+            if pts is not None and pts > 3 * jugados:
+                return None
+    # `pj_de_este_ano` ya no hace falta para la cuenta, pero si está y no
+    # coincide con lo que salió por resta, algo cambió y conviene frenar.
+    dice_la_anual = unico(pj_de_este_ano.get(r["team"]["name"]) for r in rows)
+    if dice_la_anual is not None and dice_la_anual != c:
         return None
     return {"2024": a, "2025": b, "2026": c}
 
@@ -3711,7 +3765,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · el submenú de la Liga Profesional aparece de verdad, y la Copa Argentina ya no inventa idas y vueltas entre dos ediciones"
+VERSION_APP = "2026-08-26 · la tabla de promedios 2027 ya sale, el amarillo dice cuánto costaría salvarse, y la Copa Argentina sin partidos repetidos"
 
 
 def reparar_recorridos():
@@ -4374,6 +4428,41 @@ def llave_de(m):
     return tuple(sorted((norm(m["home"]["name"]), norm(m["away"]["name"]))))
 
 
+def sin_repetidos(games):
+    """
+    Un partido, una fila. Devuelve la lista sin los que llegan dos veces.
+
+    A veces el mismo partido aparece con dos identificadores distintos: la
+    fuente le cambia el número, o se junta lo guardado con lo que llega
+    fresco y no se reconocen entre sí. Se ven iguales en todo lo que
+    importa —mismo día, mismos dos equipos, mismo local— porque son el
+    mismo partido.
+
+    Se queda el que más sabe: primero el que tiene resultado, y a igualdad
+    el que ya está enganchado al detalle en vivo. Así el duplicado no se
+    lleva puesto ningún dato.
+    """
+    def cuanto_sabe(m):
+        return (m.get("gh") is not None, bool(m.get("liveId")),
+                bool(m.get("venue")))
+
+    mejores = {}
+    orden = []
+    for m in games:
+        clave = ((m.get("start") or "")[:10],
+                 norm(m["home"]["name"]), norm(m["away"]["name"]))
+        if not clave[0]:                       # sin fecha no se puede comparar
+            orden.append(m)
+            continue
+        if clave not in mejores:
+            mejores[clave] = m
+            orden.append(m)
+        elif cuanto_sabe(m) > cuanto_sabe(mejores[clave]):
+            orden[orden.index(mejores[clave])] = m
+            mejores[clave] = m
+    return orden
+
+
 def marcar_ida_vuelta(games):
     """
     En las llaves de ida y vuelta, marca cuál es cuál.
@@ -4395,8 +4484,23 @@ def marcar_ida_vuelta(games):
         if len(partidos) != 2:
             continue
         partidos.sort(key=lambda x: x.get("start") or "")
-        partidos[0]["tramo"] = "Ida"
-        partidos[1]["tramo"] = "Vuelta"
+        a, b = partidos
+        # Dos partidos de la misma instancia entre los mismos equipos no
+        # alcanzan para que sea una llave de ida y vuelta. En una llave de
+        # verdad se juegan en días distintos y el local se invierte: el que
+        # recibe la ida visita la vuelta.
+        #
+        # Sin estas dos condiciones, un partido que llega repetido —dos
+        # registros del mismo partido, con el mismo día y el mismo local—
+        # se mostraba como "Partidos de ida" y "Partidos de vuelta" de una
+        # llave que no existe. Pasó en la Copa Argentina, que es a partido
+        # único: Platense–Instituto aparecía dos veces, misma fecha y misma
+        # hora.
+        mismo_dia = (a.get("start") or "")[:10] == (b.get("start") or "")[:10]
+        mismo_local = norm(a["home"]["name"]) == norm(b["home"]["name"])
+        if mismo_dia or mismo_local:
+            continue
+        a["tramo"], b["tramo"] = "Ida", "Vuelta"
 
 
 def armar_llaves(games, etapas, liga_id=""):
@@ -4981,6 +5085,11 @@ def api_liga_games(q):
         if previas and not cfg.get("sin_cuadro_previa"):
             suyos = [g for g in games if (g.get("etapa") or g.get("stage")) in previas]
             llaves_previa = armar_llaves(suyos, previas, lid)
+
+    # Un partido, una fila. Va antes de filtrar y antes de armar el cuadro:
+    # si un repetido llega hasta ahí, se convierte en una llave de ida y
+    # vuelta que no existe.
+    games = sin_repetidos(games)
 
     if rnd:
         games = [g for g in games if str(g["round"]) == str(rnd)]

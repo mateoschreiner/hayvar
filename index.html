@@ -3931,11 +3931,18 @@ const App=(()=>{
     return `<div class="tablewrap"><table><thead><tr>
       <th style="width:26px"></th><th class="l">Equipo</th><th>Prom.</th><th>Pts</th><th>PJ</th>
       <th>'24</th><th>'25</th><th>'26</th>
+      <th title="Puntos que necesita para no poder descender, de los que quedan en juego">Nec.</th>
     </tr></thead><tbody>${rows.map(r=>{
       const zc=r.descendiendo?'z-desc':r.enRiesgo?'z-risk':'';
+      /* El amarillo dice cuánto le costaría salvarse, no si es
+         matemáticamente alcanzable: a mitad de temporada lo segundo es
+         cierto para casi todos y no distingue nada. */
+      const cuanto=r.necesita==null?'no le alcanza ni ganando todo'
+        :`necesita ${r.necesita} de los ${r.disponibles} que quedan en juego`;
       const tit=r.descendiendo?'Hoy desciende'
-        :r.enRiesgo?`Puede ser alcanzado — le quedan ${r.restantes} partidos (peor promedio posible: ${r.promMin.toFixed(3)})`
-        :`Matemáticamente salvado (peor promedio posible: ${r.promMin.toFixed(3)})`;
+        :r.enRiesgo?`Para asegurar la permanencia, ${cuanto}`
+        :r.necesita===0?`Matemáticamente salvado (peor promedio posible: ${r.promMin.toFixed(3)})`
+        :`Tranquilo: ${cuanto}`;
       // Sólo se pinta la fila del que hoy desciende. Al que todavía puede
       // ser alcanzado le alcanza con la marca del costado: en esta tabla
       // son muchos y con el fondo amarillo quedaba media tabla resaltada,
@@ -3945,12 +3952,20 @@ const App=(()=>{
         <td class="l"><div class="tcell">${crest(r.team,18)}<span class="tn">${esc(r.team.name)}</span>${r.live?'<span class="live-tag"></span>':''}</div></td>
         <td class="pts">${r.prom.toFixed(3)}</td><td>${r.pts}</td><td>${r.pj}</td>
         <td style="color:var(--txt2)">${r.p2024??'—'}</td><td style="color:var(--txt2)">${r.p2025??'—'}</td>
-        <td style="color:var(--txt2)">${r.p2026??'—'}</td></tr>`;
+        <td style="color:var(--txt2)">${r.p2026??'—'}</td>
+        <td class="nec">${r.necesita===0?'—'
+          :r.necesita==null?'<span title="Ni ganando todo depende de él">·</span>'
+          :r.necesita}</td></tr>`;
     }).join('')}</tbody></table></div>
     <div class="leg">
       <span><i style="background:#e5484d"></i>Hoy desciende</span>
-      <span><i style="background:#f0b429"></i>Todavía puede ser alcanzado</span>
-    </div>${fuente(o)}`;
+      <span><i style="background:#f0b429"></i>Necesita más de un tercio de lo
+        que queda para asegurar la permanencia</span>
+    </div>
+    <footer>La columna <b>Nec.</b> son los puntos que necesita para no poder
+    descender, de los ${(rows[0]||{}).disponibles ?? 0} que quedan en juego.
+    Un guión quiere decir que ya está salvado; un punto, que ganando todos
+    los suyos todavía depende de otros.</footer>${fuente(o)}`;
   }
 
   const COPA={libertadores:['z-lib','Libertadores'],sudamericana:['z-sud','Sudamericana'],campeon:['z-camp','Campeón']};

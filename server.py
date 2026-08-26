@@ -3529,7 +3529,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · la barra del historial con los colores de cada club, y en la ficha del club el historial contra cada rival de su torneo"
+VERSION_APP = "2026-08-26 · el historial del club con el escudo de cada rival, y la barra con los colores de los dos"
 
 
 def reparar_recorridos():
@@ -6148,6 +6148,9 @@ def historial_del_club(equipo, liga, tope_por_rival=10):
     """
     if not equipo or not liga:
         return []
+    # Una sola vez y afuera del bucle: son los mismos escudos para todos
+    # los rivales y pedirlos adentro sería una lectura por partido.
+    escudos = _sin_reventar(_logos, {}) or {}
     rivales = {}
     for m in tablas.contra_cada_rival(equipo, liga):
         casa = m.get("local_id") == equipo
@@ -6159,9 +6162,11 @@ def historial_del_club(equipo, liga, tope_por_rival=10):
         r = rivales.setdefault(rid, {
             "id": rid, "rival": rnombre, "pj": 0, "g": 0, "e": 0, "p": 0,
             "gf": 0, "gc": 0, "partidos": [],
-            # Los rivales son de la misma liga, así que sus colores están
-            # cargados: la barra de cada fila se pinta como en el partido.
-            "colores": list(COLORES.get(rnombre) or ()) or None})
+            # Los rivales son de la misma liga, así que sus colores y su
+            # escudo están cargados: la barra de cada fila se pinta como en
+            # el partido, y el escudo la termina de identificar de un ojo.
+            "colores": list(COLORES.get(rnombre) or ()) or None,
+            "escudo": (escudos.get(rnombre) or {}).get("logo")})
         r["pj"] += 1
         r["gf"] += gf
         r["gc"] += gc

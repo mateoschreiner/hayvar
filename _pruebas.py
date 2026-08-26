@@ -5095,6 +5095,71 @@ console.log(JSON.stringify({
         # Un club sin nada guardado no muestra una sección vacía.
         chequear("sin historial no se muestra la sección", _dc["vacio"] == "")
 
+    # El escudo del rival, chiquito y del lado de la barra.
+    _desc = json.dumps({
+        "club": "A", "primary": "#0a2472", "accent": "#f2c94c", "historial": [
+            {"id": 2, "rival": "Con Escudo", "pj": 2, "g": 1, "e": 1, "p": 0,
+             "gf": 3, "gc": 1, "colores": ["#e2001a", "#fff"],
+             "escudo": "/img/competidor/1/2222", "partidos": [
+                {"id": 1, "dia": "2026-05-11", "local": "A",
+                 "visita": "Con Escudo", "gh": 2, "ga": 0, "casa": True}]},
+            {"id": 3, "rival": "Sin Escudo", "pj": 1, "g": 0, "e": 0, "p": 1,
+             "gf": 0, "gc": 3, "colores": None, "escudo": None, "partidos": [
+                {"id": 4, "dia": "2025-08-01", "local": "Sin Escudo",
+                 "visita": "A", "gh": 3, "ga": 0, "casa": False}]}]},
+        ensure_ascii=False)
+    _je = ("""
+globalThis.fetch=async()=>({ok:true, status:200, json:async()=>({})});
+const html=historialDelClub(__D__);
+const sumarios=html.match(/<summary>[\\s\\S]*?<\\/summary>/g)||[];
+console.log(JSON.stringify({
+  huecos: (html.match(/class="riv-esc"/g) || []).length,
+  imagenes: (html.match(/riv-esc"><img/g) || []).length,
+  todasConHueco: sumarios.every(s=>s.indexOf('riv-esc') >= 0),
+  despuesDeLaBarra: sumarios.every(
+    s=>s.indexOf('hist-barra') < s.indexOf('riv-esc'))}));
+""").replace("__D__", _desc)
+    _ge = (open(_DOMSITO, encoding="utf-8").read()
+           + "\nglobalThis.document=doc; globalThis.window=win;"
+             "\nglobalThis.location=loc; globalThis.history=historial;"
+             "\nglobalThis.localStorage=almacenLocal;"
+             "\nglobalThis.MutationObserver=MutationObserver;"
+             "\nglobalThis.URL=URL2; globalThis.screen={width:1440,height:900};"
+             "\nglobalThis.requestAnimationFrame=f=>0;"
+             "\nglobalThis.setInterval=()=>0;\nlet App;\n"
+           + _app.replace("const App=(()=>{", "App=(()=>{")
+                 .replace("  function historialDelClub(d){",
+                          "  globalThis.historialDelClub=historialDelClub;\n"
+                          "  function historialDelClub(d){") + _je)
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write(_ge); _re2 = _f.name
+    _pe = _sub.run(["node", _re2], capture_output=True, text=True, timeout=60)
+    os.unlink(_re2)
+    _es = json.loads(_pe.stdout) if _pe.returncode == 0 and _pe.stdout else None
+    chequear("el escudo del rival se dibuja", _es is not None,
+             _pe.stderr.strip().splitlines()[:2])
+    if _es:
+        chequear("va del lado de la barra, no del nombre",
+                 _es["despuesDeLaBarra"], _es)
+        # El hueco existe tenga escudo o no: si no, las filas sin escudo
+        # dejan la barra a distinto largo que las otras.
+        chequear("y ocupa su lugar aunque el rival no tenga escudo",
+                 _es["huecos"] == 2 and _es["imagenes"] == 1
+                 and _es["todasConHueco"], _es)
+# Chiquito y con alto fijo, para no empujar el renglón: la fila mide 18px de
+# contenido contra los ~16 de la línea de texto.
+chequear("es chiquito y no cambia el alto del renglón",
+         ".riv summary .riv-esc{width:18px;height:18px" in HTML
+         and ".riv summary .riv-esc img{width:18px;height:18px" in HTML
+         and "display:block}" in HTML
+         and "grid-template-columns:1fr auto 72px 18px" in HTML)
+# El escudo sale de donde ya sale el de la ficha, y si esa lectura falla el
+# historial se muestra igual: una sección nueva no puede tumbar la pantalla.
+chequear("el escudo se pide una sola vez y no puede tumbar el historial",
+         "escudos = _sin_reventar(_logos, {}) or {}" in _SRV
+         and '"escudo": (escudos.get(rnombre) or {}).get("logo")' in _SRV)
+
 print("\n" + ("Todo bien." if not fallas
               else "FALLARON %d:\n  - %s" % (len(fallas), "\n  - ".join(fallas))))
 sys.exit(1 if fallas else 0)

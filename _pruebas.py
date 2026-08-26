@@ -3056,7 +3056,7 @@ App.init();
     chequear("y a un club que nunca vimos no se le inventa una",
              "bandera" not in _sr[0]["home"] and "bandera" not in _sr[0]["away"])
     chequear("el fixture de un torneo internacional sale con banderas",
-             "games = con_banderas(games, lid)" in _SRV)
+             "con_banderas(con_club(games, lid), lid)" in _SRV)
     chequear("y la portada las hereda de ahí, sin pedir nada más",
              'api_liga_games({"id": [lid]}).get("games", [])' in _SRV)
     # Y la prueba que vale: dibujar la portada con un partido de un torneo
@@ -6280,6 +6280,71 @@ chequear("y cada una va al club que corresponde",
 chequear("el parser de AFA lee Primera con el juego cerrado",
          "canon = match_team(row[idx])" in _SRV
          and "if difusa and n in ALIAS_DE_PRIMERA:" in _SRV)
+
+# La ficha de un club se abre por su dirección, y la dirección pierde los
+# paréntesis —/estudiantes-lp, porque /estudiantes-(lp) se rompe apenas
+# alguien lo codifica—. Al volver hay que poder reconocer al club, y si no
+# se reconoce la ficha sale en blanco: sin escudo, sin títulos, sin nada.
+#
+# Pasó exactamente eso, y sólo con Estudiantes, porque los demás tenían el
+# alias sin paréntesis cargado a mano. Por eso ahora se registra solo.
+_ida_y_vuelta = [(c, server._slug(c),
+                  server.match_team(server._slug(c).replace("-", " ")))
+                 for c in sorted(server.COLORES)]
+chequear("la ficha de los treinta se abre por su dirección",
+         all(c == v for c, _s, v in _ida_y_vuelta),
+         [(c, s, v) for c, s, v in _ida_y_vuelta if c != v])
+
+# Y la lista de equipos resuelve el nombre al leer, en vez de confiar en lo
+# guardado: un mismo partido puede tener el canon puesto o no según cuándo
+# entró, y así el mismo club salía dos veces —"Estudiantes (LP)" y
+# "Estudiantes de La Plata"— como si fueran dos clubes distintos.
+_juegos_falsos = {"games": [
+    {"home": {"name": "Estudiantes de La Plata", "canon": None, "logo": "/a"},
+     "away": {"name": "Boca Juniors", "canon": "Boca Juniors", "logo": "/b"}},
+    {"home": {"name": "Estudiantes de La Plata", "canon": "Estudiantes (LP)",
+              "logo": "/a"},
+     "away": {"name": "Estudiantes", "canon": None, "logo": "/c"}},
+]}
+_liga_real = server.api_liga_games
+server.api_liga_games = lambda q: _juegos_falsos
+try:
+    _eq = server.api_equipos({"liga": ["ca"]})
+finally:
+    server.api_liga_games = _liga_real
+_nombres_eq = sorted(c["name"] for c in _eq["clubes"])
+chequear("la lista de equipos no repite un club por cómo quedó guardado",
+         _nombres_eq == ["Boca Juniors", "Estudiantes", "Estudiantes (LP)"],
+         _nombres_eq)
+
+# Y lo mismo en los partidos, que es donde se veía: en la Copa Argentina
+# los 32avos decían "Estudiantes (LP)" y los 16avos "Estudiantes de La
+# Plata". El mismo club con dos nombres según cuándo entró cada partido.
+#
+# Se resuelve al leer la competencia, así que se arregla en todas las
+# pantallas de una vez y los partidos viejos se curan sin reescribir nada.
+_mezclados = [
+    {"home": {"name": "Estudiantes de La Plata", "canon": None},
+     "away": {"name": "Boca Juniors", "canon": "Boca Juniors"}},
+    {"home": {"name": "Estudiantes de La Plata", "canon": "Estudiantes (LP)"},
+     "away": {"name": "Gimnasia La Plata", "canon": None}},
+]
+_resueltos = server.con_club(_mezclados, "ca")
+chequear("un club se llama igual en todas las fechas de una copa",
+         [g["home"]["canon"] for g in _resueltos]
+         == ["Estudiantes (LP)", "Estudiantes (LP)"],
+         [g["home"]["canon"] for g in _resueltos])
+chequear("y el rival también, aunque hubiera entrado sin resolver",
+         _resueltos[1]["away"]["canon"] == "Gimnasia y Esgrima (LP)",
+         _resueltos[1]["away"]["canon"])
+# Sin tocar la lista que llega, que es la que está guardada: escribirle
+# encima le metería el cambio al calendario en el próximo guardado.
+chequear("y no le escribe encima al calendario guardado",
+         _mezclados[0]["home"]["canon"] is None
+         and _mezclados[1]["away"]["canon"] is None)
+# Y las tres pantallas de una competencia leen por la misma puerta.
+chequear("todas las pantallas de una competencia pasan por ahí",
+         "games = con_banderas(con_club(games, lid), lid)" in _SRV)
 chequear("pero los tres Estudiantes con nombre completo sí",
          all(server.match_team(n, False) == c for n, c in
              [("Estudiantes de La Plata", "Estudiantes (LP)"),

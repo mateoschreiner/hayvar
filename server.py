@@ -292,6 +292,17 @@ NAME_INDEX = {}                     # nombre normalizado -> canónico
 for _row in BASE_PROMEDIOS:
     _canon = _row[0]
     NAME_INDEX[norm(_canon)] = _canon
+    # El mismo nombre sin paréntesis. Es como vuelve de la dirección: la
+    # ficha de "Estudiantes (LP)" vive en /estudiantes-lp —los paréntesis
+    # se van porque /estudiantes-(lp) se rompe apenas alguien lo codifica—
+    # y al entrar por ese link hay que poder volver al club.
+    #
+    # Va acá y no como alias cargado a mano porque si no, cada club nuevo
+    # con paréntesis se olvida: pasó con Estudiantes, cuya ficha se abría
+    # en blanco desde la lista de equipos y bien desde un partido.
+    _sin_par = norm(_canon).replace("(", "").replace(")", "")
+    if _sin_par != norm(_canon):
+        NAME_INDEX.setdefault(_sin_par, _canon)
     for _a in ALIASES.get(norm(_canon), []):
         NAME_INDEX.setdefault(norm(_a), _canon)
 
@@ -3883,7 +3894,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-27 · Vuelve Estudiantes a la tabla de Primera: AFA lo nombra a secas y sacarlo del índice lo borró del fixture, de la tabla y de su ficha. No era un alias equivocado, era uno que depende del torneo"
+VERSION_APP = "2026-08-27 · Un club se llama igual en todas las fechas de una competencia: el nombre se resuelve al leer y no según cuándo entró cada partido. Y la ficha se abre desde su dirección, con o sin paréntesis"
 
 
 def reparar_recorridos():
@@ -5216,7 +5227,10 @@ def api_liga_games(q):
         games = [g for g in games if str(g["round"]) == str(rnd)]
     # La bandera del país de cada club, en los torneos internacionales. Va
     # acá, después de filtrar: se copian sólo los partidos que se mandan.
-    games = con_banderas(games, lid)
+    # Primero el club y después la bandera: las dos devuelven copias, y así
+    # todas las pantallas de la competencia —el fixture, la llave, la lista
+    # de equipos— ven un solo nombre por club.
+    games = con_banderas(con_club(games, lid), lid)
     res = {"games": games, "count": len(games), "rounds": rounds, "current": actual,
            "live": vivos, "interzonal": sum(1 for g in games if g["interzonal"]),
            "sinZona": sin_zona, "nombre": cfg["nombre"],
@@ -6980,6 +6994,37 @@ def recordar_paises(games):
     if nuevos:
         almacen.guardar(_CLAVE_PAIS_CLUB, tabla)
     return tabla
+
+
+def con_club(games, liga_id):
+    """
+    Los mismos partidos con el club resuelto al leer.
+
+    El calendario guardado tiene el club puesto o no según cuándo entró
+    cada partido, y eso se veía: en la Copa Argentina, los 32avos decían
+    "Estudiantes (LP)" y los 16avos "Estudiantes de La Plata". El mismo
+    club con dos nombres, y por eso también salía dos veces en la lista de
+    equipos.
+
+    Resolverlo acá lo arregla en todas las pantallas de una vez, y de paso
+    los partidos viejos se curan solos sin tener que reescribir la base.
+
+    Devuelve copias, igual que `con_banderas`: la lista que llega es la que
+    está guardada, y escribirle encima le metería el cambio al calendario
+    en el próximo `guardar`.
+    """
+    difusa = liga_id == "lpf"
+    salida = []
+    for g in games:
+        g = dict(g)
+        for lado in ("home", "away"):
+            t = dict(g.get(lado) or {})
+            nuevo = match_team(t.get("name") or "", difusa)
+            if nuevo:
+                t["canon"] = nuevo
+            g[lado] = t
+        salida.append(g)
+    return salida
 
 
 def con_banderas(games, liga_id):
@@ -8851,11 +8896,18 @@ def api_equipos(q):
     except Exception:
         juegos = []
 
+    # El club se resuelve acá, al leer, y no se confía en lo que quedó
+    # guardado: el mismo partido puede tener el canon puesto o no según
+    # cuándo entró, y así el mismo club salía dos veces en la lista —
+    # "Estudiantes (LP)" y "Estudiantes de La Plata"— como si fueran dos.
+    difusa = lid == "lpf"
     vistos = {}
     for m in juegos:
         for lado in ("home", "away"):
             e = m.get(lado) or {}
-            nombre = (e.get("canon") or e.get("name") or "").strip()
+            crudo = (e.get("name") or "").strip()
+            nombre = (match_team(crudo, difusa) if crudo else None) \
+                or (e.get("canon") or crudo or "").strip()
             if not nombre or nombre.lower().startswith("a confirmar"):
                 continue
             v = vistos.setdefault(nombre, {"name": nombre, "logo": None})

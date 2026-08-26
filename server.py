@@ -3797,7 +3797,7 @@ VERSION_RECORRIDO = 7
 # servidor tiene el arreglo puesto o si todavía está corriendo el de antes.
 # Sin esto hay que deducirlo de los síntomas, que es exactamente la clase de
 # adivinanza que hizo perder tres vueltas con los recorridos.
-VERSION_APP = "2026-08-26 · Historia: los campeones desde 1931, año por año y por club, con las copas aparte. Y los promedios 2027, que no salían porque los ascendidos llevan menos partidos"
+VERSION_APP = "2026-08-26 · Historia: el año por año en el medio, los títulos por club al costado con su desglose, las copas desplegables, y los títulos en la ficha de cada club"
 
 
 def reparar_recorridos():
@@ -8129,6 +8129,12 @@ def api_club_info(q):
 
 def armar_club_info(canon):
     ficha = dict(CLUBES_INFO.get(canon) or {})
+    # Los títulos, de la lista de campeones. Va acá y no en un pedido
+    # aparte porque no cuesta nada —es un diccionario ya armado— y porque
+    # así aparece junto con el resto de la ficha, sin un segundo salto.
+    # Los clubes que nunca salieron campeones dan None y no muestran nada:
+    # un cero grande en la ficha sería una manera fea de decirlo.
+    ficha["titulos"] = historia.titulos_de(canon)
     colores = COLORES.get(canon)
     escudo = None
     try:

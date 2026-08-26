@@ -391,19 +391,25 @@ span.hist-esc{border-radius:50%;background:var(--line)}
    <details> y no javascript: abre y cierra solo, y sale impreso y buscado
    por el navegador aunque esté cerrado. */
 .hist-club{border-top:1px solid var(--line)}
-.hist-club > summary{display:flex;align-items:center;gap:10px;padding:9px 16px;
+.hist-club > summary{display:flex;align-items:center;gap:9px;padding:8px 14px;
   cursor:pointer;list-style:none;font-size:13.5px}
 .hist-club > summary::-webkit-details-marker{display:none}
 .hist-club > summary:hover{background:var(--bg)}
-.hist-club .pos{width:22px;flex:none;color:var(--txt3);font-size:12px;
+.hist-club .pos{width:20px;flex:none;color:var(--txt3);font-size:12px;
   font-variant-numeric:tabular-nums;text-align:right}
-.hist-club .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+.hist-club .quien{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.hist-club .nm{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;font-weight:600}
-.hist-club .cant{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
-.hist-club .barra{flex:none;width:84px;height:6px;border-radius:3px;
-  background:var(--line);overflow:hidden}
-.hist-club .barra i{display:block;height:100%;background:var(--acc)}
-.hist-tit{display:flex;flex-wrap:wrap;gap:4px;padding:2px 16px 12px 48px}
+/* El desglose no es decoración: una liga y una Supercopa no son lo mismo,
+   y un total que las suma sin decirlo es la clase de número que después
+   alguien discute. */
+.hist-club .desglose{font-size:11px;color:var(--txt3);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.hist-club .cant{flex:none;font-weight:800;font-size:15px;
+  font-variant-numeric:tabular-nums}
+.hist-grupo{font-size:10.5px;font-weight:800;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--txt3);padding:6px 14px 2px 43px}
+.hist-tit{display:flex;flex-wrap:wrap;gap:4px;padding:2px 14px 10px 43px}
 .hist-tit span{font-size:11.5px;color:var(--txt2);background:var(--bg);
   border-radius:5px;padding:2px 7px;white-space:nowrap}
 .hist-tit span b{color:var(--txt);font-weight:700}
@@ -433,6 +439,10 @@ span.hist-esc{border-radius:50%;background:var(--line)}
 .hist-copa > summary .cuantas{color:var(--txt3);font-size:12px}
 .hist-copa > summary .ultimo{margin-left:auto;color:var(--txt2);font-size:12px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Al abrirla, la copa se lee igual que la lista de ligas de arriba: la
+   temporada a la izquierda y el campeón con su escudo al lado. Es la misma
+   pregunta, así que conviene que sea la misma forma. */
+.hist-copa .hist-ano{padding-left:30px;background:var(--bg)}
 
 /* ── El historial del club, un rival por fila ──
    Con <details>: abrir y cerrar lo hace el navegador solo, con el teclado
@@ -1471,15 +1481,17 @@ const App=(()=>{
 
   /* ── Los campeones históricos ─────────────────────────────────────────
 
-     Dos vistas de lo mismo, porque son dos preguntas distintas: "¿cuántas
-     tiene Boca?" y "¿quién salió campeón en el 78?". Y abajo las copas,
-     separadas: mezclarlas con las ligas es la forma más común de que una
-     lista de campeones quede mal.
+     Son dos preguntas distintas —"¿quién salió campeón en el 78?" y
+     "¿cuántas tiene Boca?"— y por eso van a la vez y no en pestañas: la
+     lista año por año en el medio, que es lo que uno viene a mirar, y la
+     cuenta por club al costado, que es lo que uno mira después. Abajo las
+     copas, separadas: mezclarlas con las ligas es la forma más común de
+     que una lista de campeones quede mal.
 
      Los datos son una lista escrita a mano en el servidor —no hay API que
      dé esto bien— y no cambian nunca, así que se piden una sola vez y
      quedan en memoria. */
-  let hist=null, histVista='club';
+  let hist=null;
 
   // El escudo de un club en la historia. Muchos campeones ya no están en
   // Primera —Chacarita, Ferro, Quilmes, Estudiantil Porteño— y para esos
@@ -1504,9 +1516,6 @@ const App=(()=>{
     const main=$('#matches');
     main.innerHTML='<div class="skel"></div><div class="skel"></div>';
     $('#right').innerHTML='';
-    $('#tabs').innerHTML=[['club','Por club'],['ano','Año por año']]
-      .map(([k,n])=>`<button data-t="${k}" class="${histVista===k?'on':''}"
-        onclick="App.hist('${k}')">${n}</button>`).join('');
     if(!hist){
       // La lista de clubes es la que trae los escudos. Si no está, la
       // historia se dibuja igual, sin ellos: no vale la pena que una lista
@@ -1528,47 +1537,70 @@ const App=(()=>{
 
   function pintarHistoria(){
     const main=$('#matches'); if(!main||!hist) return;
-    main.innerHTML=(histVista==='ano' ? histPorAno() : histPorClub())
-      + histCopas()
+    main.innerHTML=histPorAno() + histCopas()
       + `<div class="note" style="padding:14px 16px 18px">
            ${esc(hist.nota||'')} Fuente: ${esc(hist.fuente||'')}.</div>`;
+    const der=$('#right'); if(der) der.innerHTML=histPorClub();
   }
 
-  /* Cuántas tiene cada uno. La barra es proporcional al que más tiene, que
-     es lo que hace ver de un vistazo lo lejos que están los dos primeros
-     del resto. */
+  /* Cuántas tiene cada uno, al costado. El número grande es el total, y
+     abajo el desglose, que tiene que estar: una liga y una Supercopa no
+     son lo mismo, y un total que las suma sin decirlo es la clase de dato
+     que después alguien discute en un bar. */
   function histPorClub(){
-    const tope=(hist.porClub[0]||{}).titulos||1;
-    return `<div class="hist-sep" style="border-top:0;padding-top:14px">
-        Ligas · ${hist.total} títulos desde ${esc(hist.desde)}</div>`
-      + hist.porClub.map(c=>`<details class="hist-club">
+    const plural=(n,s)=>n+' '+s+(n===1?'':'s');
+    return `<div class="globo">
+      <div class="cl-sec">Títulos por club</div>
+      ${hist.porClub.map(c=>`<details class="hist-club">
         <summary>
           <span class="pos">${c.pos}</span>
           ${escudoHist(c.club)}
-          ${clubHist(c.club)}
-          <span class="barra"><i style="width:${Math.round(100*c.titulos/tope)}%"></i></span>
-          <span class="cant">${c.titulos}</span>
+          <span class="quien">
+            ${clubHist(c.club)}
+            <span class="desglose">${[
+              c.ligas?plural(c.ligas,'liga'):'',
+              c.copas?plural(c.copas,'copa'):''].filter(Boolean).join(' · ')}</span>
+          </span>
+          <span class="cant">${c.total}</span>
         </summary>
-        <div class="hist-tit">${c.detalle.map(d=>
-          `<span><b>${esc(d.temporada)}</b>${d.torneo?' '+esc(d.torneo):''}</span>`
-        ).join('')}</div>
-      </details>`).join('');
+        ${c.ligas?`<div class="hist-grupo">Ligas</div>
+          <div class="hist-tit">${c.detalleLigas.map(d=>
+            `<span><b>${esc(d.temporada)}</b>${d.torneo?' '+esc(d.torneo):''}</span>`
+          ).join('')}</div>`:''}
+        ${c.copas?`<div class="hist-grupo">Copas</div>
+          <div class="hist-tit">${c.detalleCopas.map(d=>
+            `<span><b>${esc(d.copa)}</b> ${d.temporadas.map(esc).join(' · ')}</span>`
+          ).join('')}</div>`:''}
+      </details>`).join('')}
+      <div class="note" style="padding:8px 14px 12px">${hist.porClub.length}
+        clubes campeones. El total suma ligas y copas nacionales; el
+        desglose está en cada fila.</div>
+    </div>`;
   }
 
-  /* Año por año. Los años de dos o tres títulos van en una sola fila, con
-     el nombre del torneo al lado de cada campeón: así se ve que el 72 lo
-     ganó San Lorenzo dos veces y no que está repetido por error. */
+  /* Una fila de la lista: la temporada a la izquierda y los campeones de
+     esa temporada al lado. Los años de dos o tres títulos van en una sola
+     fila, con el nombre del torneo al lado de cada uno: así se ve que el
+     72 lo ganó San Lorenzo dos veces y no que está repetido por error.
+
+     La usan las ligas y también las copas al desplegarse, a propósito: es
+     la misma pregunta —quién ganó qué y cuándo— y conviene que tenga la
+     misma forma. */
+  function histFila(temporada, titulos){
+    return `<div class="hist-ano${titulos.length>1?' doble':''}">
+      <div class="t">${esc(temporada)}</div>
+      <div class="campeones">${titulos.map(t=>`<span class="uno">
+        ${escudoHist(t.campeon)}${clubHist(t.campeon)}
+        ${t.torneo?`<span class="torneo">${esc(t.torneo)}</span>`:''}
+        ${t.nota?`<span class="hist-nota" title="${esc(t.nota)}">ⓘ</span>`:''}
+      </span>`).join('')}</div>
+    </div>`;
+  }
+
   function histPorAno(){
     return `<div class="hist-sep" style="border-top:0;padding-top:14px">
-        Ligas · año por año</div>`
-      + hist.porAno.map(f=>`<div class="hist-ano${f.titulos.length>1?' doble':''}">
-        <div class="t">${esc(f.temporada)}</div>
-        <div class="campeones">${f.titulos.map(t=>`<span class="uno">
-          ${escudoHist(t.campeon)}${clubHist(t.campeon)}
-          ${t.torneo?`<span class="torneo">${esc(t.torneo)}</span>`:''}
-          ${t.nota?`<span class="hist-nota" title="${esc(t.nota)}">ⓘ</span>`:''}
-        </span>`).join('')}</div>
-      </div>`).join('');
+        Ligas · ${hist.total} títulos desde ${esc(hist.desde)}</div>`
+      + hist.porAno.map(f=>histFila(f.temporada,f.titulos)).join('');
   }
 
   /* Las copas, abajo y aparte. Cerradas: son ocho y ninguna es lo que la
@@ -1584,9 +1616,7 @@ const App=(()=>{
             ${ult?`<span class="ultimo">último: ${esc(ult.campeon)}
                      (${esc(ult.temporada)})</span>`:''}
           </summary>
-          <div class="hist-tit" style="padding-left:16px">${c.campeones.map(x=>
-            `<span><b>${esc(x.temporada)}</b> ${esc(x.campeon)}</span>`
-          ).join('')}</div>
+          ${c.campeones.map(x=>histFila(x.temporada,[{campeon:x.campeon}])).join('')}
         </details>`;
       }).join('');
   }
@@ -3182,6 +3212,17 @@ const App=(()=>{
   function drawClub(){
     const d=S.clubInfo; if(!d) return;
     const i=d.info||{}, p=d.partidos||{};
+    /* Los títulos del club para la ficha: el total arriba y el desglose
+       abajo, con enlace a la lista entera. Devuelve vacío si el club nunca
+       salió campeón, y así la tarjeta directamente no aparece. */
+    const titulosClub=t=>{
+      if(!t||!t.total) return '';
+      const plural=(n,s)=>n+' '+s+(n===1?'':'s');
+      const partes=[t.ligas?plural(t.ligas,'liga'):'',
+                    t.copas?plural(t.copas,'copa'):''].filter(Boolean);
+      return t.total+`<div class="pie">${esc(partes.join(' · '))} · `
+        +enlace({t:'liga', id:'lpf', sec:'historia'},'ver la historia')+`</div>`;
+    };
     const dato=(lb,vl)=>vl?`<div class="cl-dato"><div class="lb">${lb}</div>
       <div class="vl">${vl}</div></div>`:'';
 
@@ -3215,6 +3256,11 @@ const App=(()=>{
         </div>
       </div>
       <div class="cl-datos">
+        ${/* Los títulos primero: es lo que la gente busca de un club, más
+             que la capacidad de la cancha. El desglose va abajo porque una
+             liga y una Supercopa no son lo mismo y el total solo no lo
+             dice. Los que nunca salieron campeones no muestran nada. */''}
+        ${dato('Títulos', titulosClub(i.titulos))}
         ${dato('Estadio', i.estadio?esc(i.estadio)+(i.estadioApodo?`<div class="pie">${esc(i.estadioApodo)}</div>`:''):'')}
         ${dato('Capacidad', i.capacidad?i.capacidad.toLocaleString('es-AR')+`<div class="pie">personas</div>`:'')}
         ${dato('Dónde queda', i.direccion||i.mapa?esc(i.direccion||'Ver en el mapa')
@@ -6667,15 +6713,6 @@ const App=(()=>{
     calcLimpiar(){
       for(const k of Object.keys(calcElegido)) delete calcElegido[k];
       pintarCalculadora();
-    },
-    /* Cambiar entre "por club" y "año por año". Es la misma lista mirada
-       de dos maneras y ya está toda en memoria: no se pide nada. */
-    hist(v){
-      histVista=v;
-      const t=$('#tabs');
-      if(t) t.querySelectorAll('button').forEach(b=>
-        b.classList.toggle('on', b.dataset.t===v));
-      pintarHistoria();
     },
     reload(){ clearTimeout(S.timer); loadAll(false); },
     theme(){ const t=document.documentElement.dataset.theme==='dark'?'light':'dark';

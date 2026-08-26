@@ -5206,6 +5206,18 @@ if _sh.which("node"):
         # con un club sin escudo o con un año de tres títulos, que se rompa
         # acá.
         "/api/historia": _hist.todo(),
+        # La ficha de un club, para poder mirar la tarjeta de títulos. El
+        # `titulos` es el de verdad, no un ejemplo.
+        "/api/club-info": {
+            "club": "River Plate", "escudo": "/img/x/0",
+            "primary": "#ffffff", "accent": "#e01e2b", "var": "#e01e2b",
+            "info": {"nombre": "Club Atlético River Plate",
+                     "apodo": "El Millonario", "fundado": 1901,
+                     "estadio": "Más Monumental", "capacidad": 85018,
+                     "titulos": _hist.titulos_de("River Plate")},
+            "historial": [], "plantel": [], "fixture": [], "radar": None,
+            "partidos": {}, "sitio": None, "tienda": None},
+        "/api/club": {"club": "River Plate", "partidos": {}},
         "/api/rounds": {"rounds": [1], "current": 1},
         "/api/games": {"games": []}, "/api/ligas": {"ligas": []},
         "/api/visita": {"v": "x"}}, ensure_ascii=False)
@@ -5221,34 +5233,36 @@ loc.pathname='__E__';
 App.init();
 (async()=>{
   for(let i=0;i<150;i++) await new Promise(r=>setImmediate(r));
-  const sub=doc.querySelector('#subm').innerHTML||'';
-  const main=doc.querySelector('#matches').innerHTML||'';
-  /* La otra vista de la historia, que es la mitad de la pantalla y no se
-     dibuja hasta que la tocás. Se cambia acá mismo porque es la misma
-     lista ya en memoria: no hay pedido nuevo que esperar. */
-  let otra='';
-  try{
-    if(loc.pathname.indexOf('historia')>=0){
-      App.hist('ano');
-      otra=doc.querySelector('#matches').innerHTML||'';
-    }
-  }catch(e){ otra='REVENTO: '+e.message; }
+  /* Con cuidado: un id que nadie escribió devuelve null, igual que en el
+     navegador, y no todas las pantallas dibujan todo —la ficha de un club
+     no tiene submenú—. Sin esto, la pantalla que falta un pedazo se ve
+     como un `null` pelado y parece que reventó la prueba. */
+  const htmlDe=s=>{ const e=doc.querySelector(s); return (e&&e.innerHTML)||''; };
+  const sub=htmlDe('#subm'), main=htmlDe('#matches'), der=htmlDe('#right');
   console.log(JSON.stringify({
     haySubmenu: sub.indexOf('Fixture/Tablas') >= 0,
     opciones: (sub.match(/class="sm/g) || []).length,
     seleccionado: (sub.match(/class="sm on"[^>]*>([^<]+)</) || [])[1] || '',
-    pestanas: [...(doc.querySelector('#tabs').innerHTML||'')
+    pestanas: [...htmlDe('#tabs')
       .matchAll(/>([^<]+)<\/button>/g)].map(m=>m[1]),
     equipos: (main.match(/class="eq-item"/g) || []).length,
     nombres: [...main.matchAll(/<span class="nm">([^<]+)</g)].map(m=>m[1]),
     linkAlClub: main.indexOf('href="/boca-juniors"') >= 0,
-    histClubes: (main.match(/class="hist-club"/g) || []).length,
     histCopas: (main.match(/class="hist-copa"/g) || []).length,
-    histPrimero: (main.match(/class="cant">(\\d+)</) || [])[1] || '',
     histSinEscudo: (main.match(/<span class="hist-esc"><\\/span>/g)||[]).length,
-    histAnos: (otra.match(/class="hist-ano/g) || []).length,
-    histDobles: (otra.match(/class="hist-ano doble"/g) || []).length,
-    histOtraRevento: otra.indexOf('REVENTO') === 0 ? otra : ''}));
+    histAnos: (main.match(/class="hist-ano/g) || []).length,
+    histDobles: (main.match(/class="hist-ano doble"/g) || []).length,
+    /* La cuenta por club vive a la derecha, no en el medio. */
+    histClubes: (der.match(/class="hist-club"/g) || []).length,
+    histClubesEnMedio: (main.match(/class="hist-club"/g) || []).length,
+    histPrimero: (der.match(/class="cant">(\\d+)</) || [])[1] || '',
+    histDesglose: (der.match(/class="desglose">([^<]*)</) || [])[1] || '',
+    /* La tarjeta de títulos de la ficha del club, con su rótulo, su
+       número y el desglose de abajo. */
+    fichaDatos: [...main.matchAll(/class="lb">([^<]+)</g)].map(m=>m[1]),
+    fichaTitulos: (main.match(
+      /class="lb">Títulos<\\/div>\\s*<div class="vl">(\\d+)<div class="pie">([^<]*)/)
+      || []).slice(1,3)}));
 })();
 """).replace("__R__", _rsub).replace("__E__", ruta)
         _g = (open(_DOMSITO, encoding="utf-8").read()
@@ -5265,7 +5279,15 @@ App.init();
             _f.write(_g); _rr = _f.name
         _p = _sub.run(["node", _rr], capture_output=True, text=True, timeout=60)
         os.unlink(_rr)
-        return json.loads(_p.stdout) if _p.returncode == 0 and _p.stdout else None
+        if _p.returncode == 0 and _p.stdout:
+            return json.loads(_p.stdout)
+        # Sin esto, una pantalla que revienta se ve como un `None` pelado y
+        # hay que reconstruir el andamio a mano para averiguar por qué. El
+        # error de node dice exactamente qué línea falló.
+        print("    ↳ %s no se pudo abrir:\n      %s"
+              % (ruta, (_p.stderr or "sin salida").strip()
+                 .replace("\n", "\n      ")[:900]))
+        return None
 
     # El error que costó una subida: `drawSubmenu()` y `pestanasLpf()` se
     # llamaban ANTES de que `shell()` armara la pantalla. En el navegador
@@ -5322,30 +5344,50 @@ App.init();
     if _s3:
         chequear("con su opción del submenú marcada",
                  _s3["seleccionado"] == "Historia", _s3["seleccionado"])
-        chequear("y las dos vistas arriba",
-                 _s3["pestanas"] == ["Por club", "Año por año"],
+        # Las dos vistas van a la vez y no en pestañas: la lista año por año
+        # en el medio, que es lo que uno viene a mirar, y la cuenta por club
+        # al costado.
+        # Las filas del medio son las 97 temporadas MÁS las 41 de las copas,
+        # porque las copas al desplegarse se dibujan con la misma forma que
+        # la lista de ligas —que es justamente lo que se pidió—.
+        _fCopas = sum(len(c["campeones"]) for c in _hist.copas())
+        chequear("el año por año va en el medio",
+                 _s3["histAnos"] == len(_hist.por_ano()) + _fCopas == 138
+                 and _s3["histClubesEnMedio"] == 0,
+                 (_s3["histAnos"], _s3["histClubesEnMedio"]))
+        chequear("con los años de más de un campeón marcados",
+                 _s3["histDobles"] == sum(
+                     1 for f in _hist.por_ano() if len(f["titulos"]) > 1),
+                 _s3["histDobles"])
+        chequear("y no quedaron pestañas de vistas", not _s3["pestanas"],
                  _s3["pestanas"])
-        chequear("se dibuja una fila por club campeón",
-                 _s3["histClubes"] == len(_hist.por_club()) == 19,
+        chequear("la cuenta por club va a la derecha",
+                 _s3["histClubes"] == len(_hist.resumen_por_club()) == 25,
                  _s3["histClubes"])
-        chequear("y River primero con sus 37",
-                 _s3["histPrimero"] == "37", _s3["histPrimero"])
+        # El total primero y el desglose abajo: 37 ligas y 9 copas de River
+        # suman 46, y el 46 solo no dice nada.
+        chequear("con el total arriba y el desglose abajo",
+                 _s3["histPrimero"] == "46"
+                 and _s3["histDesglose"] == "37 ligas · 9 copas",
+                 (_s3["histPrimero"], _s3["histDesglose"]))
         chequear("las ocho copas van abajo, aparte",
                  _s3["histCopas"] == len(_hist.COPAS) == 8, _s3["histCopas"])
         # Chacarita, Ferro, Quilmes, Arsenal y compañía ya no están en
         # Primera: no tienen escudo y ahí es donde una fila se descoloca.
         chequear("los campeones sin escudo se dibujan igual",
                  _s3["histSinEscudo"] >= 15, _s3["histSinEscudo"])
-        # Y la otra vista, que es la mitad de la pantalla: una fila por
-        # temporada, y las de más de un título marcadas como tales.
-        chequear("cambiar a año por año no revienta",
-                 not _s3["histOtraRevento"], _s3["histOtraRevento"])
-        chequear("y dibuja una fila por temporada",
-                 _s3["histAnos"] == len(_hist.por_ano()), _s3["histAnos"])
-        chequear("con los años de más de un campeón marcados",
-                 _s3["histDobles"] == sum(
-                     1 for f in _hist.por_ano() if len(f["titulos"]) > 1),
-                 _s3["histDobles"])
+
+    # Y la ficha del club, que es el otro lugar donde tenían que aparecer:
+    # en la misma fila que el estadio y la capacidad.
+    _s4 = _entrar("/river-plate")
+    chequear("la ficha del club se abre", _s4 is not None, _s4)
+    if _s4:
+        chequear("y los títulos van con el estadio y la capacidad",
+                 _s4["fichaDatos"][:3] == ["Títulos", "Estadio", "Capacidad"],
+                 _s4["fichaDatos"][:4])
+        chequear("con el total y el desglose debajo",
+                 _s4["fichaTitulos"] == ["46", "37 ligas · 9 copas · "],
+                 _s4["fichaTitulos"])
 
 
 print("\n── los promedios: el año que viene y lo que necesita cada uno ──")
@@ -5859,11 +5901,48 @@ chequear("la sección de historia se dibuja",
          and "function histPorClub()" in HTML
          and "function histPorAno()" in HTML
          and "function histCopas()" in HTML)
-chequear("con las dos vistas en las pestañas",
-         "[['club','Por club'],['ano','Año por año']]" in HTML
-         and "hist(v){" in HTML)
+# Las dos vistas a la vez: el año por año en el medio y la cuenta por club
+# a la derecha. Sin pestañas, así que tampoco tiene que quedar el botón.
+chequear("las dos vistas van a la vez, sin pestañas",
+         "main.innerHTML=histPorAno() + histCopas()" in HTML
+         and "if(der) der.innerHTML=histPorClub();" in HTML
+         and "App.hist(" not in HTML and "histVista" not in HTML)
 chequear("y las copas abajo, separadas",
          '<div class="hist-sep">Copas nacionales</div>' in HTML)
+# Y al desplegarse, la copa se lee igual que la lista de ligas: la misma
+# función arma las dos.
+chequear("la copa desplegada usa la misma fila que las ligas",
+         "function histFila(temporada, titulos)" in HTML
+         and "histFila(f.temporada,f.titulos)" in HTML
+         and "histFila(x.temporada,[{campeon:x.campeon}])" in HTML)
+# El total y el desglose, que es lo que hace que el número signifique algo.
+chequear("por club muestra el total y lo discrimina",
+         '<span class="cant">${c.total}</span>' in HTML
+         and "c.ligas?plural(c.ligas,'liga'):''" in HTML
+         and "c.copas?plural(c.copas,'copa'):''" in HTML
+         and '<div class="hist-grupo">Ligas</div>' in HTML
+         and '<div class="hist-grupo">Copas</div>' in HTML)
+
+# Los títulos en la ficha del club, en la misma fila que el estadio.
+chequear("la ficha del club muestra los títulos",
+         "${dato('Títulos', titulosClub(i.titulos))}" in HTML
+         and "const titulosClub=t=>{" in HTML
+         and "if(!t||!t.total) return '';" in HTML)
+chequear("y el servidor se los manda",
+         'ficha["titulos"] = historia.titulos_de(canon)' in _SRV)
+# River tiene 46 y Aldosivi ninguno: el que no ganó nada no muestra un cero.
+chequear("River los tiene y Aldosivi no",
+         (_hist.titulos_de("River Plate") or {}).get("total") == 46
+         and _hist.titulos_de("Aldosivi") is None,
+         _hist.titulos_de("River Plate"))
+# Y los treinta de Primera se buscan por su nombre tal cual: si mañana
+# cambia uno, esto lo dice antes de que la ficha quede sin títulos.
+_conTitulos = {c["club"] for c in _hist.resumen_por_club()}
+chequear("los campeones que siguen en Primera coinciden de nombre",
+         _conTitulos & set(server.CLUBES_INFO) == _conTitulos - {
+             "Arsenal", "Chacarita Juniors", "Colón", "Ferro Carril Oeste",
+             "Patronato", "Quilmes"},
+         sorted(_conTitulos - set(server.CLUBES_INFO)))
 # Los clubes que ya no están en Primera no tienen escudo, y el hueco tiene
 # que ocupar lo mismo para que los nombres no se corran de columna.
 chequear("los campeones que ya no existen no descolocan la fila",

@@ -309,14 +309,84 @@ def copas():
             for nombre, filas in COPAS]
 
 
+def _plano(texto):
+    """Un nombre sin tildes ni mayúsculas, para poder compararlos."""
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", (texto or "").lower())
+                   if unicodedata.category(c) != "Mn")
+
+
+def resumen_por_club():
+    """
+    Cada club con su total de títulos y el desglose: cuántas ligas y
+    cuántas copas.
+
+    El total va primero porque es lo que se pregunta —"¿cuántas tiene
+    Boca?"— pero el desglose tiene que estar al lado sí o sí: una liga y
+    una Supercopa no son lo mismo, y una lista que las suma sin decirlo es
+    la clase de dato que después alguien discute en un bar.
+
+    El orden es por total, después por ligas —a igual total gana el que
+    tiene más ligas, que es lo que cualquiera diría— y después alfabético.
+    """
+    c = {}
+
+    def entrada(club):
+        return c.setdefault(club, {"club": club, "total": 0, "ligas": 0,
+                                   "copas": 0, "detalleLigas": [],
+                                   "detalleCopas": []})
+
+    for temporada, torneo, campeon in LIGAS:
+        x = entrada(campeon)
+        x["ligas"] += 1
+        x["detalleLigas"].append({"temporada": temporada, "torneo": torneo})
+    for nombre, filas in COPAS:
+        porCopa = {}
+        for temporada, campeon in filas:
+            porCopa.setdefault(campeon, []).append(temporada)
+        for campeon, temporadas in porCopa.items():
+            x = entrada(campeon)
+            x["copas"] += len(temporadas)
+            x["detalleCopas"].append({
+                "copa": nombre,
+                "temporadas": sorted(temporadas, key=_clave, reverse=True)})
+
+    salida = sorted(c.values(),
+                    key=lambda x: (-(x["ligas"] + x["copas"]), -x["ligas"],
+                                   _plano(x["club"])))
+    for x in salida:
+        x["total"] = x["ligas"] + x["copas"]
+        x["detalleLigas"].sort(key=lambda d: _clave(d["temporada"]),
+                               reverse=True)
+        x["detalleCopas"].sort(key=lambda d: (-len(d["temporadas"]), d["copa"]))
+    for i, x in enumerate(salida, 1):
+        x["pos"] = i if i == 1 or x["total"] != salida[i - 2]["total"] \
+            else salida[i - 2]["pos"]
+    return salida
+
+
+# Se arma una sola vez: es una lista fija y la pide cada ficha de club.
+_POR_CLUB = None
+
+
+def titulos_de(club):
+    """
+    Los títulos de un club, para su ficha. None si no ganó ninguno —que es
+    la mayoría— para que la ficha no muestre un cero.
+    """
+    global _POR_CLUB
+    if _POR_CLUB is None:
+        _POR_CLUB = {_plano(x["club"]): x for x in resumen_por_club()}
+    return _POR_CLUB.get(_plano(club))
+
+
 def todo():
     """Lo que se manda a la pantalla, ya armado."""
-    ligas_por_club = por_club()
     return {
         "desde": DESDE,
         "total": len(LIGAS),
         "porAno": por_ano(),
-        "porClub": ligas_por_club,
+        "porClub": resumen_por_club(),
         "copas": copas(),
         "fuente": "RSSSF (Gorgazzi y Villa Martínez) sobre registros de AFA",
         "nota": ("Era profesional, desde %s. Metropolitano y Nacional "

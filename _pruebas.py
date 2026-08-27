@@ -5260,16 +5260,22 @@ chequear("y una sección que no existe no es una dirección nuestra",
          server._titulo_de_ruta("/liga-profesional/cualquiera") is None)
 chequear("las secciones están declaradas en un solo lugar",
          sorted(server.SECCIONES_LIGA) == ["calculadora", "equipos",
-                                           "historia"])
+                                           "historia", "internacionales",
+                                           "previa", "tabla"],
+         sorted(server.SECCIONES_LIGA))
 chequear("y la página conoce las mismas",
          "calculadora:{rotulo:'Calculadora de promedios'" in HTML
          and "equipos:{rotulo:'Equipos'" in HTML
          and "historia:{rotulo:'Historia'" in HTML
-         and "lpf:['calculadora','equipos','historia']," in HTML)
+         and "previa:{rotulo:'Previa de la fecha'" in HTML
+         and "tabla:{rotulo:'Tabla histórica'" in HTML
+         and "internacionales:{rotulo:'Títulos internacionales'" in HTML
+         and ("lpf:['previa','calculadora','equipos','historia',"
+              "'tabla','internacionales']," in HTML))
 # La Copa Argentina tiene Equipos e Historia pero no calculadora: los
 # promedios son de la liga, ahí no significan nada.
-chequear("la Copa Argentina tiene sus dos secciones y no la calculadora",
-         "ca:['equipos','historia']," in HTML)
+chequear("la Copa Argentina tiene sus secciones y no la calculadora",
+         "ca:['previa','equipos','historia']," in HTML)
 # Entrar en frío a una sección tomaba el atajo de la portada de la LPF y
 # cargaba el fixture en vez de la sección.
 chequear("entrar en frío a una sección no cae en el fixture",
@@ -5508,8 +5514,8 @@ App.init();
     chequear("el submenú se dibuja al entrar", _s1 is not None and _s2 is not None,
              (_s1, _s2))
     if _s1 and _s2:
-        chequear("con las cuatro opciones y Fixture/Tablas ya elegida",
-                 _s1["haySubmenu"] and _s1["opciones"] == 4
+        chequear("con todas las opciones y Fixture/Tablas ya elegida",
+                 _s1["haySubmenu"] and _s1["opciones"] == 7
                  and _s1["seleccionado"] == "Fixture/Tablas", _s1)
         # Y las pestañas del panel, dibujadas de verdad: `shell()` las
         # reescribía con las de su plantilla y se llevaba puesta la nueva.
@@ -6289,13 +6295,228 @@ chequear("y no se la come la de Primera ni la de la copa",
          and server.ROUTES["/api/historia"]({"liga": ["ca"]})["copa"]
              == "Copa Argentina")
 chequear("y tiene su pestaña en el submenú",
-         "nacional:['equipos','historia']" in HTML)
+         "nacional:['previa','equipos','historia']" in HTML)
 # La pantalla: los ascendidos y la nota de formato son lo nuevo.
 chequear("la pantalla dibuja los ascendidos y el formato",
          'class="subieron"' in HTML and 'class="hist-formato"' in HTML
          and "También ascendió" in HTML)
 chequear("y dice 'Sin campeón' donde no hubo",
          "Sin campeón" in HTML)
+
+# El texto de tablas.py, para comprobar las reglas que no se pueden mirar
+# desde afuera sin una base cargada.
+_TBL = open(os.path.join(AQUI, "tablas.py"), encoding="utf-8").read()
+
+print("\n── la tabla histórica de Primera ──")
+# Se arma de cero sumando la tabla final de cada torneo, porque la que
+# está publicada no cierra. Las cuatro verificaciones corren acá, sobre el
+# archivo generado: si mañana se regenera mal, se entera esta prueba y no
+# el que lo lea en el sitio.
+import tabla as _TB                                               # noqa: E402
+chequear("los partidos dan la suma de ganados, empatados y perdidos",
+         all(t[1] == t[2] + t[3] + t[4] for t in _TB.TABLA),
+         [t for t in _TB.TABLA if t[1] != t[2] + t[3] + t[4]][:3])
+_sg = sum(t[2] for t in _TB.TABLA)
+_sp = sum(t[4] for t in _TB.TABLA)
+_sgf = sum(t[5] for t in _TB.TABLA)
+_sgc = sum(t[6] for t in _TB.TABLA)
+# No dan exacto y no pueden: la fuente asienta de forma asimétrica los
+# partidos dados por ganados y los abandonados. Lo que sí tiene que pasar
+# es que el desvío se quede donde está. Si un día se dispara, algo se
+# rompió al regenerar.
+chequear("los ganados y los perdidos dan casi igual",
+         abs(_sg - _sp) <= 30, (_sg, _sp, _sg - _sp))
+chequear("y los goles a favor y en contra también",
+         abs(_sgf - _sgc) <= 40, (_sgf, _sgc, _sgf - _sgc))
+chequear("y los empates son un número par",
+         sum(t[3] for t in _TB.TABLA) % 2 == 0)
+# Wikipedia se olvida de Barracas Central, que volvió a Primera en 2022.
+# Es el control de que la nuestra llega hasta hoy y no hasta 2020.
+chequear("Barracas Central está, que en la de Wikipedia no",
+         any(t[0] == "Barracas Central" for t in _TB.TABLA))
+chequear("y también los que ya no existen",
+         any(t[0] == "Deportivo Mandiyú" for t in _TB.TABLA))
+# Los homónimos son clubes distintos y tienen que estar separados. Si un
+# día se mezclan, uno queda con los partidos del otro.
+for _a, _b in [("Talleres (C)", "Talleres (RdE)"),
+               ("San Martín Tucumán", "San Martín San Juan"),
+               ("Gimnasia y Esgrima (LP)", "Gimnasia de Jujuy"),
+               ("Central Córdoba (SdE)", "Central Córdoba (R)"),
+               ("Huracán", "Huracán (Tres Arroyos)")]:
+    chequear("%s y %s son dos clubes" % (_a, _b),
+             {_a, _b} <= {t[0] for t in _TB.TABLA})
+_TH = server.ROUTES["/api/tabla"]({})
+chequear("la tabla se sirve por su dirección",
+         _TH["total"] == len(_TB.TABLA) == 107, _TH["total"])
+# El orden: por puntos a 3 por victoria, no por los que se dieron en su
+# momento. Con el sistema viejo el orden de arriba cambia.
+chequear("va ordenada por puntos a 3 por victoria",
+         [x["pts"] for x in _TH["filas"]]
+         == sorted((x["pts"] for x in _TH["filas"]), reverse=True)
+         and _TH["filas"][0]["pts"] == 3 * _TH["filas"][0]["g"]
+                                       + _TH["filas"][0]["e"])
+chequear("y arriba están los que uno espera",
+         [x["club"] for x in _TH["filas"][:4]]
+         == ["River Plate", "Boca Juniors", "San Lorenzo", "Independiente"],
+         [x["club"] for x in _TH["filas"][:4]])
+chequear("cada uno con su posición, sin repetir",
+         [x["pos"] for x in _TH["filas"]] == list(range(1, 108)))
+
+print("\n── los títulos internacionales ──")
+import internacionales as _IN                                     # noqa: E402
+_INT = server.ROUTES["/api/internacionales"]({})
+# Los controles conocidos, que es como se verifica esto: son los números
+# que cualquier hincha sabe de memoria.
+_lib = {}
+for _t, _c, _r in dict(_IN.COPAS)["Copa Libertadores"]:
+    _lib[_c] = _lib.get(_c, 0) + 1
+chequear("Independiente tiene las 7 Libertadores, que es el récord",
+         _lib["Independiente"] == 7 == max(_lib.values()), _lib)
+chequear("y los demás también dan",
+         _lib["Boca Juniors"] == 6 and _lib["River Plate"] == 4
+         and _lib["Estudiantes (LP)"] == 4 and _lib["San Lorenzo"] == 1
+         and _lib["Racing"] == 1 and _lib["Vélez Sarsfield"] == 1
+         and _lib["Argentinos Juniors"] == 1, _lib)
+chequear("son 25 Libertadores argentinas en total",
+         sum(_lib.values()) == 25, sum(_lib.values()))
+chequear("y 76 títulos internacionales entre 13 clubes",
+         _INT["total"] == 76 and len(_INT["porClub"]) == 13,
+         (_INT["total"], len(_INT["porClub"])))
+# La Suruga Bank va aparte y NO suma. Es una decisión, y cambia quién está
+# primero: contándola, Boca e Independiente empatan en 18.
+chequear("la Suruga Bank está pero no suma al total",
+         _INT["aparte"] and _INT["aparte"][0]["copa"] == "Copa Suruga Bank"
+         and len(_INT["aparte"][0]["campeones"]) == 3
+         and _INT["porClub"][0]["total"] == 18
+         and _INT["porClub"][1]["total"] == 17,
+         [(x["club"], x["total"]) for x in _INT["porClub"][:2]])
+chequear("y no se coló en la lista que suma",
+         not any(c["copa"] == "Copa Suruga Bank" for c in _INT["copas"]))
+# Y no se mezclan con las copas nacionales, que son otra cosa.
+chequear("no se mezclan con las copas nacionales",
+         not ({c["copa"] for c in _INT["copas"]}
+              & {c["copa"] for c in historia.copas()}))
+chequear("la ficha del club los trae aparte de las ligas",
+         'ficha["internacionales"] = historia.internacionales_de(canon)'
+         in _SRV
+         and "${dato('Internacionales', internacionalesClub(i))}" in HTML)
+chequear("Boca tiene 18 y Talleres 1",
+         historia.internacionales_de("Boca Juniors")["total"] == 18
+         and historia.internacionales_de("Talleres (C)")["total"] == 1)
+chequear("y un club sin ninguno no muestra la tarjeta",
+         historia.internacionales_de("Platense") is None)
+
+print("\n── la previa de la fecha ──")
+chequear("la previa tiene su dirección", "/api/previa" in server.ROUTES)
+chequear("y no es privada, que es para todo el mundo",
+         "/api/previa" not in server.PRIVADAS)
+# La racha se lee desde el lado del equipo, no del local: "viene de ganar
+# tres" no depende de dónde jugó.
+chequear("la racha se cuenta desde el lado del equipo",
+         "casa = m[\"local_id\"] == equipo" in _TBL
+         and 'mios = m["gh"] if casa else m["ga"]' in _TBL)
+chequear("y sólo cuenta los partidos terminados",
+         "AND estado='FIN'" in _TBL)
+for _r, _dice in [([{"como": "G"}] * 3, "Viene de 3 triunfos seguidos"),
+                  ([{"como": "P"}], "Viene de una derrota"),
+                  ([{"como": "E"}, {"como": "G"}], "Viene de un empate"),
+                  ([], "")]:
+    chequear("la racha %s se dice %r" % ([x["como"] for x in _r], _dice),
+             server._racha_texto(_r) == _dice, server._racha_texto(_r))
+# El dato del partido: si no hay nada llamativo, no se inventa una frase.
+chequear("sin nada llamativo, no hay frase de relleno",
+         server._el_dato(None, "A", "B") == ""
+         and server._el_dato({"pj": 2, "partidos": [
+             {"ganador": "A"}, {"ganador": "B"}]}, "A", "B") == "")
+_seco = {"pj": 6, "partidos": [{"ganador": "A"}] * 6}
+chequear("pero una racha larga sin ganar sí se cuenta",
+         "no le gana" in server._el_dato(_seco, "A", "B"),
+         server._el_dato(_seco, "A", "B"))
+# El goleador de un equipo no puede incluir los goles del rival: el gol
+# trae el nombre del equipo que lo hizo y hay que filtrarlo.
+chequear("los goles del rival no cuentan como propios",
+         "AND (g.equipo IS NULL OR g.equipo=(" in _TBL)
+# El jugador a seguir se elige por lo que viene haciendo, no a dedo.
+chequear("el jugador a seguir se elige por la racha, no a dedo",
+         '"porque": "en racha"' in _SRV
+         and '"porque": "goleador del equipo"' in _SRV)
+chequear("y si nadie convirtió, no se inventa un nombre",
+         "    return None\n\n\ndef api_previa" in _SRV)
+chequear("el de la fecha sale de los mismos, con la misma regla",
+         'candidatos.sort(key=lambda j: (j["porque"] != "en racha",' in _SRV)
+# La pantalla.
+chequear("la previa se dibuja",
+         "if(sec==='previa') return seccionPrevia();" in HTML
+         and "async function seccionPrevia()" in HTML)
+chequear("con la racha en bolitas y el clásico destacado",
+         'class="bo ${r.como}"' in HTML and "p.clasico?' clasico':''" in HTML)
+chequear("y el jugador a seguir de cada partido y de la fecha",
+         "function aSeguirHtml(j, lado)" in HTML
+         and 'class="pv-elegido"' in HTML
+         and "El jugador de la fecha" in HTML)
+# Va en todos los torneos: se arma con lo guardado de cada uno.
+chequear("la previa está en todos los torneos",
+         "CON_SECCIONES[l]=['previa']" in HTML)
+
+# Y la previa de verdad, con un calendario de mentira. Interesa sobre todo
+# el caso feo: un torneo del que todavía no guardamos ningún partido. Ahí
+# no hay historial, ni racha, ni goleador —y la previa tiene que salir
+# igual, con lo que hay, en vez de reventar.
+_ag = server.all_games
+
+
+def _falso(ttl=25):
+    def uno(i, h, a, ronda, cuando, fin=False):
+        return {"id": i, "round": ronda, "start": cuando,
+                "status": "FIN" if fin else "SCHEDULED",
+                "stage": "", "venue": "La Bombonera", "zone": "A",
+                "home": {"name": h, "canon": h, "logo": None},
+                "away": {"name": a, "canon": a, "logo": None}}
+    return [uno(1, "Boca Juniors", "River Plate", 5, "2026-08-20T20:00", True),
+            uno(2, "Racing", "Independiente", 6, "2026-08-30T17:00"),
+            uno(3, "Vélez Sarsfield", "Lanús", 6, "2026-08-30T20:00"),
+            uno(4, "Boca Juniors", "Platense", 7, "2026-09-06T17:00")]
+
+
+try:
+    server.all_games = _falso
+    _PV = server.ROUTES["/api/previa"]({"liga": ["lpf"]})
+finally:
+    server.all_games = _ag
+chequear("la previa toma la primera fecha que falta jugar",
+         _PV["ronda"] == 6 and len(_PV["partidos"]) == 2,
+         (_PV.get("ronda"), len(_PV.get("partidos") or [])))
+chequear("y no la que ya se jugó",
+         all(p["id"] != 1 for p in _PV["partidos"]))
+chequear("ni la de más adelante",
+         all(p["id"] != 4 for p in _PV["partidos"]))
+_p0 = _PV["partidos"][0]
+chequear("cada partido trae los dos equipos y dónde se juega",
+         _p0["home"]["name"] == "Racing"
+         and _p0["away"]["name"] == "Independiente"
+         and _p0["venue"] == "La Bombonera", _p0["home"])
+# Sin datos guardados: todo lo derivado viene vacío, y eso está bien. Lo
+# que NO puede pasar es que reviente ni que invente.
+chequear("sin partidos guardados no inventa nada",
+         not _p0["dato"] and not _p0["vieneDe"]["home"]
+         and _p0["aSeguir"]["home"] is None
+         and _PV["delaFecha"] is None,
+         (_p0["dato"], _p0["vieneDe"], _p0["aSeguir"]))
+# El clásico de Avellaneda tiene que reconocerse solo, desde las fichas.
+chequear("y el clásico se reconoce sin cargarlo a mano",
+         bool(_p0["clasico"]), _p0["clasico"])
+# Un torneo terminado no muestra la última fecha como si viniera.
+try:
+    server.all_games = lambda ttl=25: [dict(g, status="FIN")
+                                       for g in _falso()]
+    _PVfin = server.ROUTES["/api/previa"]({"liga": ["lpf"]})
+finally:
+    server.all_games = _ag
+chequear("con el torneo terminado lo dice, no muestra la última fecha",
+         not _PVfin["partidos"] and "termin" in _PVfin["nota"],
+         _PVfin.get("nota"))
+chequear("y una liga que no existe no revienta",
+         "error" in server.ROUTES["/api/previa"]({"liga": ["nada"]}))
 
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)

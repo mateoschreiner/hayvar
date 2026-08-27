@@ -552,6 +552,41 @@ for _n, (_riv, _como) in CLASICOS.items():
 
 # Los estadios que están en obra ahora mismo: la cifra de Wikipedia es la
 # de antes de la reforma y va a quedar corta.
+# Los clásicos de los clubes de Primera. Van acá y no en `CLUBES` porque
+# esos clubes tienen su ficha en otro lado; esto es sólo el dato del
+# rival, que el servidor pega encima.
+#
+# Están los que nadie discute. Faltan a propósito los que sí se discuten
+# —el de Argentinos, el de Defensa, el de Barracas— porque poner un rival
+# equivocado en la pantalla de un club es peor que no poner ninguno. Se
+# van agregando cuando se puedan confirmar.
+CLASICOS_PRIMERA = {
+    "Boca Juniors": ("River Plate", "Superclásico"),
+    "River Plate": ("Boca Juniors", "Superclásico"),
+    "Racing": ("Independiente", "Clásico de Avellaneda"),
+    "Independiente": ("Racing", "Clásico de Avellaneda"),
+    "San Lorenzo": ("Huracán", "Clásico de Boedo y Parque Patricios"),
+    "Huracán": ("San Lorenzo", "Clásico de Boedo y Parque Patricios"),
+    "Estudiantes (LP)": ("Gimnasia y Esgrima (LP)", "Clásico platense"),
+    "Gimnasia y Esgrima (LP)": ("Estudiantes (LP)", "Clásico platense"),
+    "Newell's Old Boys": ("Rosario Central", "Clásico rosarino"),
+    "Rosario Central": ("Newell's Old Boys", "Clásico rosarino"),
+    "Lanús": ("Banfield", "Clásico del Sur"),
+    "Banfield": ("Lanús", "Clásico del Sur"),
+    "Talleres (C)": ("Belgrano", "Clásico cordobés"),
+    "Belgrano": ("Talleres (C)", "Clásico cordobés"),
+    "Instituto": ("Belgrano", "Clásico cordobés"),
+    "Atlético Tucumán": ("San Martín Tucumán", "Clásico tucumano"),
+    "Godoy Cruz": ("Independiente Rivadavia", "Clásico mendocino"),
+    "Independiente Rivadavia": ("Godoy Cruz", "Clásico mendocino"),
+    "Gimnasia y Esgrima (M)": ("Independiente Rivadavia", "Clásico mendocino"),
+    "Unión": ("Colón", "Clásico santafesino"),
+    "Aldosivi": ("Alvarado", "Clásico marplatense"),
+    "Vélez Sarsfield": ("Ferro Carril Oeste", "Clásico del Oeste"),
+    "Platense": ("Tigre", "Clásico de la zona norte"),
+    "Tigre": ("Platense", "Clásico de la zona norte"),
+}
+
 EN_OBRA = {"Godoy Cruz", "Deportivo Madryn", "Ciudad De Bolivar",
            "Deportivo Rincón", "Sarmiento De La Banda"}
 

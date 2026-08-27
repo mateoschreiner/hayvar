@@ -8105,7 +8105,6 @@ for _n, _f in fichas.CLUBES.items():
     CLUBES_INFO.setdefault(_n, _f)
 
 
-
 # El resto de Primera. Acá va lo que no cambia de un año al otro: nombre,
 # apodo, fundación, cancha y —sobre todo— el diseño de la camiseta.
 #
@@ -8564,7 +8563,6 @@ _OTROS_CLUBES = {
     },
 }
 
-
 def _kit(t):
     """
     Del atajo al diccionario que usa el dibujo.
@@ -8604,6 +8602,19 @@ for _n, _d in _OTROS_CLUBES.items():
                       for _c in ("titular", "suplente", "tercera")
                       if _d.get(_c)},
     }
+
+
+# El clásico de cada club de Primera, pegado encima de las fichas.
+#
+# Va acá abajo del todo y no arriba: las fichas se arman en varios bloques
+# y el último gana. Puesto antes de `_OTROS_CLUBES`, el clásico de Racing
+# lo pisaba la ficha de Racing y no aparecía nunca —el clásico de
+# Avellaneda no se reconocía y lo agarró la prueba de la previa—.
+for _n, (_riv, _como) in fichas.CLASICOS_PRIMERA.items():
+    _f = CLUBES_INFO.setdefault(_n, {})
+    _f.setdefault("clasico", _riv)
+    if _como:
+        _f.setdefault("clasicoNombre", _como)
 
 
 def api_club_info(q):
@@ -8672,6 +8683,10 @@ def armar_club_info(canon):
     # Los clubes que nunca salieron campeones dan None y no muestran nada:
     # un cero grande en la ficha sería una manera fea de decirlo.
     ficha["titulos"] = historia.titulos_de(canon)
+    # Los internacionales van aparte y no sumados: en Argentina "cuántas
+    # Libertadores tiene" es una pregunta distinta de "cuántas ligas", y
+    # meterlas en el mismo número sería mezclar dos cosas que nadie mezcla.
+    ficha["internacionales"] = historia.internacionales_de(canon)
     escudo = None
     try:
         escudo = (_logos().get(canon) or {}).get("logo")
@@ -8964,6 +8979,181 @@ def api_nombres(q):
                      "clubes quedaron en el historial del otro. Acá no se "
                      "corrige nada: es para decidir con el número a la "
                      "vista.")}
+
+
+def _racha_texto(racha):
+    """
+    "Viene de tres triunfos seguidos", o lo que corresponda.
+
+    Se cuenta cuántos partidos seguidos lleva con el mismo resultado desde
+    el último para atrás. Es lo que la gente dice de memoria y ninguna
+    tabla muestra: la tabla dice cuántos ganó en total, no si viene bien.
+    """
+    if not racha:
+        return ""
+    como = racha[0]["como"]
+    n = 0
+    for r in racha:
+        if r["como"] != como:
+            break
+        n += 1
+    palabra = {"G": ("triunfo", "triunfos"),
+               "E": ("empate", "empates"),
+               "P": ("derrota", "derrotas")}[como]
+    if n == 1:
+        return "Viene de %s %s" % ("un" if como != "P" else "una",
+                                   palabra[0])
+    return "Viene de %d %s seguid%s" % (n, palabra[1],
+                                        "os" if como != "P" else "as")
+
+
+def _el_dato(hist, local, visita):
+    """
+    La frase que hace que una previa valga: lo que pasó las veces
+    anteriores, dicho como lo diría alguien.
+
+    Se prefiere el dato que sorprende —una racha larga sin ganar— por
+    sobre el resumen, que ya está en los números de al lado. Si no hay
+    nada llamativo, devuelve vacío y la tarjeta no muestra la línea: una
+    previa con una frase de relleno es peor que una sin frase.
+    """
+    if not hist or not hist.get("partidos"):
+        return ""
+    ps = hist["partidos"]
+    # ¿Hace cuántos cruces que el visitante no le gana al local?
+    for quien, otro, clave in ((visita, local, "visita"),
+                               (local, visita, "local")):
+        sin = 0
+        for m in ps:
+            gano = (m.get("ganador") or "")
+            if gano == quien:
+                break
+            sin += 1
+        if sin >= 5 and sin == len(ps):
+            return "%s no le gana a %s desde hace %d cruces" % (
+                quien, otro, sin)
+        if sin >= 5:
+            return "%s no le gana a %s hace %d partidos" % (quien, otro, sin)
+    return ""
+
+
+def _jugador_a_seguir(equipo_id, liga, temporada, desde):
+    """
+    A quién mirar de cada equipo.
+
+    No se elige a dedo ni por fama: se elige por lo que viene haciendo.
+    Primero el que más convirtió en el último mes; si nadie convirtió, el
+    goleador del torneo de ese club. Si tampoco hay, no se muestra nadie,
+    que es mejor que inventar un nombre.
+    """
+    if not equipo_id:
+        return None
+    recientes = tablas.goleadores_de(equipo_id, liga, temporada, desde, 3)
+    if recientes and recientes[0]["goles"]:
+        g = recientes[0]
+        return {"nombre": g["jugador"], "goles": g["goles"],
+                "partidos": g["partidos"], "porque": "en racha"}
+    todos = tablas.goleadores_de(equipo_id, liga, temporada, None, 3)
+    if todos and todos[0]["goles"]:
+        g = todos[0]
+        return {"nombre": g["jugador"], "goles": g["goles"],
+                "partidos": g["partidos"], "porque": "goleador del equipo"}
+    return None
+
+
+def api_previa(q):
+    """
+    La previa de la fecha que viene. /api/previa?liga=lpf
+
+    Una tarjeta por partido con lo que uno querría saber antes de que
+    empiece: cómo viene cada uno, qué se juega, qué pasó las veces
+    anteriores y a quién mirar. Todo sale de lo que ya tenemos guardado;
+    no se le pide nada nuevo a ninguna fuente.
+
+    La fecha elegida es la primera que tenga algún partido sin jugar. Si
+    el torneo terminó, se avisa en vez de mostrar la última fecha ya
+    jugada como si estuviera por venir.
+    """
+    lid = (q.get("liga") or ["lpf"])[0]
+    if lid != "lpf" and lid not in LIGAS:
+        return {"error": "liga desconocida"}
+    try:
+        games = (all_games() if lid == "lpf"
+                 else api_liga_games({"id": [lid]}).get("games", []))
+    except Exception as e:
+        return {"error": str(e), "partidos": []}
+    porv = [g for g in games if g.get("status") != "FIN"]
+    if not porv:
+        return {"liga": lid, "ronda": None, "partidos": [],
+                "nota": "El torneo terminó: no hay fecha por jugar."}
+    # La ronda de la primera que falta. Los partidos sin ronda —una copa
+    # sin fecha numerada— se agrupan por día.
+    rondas = sorted({g["round"] for g in porv if g.get("round")})
+    ronda = rondas[0] if rondas else None
+    if ronda:
+        dela = [g for g in games if g.get("round") == ronda]
+    else:
+        dia = min((g.get("start") or "") for g in porv)[:10]
+        dela = [g for g in games if (g.get("start") or "")[:10] == dia]
+    dela.sort(key=lambda g: (g.get("start") or ""))
+    temporada = temporada_actual(LIGAS.get(lid, {}).get("sc")) if lid != "lpf" \
+        else None
+    desde = (dt.datetime.utcnow() - dt.timedelta(days=45)).isoformat()
+
+    salida, candidatos = [], []
+    for g in dela:
+        h, a = g.get("home") or {}, g.get("away") or {}
+        ch, ca = h.get("canon"), a.get("canon")
+        ih = tablas.equipo_id(ch, lid) if ch else None
+        ia = tablas.equipo_id(ca, lid) if ca else None
+        hist = historial_entre(ih, ia, excluir=g.get("id"),
+                               dia=(g.get("start") or "")[:10]) or None
+        rh = tablas.racha_de(ih, lid) if ih else []
+        ra = tablas.racha_de(ia, lid) if ia else []
+        jh = _jugador_a_seguir(ih, lid, temporada, desde)
+        ja = _jugador_a_seguir(ia, lid, temporada, desde)
+        for j, club in ((jh, ch), (ja, ca)):
+            if j:
+                candidatos.append(dict(j, club=club, partido=g.get("id")))
+        # El clásico: si los dos son el rival del otro, la tarjeta va
+        # destacada y con el nombre del partido.
+        clasico = ""
+        for uno, otro in ((ch, ca), (ca, ch)):
+            f = CLUBES_INFO.get(uno) or {}
+            if f.get("clasico") and match_team(f["clasico"], False) == otro:
+                clasico = f.get("clasicoNombre") or "Clásico"
+        salida.append({
+            "id": g.get("id"), "start": g.get("start"),
+            "home": h, "away": a, "zone": g.get("zone"),
+            "stage": g.get("stage") or "", "venue": g.get("venue") or "",
+            "clasico": clasico,
+            "historial": hist,
+            "dato": _el_dato(hist, h.get("name"), a.get("name")),
+            "racha": {"home": rh, "away": ra},
+            "vieneDe": {"home": _racha_texto(rh), "away": _racha_texto(ra)},
+            "rendimiento": {
+                "home": rendimiento_en([m for m in games
+                                        if ch in (m["home"]["canon"],
+                                                  m["away"]["canon"])], ch),
+                "away": rendimiento_en([m for m in games
+                                        if ca in (m["home"]["canon"],
+                                                  m["away"]["canon"])], ca)},
+            "aSeguir": {"home": jh, "away": ja},
+        })
+    # El jugador de la fecha: el mejor de los elegidos partido por partido,
+    # con la misma regla. Primero los que están en racha.
+    candidatos.sort(key=lambda j: (j["porque"] != "en racha",
+                                   -j["goles"], j["partidos"]))
+    return {
+        "liga": lid, "ronda": ronda,
+        "cuando": min((g.get("start") or "") for g in dela) or None,
+        "partidos": salida,
+        "delaFecha": candidatos[0] if candidatos else None,
+        "nota": ("Sale de lo que ya está guardado: los cruces anteriores, "
+                 "los últimos partidos de cada uno y quién viene "
+                 "convirtiendo. Se va llenando a medida que el torneo "
+                 "avanza."),
+    }
 
 
 def api_historia(q):
@@ -9467,6 +9657,9 @@ ROUTES = {
     # Los campeones. Sin `liga` van los de Primera; con una competencia que
     # tenga lista propia —hoy la Copa Argentina— van los de ésa.
     "/api/historia": lambda q: api_historia(q),
+    "/api/tabla": lambda q: historia.tabla_historica(),
+    "/api/internacionales": lambda q: historia.internacionales(),
+    "/api/previa": lambda q: api_previa(q),
     # Los colores que saca el escudo contra los que están cargados a mano,
     # para los treinta de Primera. Es la prueba de si el método sirve antes
     # de aplicarlo a los cientos de clubes de las otras competencias: acá
@@ -9612,6 +9805,20 @@ SECCIONES_LIGA = {
         "Campeones de %s — %s" % (n, TITULO_BASE),
         "Todos los campeones del fútbol argentino desde %s, año por año y "
         "por club, más las copas nacionales." % historia.DESDE),
+    "previa": lambda n: (
+        "Previa de la fecha de %s — %s" % (n, TITULO_BASE),
+        "Cómo llega cada equipo a la fecha de %s: los cruces anteriores, "
+        "las rachas y el jugador a seguir de cada partido." % n),
+    "tabla": lambda n: (
+        "Tabla histórica de %s — %s" % (n, TITULO_BASE),
+        "Todos los clubes que jugaron en Primera División desde 1931, con "
+        "sus partidos, sus goles y sus puntos recalculados a 3 por "
+        "victoria."),
+    "internacionales": lambda n: (
+        "Títulos internacionales de los clubes argentinos — %s"
+        % TITULO_BASE,
+        "Libertadores, Sudamericana, Recopa, Intercontinental y las copas "
+        "que ya no se juegan, por año y por club."),
 }
 
 # La página ya armada para cada dirección, con y sin comprimir. Ver _pagina.

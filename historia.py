@@ -611,6 +611,108 @@ def por_club_de(filas):
     return salida
 
 
+def tabla_historica():
+    """
+    Todos los clubes que jugaron Primera, sumados.
+
+    Los puntos van a 3 por victoria en toda la historia, también en los
+    años en que se daban 2. Es la única forma de comparar a un equipo de
+    los 60 con uno de hoy: con el sistema viejo un triunfo del 72 vale
+    menos que uno del 2020 y el orden queda distorsionado a favor de los
+    clubes modernos, que jugaron más torneos con tres puntos.
+
+    Se manda también el promedio de puntos por partido, que es lo que hace
+    justicia con los que jugaron pocas temporadas: Loma Negra estuvo dos
+    años y no puede competir en el total con Boca, pero su rendimiento
+    sí se puede mirar.
+    """
+    import tabla as _t
+    filas = []
+    for club, pj, g, e, p, gf, gc in _t.TABLA:
+        filas.append({"club": club, "pj": pj, "g": g, "e": e, "p": p,
+                      "gf": gf, "gc": gc, "dif": gf - gc,
+                      "pts": 3 * g + e,
+                      "media": round((3 * g + e) / pj, 3) if pj else 0})
+    filas.sort(key=lambda x: (-x["pts"], -x["dif"], _plano(x["club"])))
+    for i, x in enumerate(filas, 1):
+        x["pos"] = i
+    return {
+        "titulo": "Tabla histórica",
+        "desde": _t.DESDE,
+        "hasta": _t.HASTA,
+        "temporadas": _t.TEMPORADAS,
+        "total": len(filas),
+        "filas": filas,
+        "fuente": "RSSSF (Gorgazzi y Kurhy), sumando la tabla final de "
+                  "cada torneo",
+        "nota": ("Todos los clubes que jugaron alguna vez en Primera desde "
+                 "%s. Los puntos están recalculados a 3 por victoria en "
+                 "toda la historia, para poder comparar épocas: en los "
+                 "años en que se daban 2, un triunfo valía menos y el "
+                 "orden salía torcido a favor de los clubes de ahora."
+                 % _t.DESDE),
+    }
+
+
+def internacionales():
+    """
+    Los títulos internacionales, por competencia y por club.
+
+    Van aparte de las copas nacionales a propósito: una Libertadores y una
+    Supercopa Argentina no son lo mismo y sumarlas en un total sin decirlo
+    es la clase de dato que después alguien discute en un bar.
+    """
+    import internacionales as _i
+    cuenta = {}
+    for copa, filas in _i.COPAS:
+        for temporada, campeon, _rival in filas:
+            c = cuenta.setdefault(campeon, {"club": campeon, "total": 0,
+                                            "detalle": {}})
+            c["total"] += 1
+            c["detalle"].setdefault(copa, []).append(temporada)
+    salida = sorted(cuenta.values(),
+                    key=lambda x: (-x["total"], _plano(x["club"])))
+    for x in salida:
+        x["detalle"] = [{"copa": k, "temporadas": sorted(v, reverse=True)}
+                        for k, v in sorted(x["detalle"].items(),
+                                           key=lambda kv: -len(kv[1]))]
+    for i, x in enumerate(salida, 1):
+        x["pos"] = i if i == 1 or x["total"] != salida[i - 2]["total"] \
+            else salida[i - 2]["pos"]
+    copas = [{"copa": n,
+              "campeones": [{"temporada": t, "campeon": c, "rival": r}
+                            for t, c, r in sorted(f, reverse=True)]}
+             for n, f in _i.COPAS]
+    return {
+        "titulo": "Títulos internacionales",
+        "desde": min(t for _n, f in _i.COPAS for t, _c, _r in f),
+        "total": sum(len(f) for _n, f in _i.COPAS),
+        "porClub": salida,
+        "copas": copas,
+        "aparte": [{"copa": n, "porque": p,
+                    "campeones": [{"temporada": t, "campeon": c, "rival": r}
+                                  for t, c, r in sorted(f, reverse=True)]}
+                   for n, p, f in _i.APARTE],
+        "fuente": "CONMEBOL, RSSSF y Wikipedia, cruzadas entre sí",
+        "nota": ("Todo lo que CONMEBOL cuenta como competencia oficial de "
+                 "clubes, incluidas las que ya no se juegan, más la "
+                 "Intercontinental. La Copa Suruga Bank va abajo y no suma "
+                 "al total: CONMEBOL la lista como oficial pero era un "
+                 "partido único, y contarla cambia quién está primero."),
+    }
+
+
+def internacionales_de(club):
+    """Cuántos internacionales tiene un club, para su ficha. 0 si ninguno."""
+    global _INTER
+    if _INTER is None:
+        _INTER = {_plano(x["club"]): x for x in internacionales()["porClub"]}
+    return _INTER.get(_plano(club))
+
+
+_INTER = None
+
+
 def todo():
     """Lo que se manda a la pantalla, ya armado."""
     return {

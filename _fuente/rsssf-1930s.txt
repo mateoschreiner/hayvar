@@ -1,0 +1,422 @@
+https://www.rsssf.org/tablesa/arghist-pro1930s.html
+→ https://www.rsssf.org/tablesa/arghist-pro1930s.html
+Content-Type: text/html; charset=windows-1252
+
+---
+meta-GENERATOR: MSHTML 6.00.6000.16850
+---
+
+## Final Tables Argentina 1931-1940 (Professional)
+
+---
+
+## Liga Argentina de Football - [1931](https://www.rsssf.org/tablesa/arg31.html)
+
+### Primera Divisi�n 1931.
+
+```
+ 1. Boca Juniors                     34  22   6   6  85: 49   50 (Buenos Aires)
+ 2. San Lorenzo de Almagro           34  19   7   8  81: 52   45 (Buenos Aires)
+ 3. Estudiantes de La Plata          34  20   4  10 103: 51   44 (La Plata)
+ 4. River Plate                      34  19   6   9  63: 39   44 (Buenos Aires)
+ 5. Racing Club                      34  19   5  10  81: 51   43 (Avellaneda)
+ 6. Independiente                    34  18   7   9  69: 60   43 (Avellaneda)
+ 7. Chacarita Juniors                34  18   6  10  63: 58   42 (Buenos Aires)
+ 8. Hurac�n (BUE)                    34  13   7  14  58: 49   33 (Buenos Aires)
+ 9. V�lez Sarsfield                  34  13   7  14  63: 68   33 (Buenos Aires)
+10. Ferro Carril Oeste (BUE)         34  12   8  14  60: 74   32 (Buenos Aires)
+11. Argentinos Juniors               34  12   7  15  49: 61   31 (Buenos Aires)
+12. Gimnasia y Esgrima La Plata      34   9  12  13  42: 64   30 (La Plata)
+13. Platense                         34  13   3  18  52: 52   29 (Buenos Aires)
+14. Quilmes                          34  12   5  17  53: 62   29 (Quilmes)
+15. Talleres (RdE)                   34  11   2  21  48: 68   24 (Remedios de Escalada)
+16. Tigre                            34   8   7  19  47: 70   23 (Tigre)
+17. Lan�s                            34  10   2  22  43: 82   22 (Lan�s)
+18. Atlanta                          34   4   7  23  33: 83   15 (Buenos Aires)
+
+Notes:
+. Boca Juniors 1:1 River Plate abandoned and awarded wp:lp.
+. Lan�s 1:1 Platense abandoned and awarded wp:lp.
+. Tigre wp:lp Platense, walkover.
+. Racing Club 1:1 Estudiantes de La Plata abandoned and awarded lp:wp.
+
+Champion: Boca Juniors.
+No relegated teams.
+```
+
+---
+
+## Liga Argentina de Football - [1932](https://www.rsssf.org/tablesa/arg32.html)
+
+### Primera Divisi�n 1932.
+
+```
+ 1. River Plate                      34  22   6   6  81: 43   50 (Buenos Aires)
+ 2. Independiente                    34  22   6   6  69: 40   50 (Avellaneda)
+ 3. Racing Club                      34  20   9   5  58: 26   49 (Avellaneda)
+ 4. Boca Juniors                     34  20   6   8  77: 43   46 (Buenos Aires)
+ 5. San Lorenzo de Almagro           34  17  11   6  83: 44   45 (Buenos Aires)
+ 6. Estudiantes de La Plata          34  16   8  10  80: 62   40 (La Plata)
+ 7. Gimnasia y Esgrima La Plata      34  15   7  12  78: 59   37 (La Plata)
+ 8. V�lez Sarsfield                  34  15   7  12  47: 52   37 (Buenos Aires)
+ 9. Hurac�n (BUE)                    34  14   7  13  58: 58   35 (Buenos Aires)
+10. Platense                         34  13   9  12  55: 63   35 (Buenos Aires)
+11. Ferro Carril Oeste (BUE)         34  13   7  14  64: 59   33 (Buenos Aires)
+12. Quilmes                          34  13   6  15  50: 67   32 (Quilmes)
+13. Chacarita Juniors                34  12   7  15  74: 73   31 (Buenos Aires)
+14. Argentinos Juniors               34   6  11  17  40: 65   23 (Buenos Aires)
+15. Lan�s                            34   6   6  22  37: 73   18 (Lan�s)
+16. Talleres (RdE)                   34   5   7  22  44: 74   17 (Remedios de Escalada)
+17. Tigre                            34   5   7  22  49: 94   17 (Tigre)
+18. Atlanta                          34   6   5  23  31: 80   17 (Buenos Aires)
+
+Notes:
+. Boca Juniors 2:1 Atlanta abandoned and awarded wp:lp.
+. Hurac�n (BUE) 0:0 Boca Juniors abandoned and awarded lp:wp.
+. Hurac�n (BUE) 0:1 Racing Club abandoned and awarded lp:wp.
+. Lan�s 0:0 Independiente (Avellaneda) abandoned and awarded lp:wp.
+. Platense 2:2 Gimnasia y Esgrima La Plata abandonend and awarded wp:lp.
+. V�lez Sarsfield 1:2 Boca Juniors abandonded and awarded wp:lp.
+```
+
+#### Championship playoff
+
+```
+    River Plate                      3:0  Independiente (Avellaneda)
+   [Ferreyra 11, Peucelle 22, Zatelli 38]
+
+Champion: River Plate.
+No relegated teams.
+```
+
+---
+
+## Liga Argentina de Football - [1933](https://www.rsssf.org/tablesa/arg33.html)
+
+### Primera Divisi�n 1933.
+
+```
+ 1. San Lorenzo de Almagro           34  22   6   6  81: 48   50 (Buenos Aires)
+ 2. Boca Juniors                     34  22   5   7  86: 47   49 (Buenos Aires)
+ 3. Racing Club                      34  21   6   7  76: 33   48 (Avellaneda)
+ 4. River Plate                      34  20   6   8  71: 36   46 (Buenos Aires)
+ 5. Gimnasia y Esgrima La Plata      34  21   4   9  90: 55   46 (La Plata)
+ 6. Independiente                    34  18   5  11  54: 39   41 (Avellaneda)
+ 7. V�lez Sarsfield                  34  15   8  11  60: 43   38 (Buenos Aires)
+ 8. Chacarita Juniors                34  14   7  13  55: 61   35 (Buenos Aires)
+ 9. Platense                         34  11   9  14  61: 74   31 (Buenos Aires)
+10. Estudiantes de La Plata          34  12   6  16  60: 65   30 (La Plata)
+11. Ferro Carril Oeste (BUE)         34   9  10  15  43: 56   28 (Buenos Aires)
+12. Hurac�n (BUE)                    34  10   7  17  49: 60   27 (Buenos Aires)
+13. Quilmes                          34   8  10  16  41: 61   26 (Quilmes)
+14. Argentinos Juniors               34   8   9  17  45: 71   25 (Buenos Aires)
+15. Lan�s                            34   7  10  17  52: 76   24 (Lan�s)
+16. Talleres (RdE)                   34   7   9  18  61: 84   23 (Remedios de Escalada)
+17. Atlanta                          34   9   5  20  46: 70   23 (Buenos Aires)
+18. Tigre                            34   9   4  21  44: 96   22 (Victoria)
+
+Champion: San Lorenzo de Almagro.
+Relegated:
+. Tigre and Quilmes (LAF decision).
+. Talleres (RdE) and Lan�s were merged in Uni�n Talleres-Lan�s.
+. Atlanta and Argentinos Juniors were merged in Atlanta-Argentinos Juniors.
+```
+
+---
+
+## Asociaci�n del Football Argentino - [1934](https://www.rsssf.org/tablesa/arg34.html)
+
+### Primera Divisi�n 1934.
+
+```
+Note:
+. On November 3, 1934 the Asociaci�n Argentina de Football and the Liga
+  Argentina de Football were merged in the Asociaci�n del Football Argentino.
+
+ 1. Boca Juniors                     39  23   9   7 101: 62   55 (Buenos Aires)
+ 2. Independiente                    39  23   8   8  73: 41   54 (Avellaneda)
+ 3. San Lorenzo de Almagro           39  22   7  10  84: 63   51 (Buenos Aires)
+ 4. River Plate                      39  23   4  12  91: 44   50 (Buenos Aires)
+ 5. Estudiantes de La Plata          39  17  10  12  69: 56   44 (La Plata)
+ 6. Racing Club                      39  18   7  14  82: 62   43 (Avellaneda)
+ 7. Platense                         39  16  11  12  70: 74   43 (Buenos Aires)
+ 8. V�lez Sarsfield                  39  16   9  14  80: 70   41 (Buenos Aires)
+ 9. Gimnasia y Esgrima La Plata      39  14  10  15  82: 85   38 (La Plata)
+10. Hurac�n (BUE)                    39  14   9  16  59: 67   37 (Buenos Aires)
+11. Chacarita Juniors                39  13   8  18  61: 73   34 (Buenos Aires)
+12. Uni�n Talleres-Lan�s             39   8  11  20  50: 81   27 (Lan�s)
+13. Ferro Carril Oeste (BUE)         39   6   8  25  51:100   20 (Buenos Aires)
+14. Argentinos Juniors               39   2   5  32  38:113    9 (Buenos Aires)
+
+Notes:
+. Gimnasia y Esgrima La Plata 0:1 Estudiantes de La Plata abandoned and awarded wp:lp.
+. Racing Club 1:2 Chacarita Juniors abandonded and awarded lp:wp.
+
+Champion: Boca Juniors.
+
+Notes:
+. Uni�n Talleres-Lan�s was dissolved at the end of this championship.
+. Atlanta-Argentinos Juniors was dissolved after round 25, and
+  Argentinos Juniors played in their place.
+```
+
+---
+
+## Asociaci�n del Football Argentino - [1935](https://www.rsssf.org/tablesa/arg35.html)
+
+### Copa Campeonato 1935.
+
+```
+ 1. Boca Juniors                     34  27   4   3  98: 31   58 (Buenos Aires)
+ 2. Independiente                    34  24   7   3 101: 38   55 (Avellaneda)
+ 3. San Lorenzo de Almagro           34  23   3   8  92: 45   49 (Buenos Aires)
+ 4. V�lez Sarsfield                  34  19   8   7  77: 46   46 (Buenos Aires)
+ 5. River Plate                      34  19   6   9  71: 47   44 (Buenos Aires)
+ 6. Hurac�n (BUE)                    34  16   7  11  59: 38   39 (Buenos Aires)
+ 7. Estudiantes de La Plata          34  14   9  11  78: 52   37 (La Plata)
+ 8. Ferro Carril Oeste (BUE)         34  15   6  13  60: 66   36 (Buenos Aires)
+ 9. Racing Club                      34  13   5  16  55: 58   31 (Avellaneda)
+10. Talleres (RdE)                   34  11   8  15  60: 70   30 (Remedios de Escalada)
+11. Lan�s                            34  13   4  17  56: 79   30 (Lan�s)
+12. Platense                         34  11   7  16  49: 61   29 (Buenos Aires)
+13. Gimnasia y Esgrima La Plata      34  12   5  17  52: 75   29 (La Plata)
+14. Chacarita Juniors                34  10   6  18  49: 57   26 (Buenos Aires)
+15. Atlanta                          34   9   7  18  48: 89   25 (Buenos Aires)
+16. Argentinos Juniors               34   7   6  21  42: 89   20 (Buenos Aires)
+17. Quilmes                          34   5   6  23  23: 82   16 (Quilmes)
+18. Tigre                            34   3   6  25  38: 85   12 (Tigre)
+
+Champion: Boca Juniors.
+No relegated teams.
+```
+
+---
+
+## Asociaci�n del Fotball Argentino - [1936](https://www.rsssf.org/tablesa/arg36.html)
+
+```
+[Copa de Honor Municipalidad de la Ciudad de Buenos Aires](https://www.rsssf.org/tablesa/arg-hon36.html)
+ The governing body of AFA included this cup between the champions of Copa Municipalidad de la Ciudad de Buenos Aires.
+ See: [Copa de Honor by AFA](http://biblioteca.afa.org.ar/libros/libro_17/#242).
+ Despite no changes were defined at this high level, this tournament begun to be included in the list of traditional
+champions in the AFA web page.
+
+ 1. CA San Lorenzo de Almagro        17  12   4   1  45: 21   28 (Buenos Aires)
+ 2. CA Hurac�n                       17  11   3   3  33: 20   25 (Buenos Aires)
+ 3. CA Boca Juniors                  17  10   4   3  36: 17   24 (Buenos Aires)
+ 4. CA V�lez Sarsfield               17  10   2   5  40: 25   22 (Buenos Aires)
+ 5. CA Independiente                 17   9   4   4  35: 25   22 (Avellaneda)
+ 6. CA River Plate                   17   9   3   5  35: 25   21 (Buenos Aires)
+ 7. CA Atlanta                       17   8   3   6  34: 38   19 (Buenos Aires)
+ 8. Racing Club                      17   8   2   7  37: 27   18 (Avellaneda)
+ 9. Quilmes AC                       17   7   4   6  27: 26   18 (Quilmes)
+10. CA Chacarita Juniors             17   7   4   6  31: 31   18 (Buenos Aires)
+11. C. Estudiantes de La Plata       17   8   1   8  40: 34   17 (La Plata)
+12. CA Platense                      17   6   4   7  23: 26   16 (Buenos Aires)
+13. C. Ferro Carril Oeste            17   5   4   8  36: 44   14 (Buenos Aires)
+14. Cd Gimnasia y Esgrima La Plata   17   4   5   8  33: 45   13 (La Plata)
+15. CA Talleres                      17   6   0  11  27: 30   12 (Remedios de Escalada)
+16. CA Lan�s                         17   3   3  11  29: 43    9 (Lan�s)
+17. CA Tigre                         17   2   3  12  17: 42    7 (Victoria)
+18. AA Argentinos Juniors            17   1   1  15  15: 54    3 (Buenos Aires)
+
+ Champion: Club Atl�tico San Lorenzo de Almagro, to play Copa de Oro.
+```
+
+### Copa Campeonato 1936
+
+```
+ 1. CA River Plate                   17  13   2   2  49: 19   28 (Buenos Aires)
+ 2. CA San Lorenzo de Almagro        17  11   2   4  41: 24   24 (Buenos Aires)
+ 3. Racing Club                      17  10   3   4  43: 27   23 (Avellaneda)
+ 4. CA Independiente                 17  10   1   6  32: 29   21 (Avellaneda)
+ 5. CA Boca Juniors                  17   9   2   6  39: 19   20 (Buenos Aires)
+ 6. CA Atlanta                       17   8   3   6  39: 30   19 (Buenos Aires)
+ 7. CA Platense                      17   6   7   4  26: 29   19 (Buenos Aires)
+ 8. CA Hurac�n                       17   7   4   6  32: 22   18 (Buenos Aires)
+ 9. AA Argentinos Juniors            17   7   4   6  26: 32   18 (Buenos Aires)
+10. C. Ferro Carril Oeste            17   7   3   7  30: 36   17 (Buenos Aires)
+11. C. Estudiantes de La Plata       17   6   4   7  32: 32   16 (La Plata)
+12. CA Chacarita Juniors             17   6   4   7  36: 42   16 (Buenos Aires)
+13. CA V�lez Sarsfield               17   7   1   9  45: 35   15 (Buenos Aires)
+14. Cd Gimnasia y Esgrima La Plata   17   6   2   9  31: 48   14 (La Plata)
+15. CA Lan�s                         17   5   2  10  27: 43   12 (Lan�s)
+16. Quilmes AC                       17   4   3  10  24: 39   11 (Quilmes)
+17. CA Tigre                         17   2   4  11  21: 43    8 (Victoria)
+18. CA Talleres                      17   1   5  11  19: 43    7 (Remedios de Escalada)
+
+ Champion: Club Atl�tico River Plate, which won the traditional First Division Championship and consequently the Championship Cup.
+ See: [First Division Championship by AFA](http://biblioteca.afa.org.ar/libros/libro_15/#144).
+ Also to play Copa de Oro.
+
+### [Copa de Oro](https://www.rsssf.org/tablesa/arg-oro36.html)
+
+1. CA River Plate                    1   1   0   0   4:  2    2 (Buenos Aires)
+2. CA San Lorenzo de Almagro         1   0   0   1   2:  4    0 (Buenos Aires)
+
+Champion: Club Atl�tico River Plate, and to play Campeonato Rioplatense.
+```
+
+---
+
+## Asociaci�n del Football Argentino - [1937](https://www.rsssf.org/tablesa/arg37.html)
+
+### Copa Campeonato 1937.
+
+```
+ 1. River Plate                      34  27   4   3 106: 43   58 (Buenos Aires)
+ 2. Independiente                    34  25   2   7 106: 54   52 (Avellaneda)
+ 3. Boca Juniors                     34  20   5   9 101: 57   45 (Buenos Aires)
+ 4. Racing Club                      34  16   8  10  87: 65   40 (Avellaneda)
+ 5. V�lez Sarsfield                  34  18   4  12  63: 58   40 (Buenos Aires)
+ 6. San Lorenzo de Almagro           34  15   9  10  70: 62   39 (Buenos Aires)
+ 7. Hurac�n (BUE)                    34  17   4  13  82: 62   38 (Buenos Aires)
+ 8. Gimnasia y Esgrima La Plata      34  16   5  13  68: 60   37 (La Plata)
+ 9. Ferro Carril Oeste (BUE)         34  15   5  14  78: 79   35 (Buenos Aires)
+10. Estudiantes de La Plata          34  13   8  13  63: 64   34 (La Plata)
+11. Atlanta                          34  12   7  15  61: 66   31 (Buenos Aires)
+12. Platense                         34  12   7  15  61: 67   31 (Buenos Aires)
+13. Lan�s                            34  13   5  16  68: 79   31 (Lan�s)
+14. Chacarita Juniors                34  10   9  15  63: 76   29 (Buenos Aires)
+15. Talleres (RdE)                   34  10   6  18  60: 88   26 (Remedios de Escalada)
+16. Tigre                            34  11   3  20  62: 84   25 (Victoria)
+17. Argentinos Juniors               34   4   3  27  44:111   11 (Buenos Aires)
+18. Quilmes                          34   3   4  27  42:110   10 (Quilmes)
+```
+
+#### First Stage playoff
+
+```
+Note:
+As at the end of first stage River Plate and Boca Juniors got 27 points each.
+Then, it was played a playoff match to break the tie:
+
+    River Plate                      5:3  Boca Juniors
+
+Champion: River Plate.
+Relegated: Argentinos Juniors and Quilmes.
+```
+
+---
+
+## Asociaci�n del Football Argentino - [1938](https://www.rsssf.org/tablesa/arg38.html)
+
+### Copa Campeonato 1938.
+
+```
+ 1. Independiente                    32  25   3   4 115: 37   53 (Avellaneda)
+ 2. River Plate                      32  23   5   4 105: 49   51 (Buenos Aires)
+ 3. San Lorenzo de Almagro           32  18   7   7  87: 67   43 (Buenos Aires)
+ 4. Racing Club                      32  16   7   9 102: 63   39 (Avellaneda)
+ 5. Boca Juniors                     32  13   9  10  66: 53   35 (Buenos Aires)
+ 6. Gimnasia y Esgrima La Plata      32  15   5  12  83: 69   35 (La Plata)
+ 7. Estudiantes de La Plata          32  16   3  13  70: 77   35 (La Plata)
+ 8. Hurac�n (BUE)                    32  14   3  15  85: 89   31 (Buenos Aires)
+ 9. Atlanta                          32  12   4  16  61: 70   28 (Buenos Aires)
+10. V�lez Sarsfield                  32  11   5  16  78: 85   27 (Buenos Aires)
+11. Platense                         32  10   6  16  84:100   26 (Buenos Aires)
+12. Ferro Carril Oeste (BUE)         32   9   8  15  68: 89   26 (Buenos Aires)
+13. Tigre                            32  11   4  17  71:102   26 (Victoria)
+14. Lan�s                            32   8   9  15  75: 95   25 (Lan�s)
+15. Chacarita Juniors                32  10   5  17  66: 92   25 (Buenos Aires)
+16. Almagro                          32   8   5  19  63: 94   21 (Buenos Aires)
+17. Talleres (RdE)                   32   6   6  20  55:103   18 (Remedios de Escalada)
+
+Champion: Independiente (Avellaneda).
+Relegated: Almagro and Talleres (RdE)
+```
+
+---
+
+## Asociaci�n del F�tbol Argentino - [1939](https://www.rsssf.org/tablesa/arg39.html)
+
+### Copa Campeonato 1939.
+
+```
+ 1. Independiente                    34  27   2   5 103: 37   56 (Avellaneda)
+ 2. River Plate                      34  23   4   7 100: 43   50 (Buenos Aires)
+ 3. Hurac�n (BUE)                    34  23   4   7  97: 56   50 (Buenos Aires)
+ 4. Newell's Old Boys                34  17   9   8  77: 44   43 (Rosario)
+ 5. San Lorenzo de Almagro           34  19   4  11  85: 55   42 (Buenos Aires)
+ 6. Boca Juniors                     34  17   6  11  63: 40   40 (Buenos Aires)
+ 7. Racing Club                      34  16   6  12  75: 54   38 (Avellaneda)
+ 8. Chacarita Juniors                34  14   6  14  61: 54   34 (Buenos Aires)
+ 9. Estudiantes de La Plata          34  14   6  14  71: 65   34 (La Plata)
+10. V�lez Sarsfield                  34  14   6  14  56: 66   34 (Buenos Aires)
+11. Rosario Central                  34  14   5  15  59: 68   33 (Rosario)
+12. Lan�s                            34  14   2  18  91: 85   30 (Lan�s)
+13. Tigre                            34  13   4  17  56: 79   30 (Victoria)
+14. Platense                         34  11   7  16  65: 72   29 (Buenos Aires)
+15. Gimnasia y Esgrima La Plata      34  10   8  16  50: 82   28 (La Plata)
+16. Atlanta                          34   8   6  20  56: 93   22 (Buenos Aires)
+17. Ferro Carril Oeste (BUE)         34   4   7  23  52:111   15 (Buenos Aires)
+18. Argentino de Quilmes             34   0   4  30  35:148    4 (Quilmes)
+
+Note:
+. Boca Juniors 1:0 Ferro Carril Oeste (BUE) abandoned and awarded wp:lp.
+
+Champion: Independiente (Avellaneda).
+Relegated: Argentino de Quilmes.
+```
+
+#### First Stage playoff
+
+```
+Note:
+Hurac�n (BUE) and Independiente (Avellaneda) tie in the first position at the end of the first stage.
+Then, it was played a playoff match to break the tie:
+
+   Hurac�n (BUE)                     2:1  Independiente (Avellaneda)
+```
+
+#### Second place playoff
+
+```
+   River Plate                       3:3  Hurac�n (BUE)
+
+Note: A second match had to be played but it never occured.
+```
+
+---
+
+## Asociaci�n del F�tbol Argentino - [1940](https://www.rsssf.org/tablesa/arg40.html)
+
+### Copa Campeonato 1940.
+
+```
+ 1. Boca Juniors                     34  24   7   3  85: 36   55 (Buenos Aires)
+ 2. Independiente                    34  20   7   7  89: 49   47 (Avellaneda)
+ 3. River Plate                      34  17   8   9  92: 54   42 (Buenos Aires)
+ 4. Hurac�n (BUE)                    34  19   4  11  79: 62   42 (Buenos Aires)
+ 5. Racing Club                      34  18   5  11  84: 67   41 (Avellaneda)
+ 6. Estudiantes de La Plata          34  18   3  13  80: 72   39 (La Plata)
+ 7. Gimnasia y Esgrima La Plata      34  17   4  13  76: 86   38 (La Plata)
+ 8. Newell's Old Boys                34  14   9  11  69: 61   37 (Rosario)
+ 9. San Lorenzo de Almagro           34  11   8  15  62: 65   30 (Buenos Aires)
+10. Banfield                         34  11   7  16  67: 60   29 (Banfield)
+11. Tigre                            34  13   3  18  75: 86   29 (Victoria)
+12. Platense                         34  12   5  17  51: 68   29 (Buenos Aires)
+13. Rosario Central                  34  11   5  18  59: 75   27 (Rosario)
+14. Ferro Carril Oeste (BUE)         34  10   7  17  58: 75   27 (Buenos Aires)
+15. Lan�s                            34  12   3  19  73: 97   27 (Lan�s)
+16. Atlanta                          34  11   4  19  57: 87   26 (Buenos Aires)
+17. V�lez Sarsfield                  34  11   3  20  49: 83   25 (Buenos Aires)
+18. Chacarita Juniors                34   8   6  20  38: 60   22 (Buenos Aires)
+
+Champion: Boca Juniors.
+Relegated: Chacarita Juniors and V�lez Sarsfield.
+
+Notes:
+. Ferro Carril Oeste (BUE) was suspended 1 match and could not play against
+  V�lez Sarsfield. They lost this match lp:wp.
+. Banfield was suspended 5 matches and could not play against Newell's Old Boys,
+  V�lez Sarsfield, Hurac�n (BUE), Boca Juniors and Lan�s, then, they lost all
+  these matches lp:wp.
+. Chacarita Juniors was supended 6 matches and could not play against Boca
+  Juniors, Lan�s, Atlanta, Independiente (Avellaneda), Gimnasia y Esgrima La
+  Plata and Rosario Central, then, they lost all these matches lp:wp.
+```
+
+---
+
+Last updated: 29 Dec 2021

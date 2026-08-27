@@ -1,0 +1,323 @@
+## Argentina 2023/24
+
+---
+
+### LPF League cup: Copa de la Liga Profesional de F�tbol de AFA 2024 "Sur Finanzas"
+
+**[2024 League cup]**
+
+```
+Table
+Tie break:
+1. Points won.
+2. Goal difference.
+3. Goals for.
+4. Head-to-head.
+5. Fair play 1: Yellow card (1), Second yellow card (3), Straight red card (5).
+6. Fair play 2: Quantity of red cards.
+7. Lot.
+  #.Full name                                             MP   W  D  L  Gf- Ga   P  (Headquarters on)
+  1.Club Estudiantes de La Plata                          17   9  5  3  24- 11  32  (La Plata, B)
+  2.Club Atl�tico V�lez Sarsfield Asociaci�n Civil        17   8  6  3  17- 15  30  (Liniers, C)
+  3.Club Atl�tico Boca Juniors Asociaci�n Civil           16   8  5  3  24- 15  29  (La Boca, C)
+  4.Asociaci�n Atl�tica Argentinos Juniors                16   7  7  2  26- 15  28  (La Paternal, C)
+  5.Club Deportivo Godoy Cruz Antonio Tomba               15   9  2  4  17-  8  29  (Godoy Cruz, M)
+  6.Club Atl�tico River Plate Asoc. Civil                 15   7  6  2  28- 13  27  (Belgrano, C)
+  7.Club Social y Deportivo Defensa y Justicia            15   7  6  2  18- 14  27  (Florencio Varela, B)
+  8.Club Atl�tico Barracas Central                        15   7  5  3  20- 18  26  (Barracas, C)
+  9.Racing Club Asociaci�n Civil                          14   7  3  4  24- 11  24  (Avellaneda, B)
+ 10.Club Atl�tico Talleres                                14   6  6  2  24- 16  24  (C�rdoba, X)
+ 11.Club Atl�tico Lan�s                                   14   7  2  5  20- 14  23  (Lan�s Este, B)
+ 12.Club Atl�tico Independiente                           14   6  5  3  14- 10  23  (Avellaneda, B)
+ 13.Club Atl�tico Newell's Old Boys                       14   6  3  5  13- 15  21  (Rosario, S)
+ 14.Club Atl�tico Uni�n                                   14   5  5  4  16- 14  20  (Santa Fe, S)
+ 15.Club Atl�tico Platense Asociaci�n Civil               14   4  6  4  10- 14  18  (Florida, B)
+ 16.Instituto Atl�tico Central C�rdoba                    14   5  2  7  18- 17  17  (C�rdoba, X)
+ 17.Club Atl�tico Banfield Sociedad Civil                 14   4  5  5  14- 15  17  (Banfield, B)
+ 18.Club Atl�tico Hurac�n                                 14   4  4  6  12- 12  16  (Parque de los Patricios, C)
+ 19.Club Atl�tico San Lorenzo de Almagro                  14   3  7  4  10- 14  16  (Flores, C)
+ 20.Club de Gimnasia y Esgrima La Plata                   14   5  1  8  18- 23  16  (La Plata, B)
+ 21.Club Atl�tico Rosario Central                         14   4  3  7  10- 18  15  (Rosario, S)
+ 22.Club Atl�tico Belgrano                                14   3  5  6  19- 21  14  (C�rdoba, X)
+ 23.Deportivo Riestra Asociaci�n de Fomento Barrio Col�n  14   3  4  7   8- 16  13  (Nueva Pompeya, C)
+ 24.Club Atl�tico Central C�rdoba Soc. Civil              14   2  5  7  10- 20  11  (Santiago del Estero, G)
+ 25.Club Atl�tico Tucum�n Soc. Civil                      14   1  7  6   8- 23  10  (San Miguel de Tucum�n, T)
+ 26.Club Atl�tico Sarmiento                               14   2  3  9   9- 19   9  (Jun�n, B)
+ 27.Club Sportivo Independiente Rivadavia                 14   2  2 10  13- 25   8  (Mendoza, M)
+ 28.Club Atl�tico Tigre Sociedad Civil                    14   1  2 11   7- 25   5  (Victoria, B)
+
+Primera fase de zonas - First phase of groups
+Round 1:
+[Jan 25, Thu]
+CA Central C�rdoba                     0- 1      CA Newell's Old Boys               Alfredo Terrera, Santiago del Estero, G
+CA Tigre                               0- 0      CA Sarmiento                       Jos� Dellagiovanna, Victoria, B
+Club Atl�tico Tucum�n                  1- 1      CA Rosario Central                 Jos� Fierro, San Miguel de Tucum�n, T
+Instituto ACC                          0- 0      Deportivo Riestra AFBC             Juan Domingo Per�n, C�rdoba, X
+[Jan 26, Fri]
+CA Banfield                            0- 2      CA Hurac�n                         Florencio Sola, Banfield, B
+CA Barracas Central                    1- 1      CA V�lez Sarsfield                 Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA Talleres                            0- 1      Cd Gimnasia y Esgrima La Plata     Mario Alberto Kempes, C�rdoba, X
+CS Independiente Rivadavia             0- 1      CA Independiente                   Bautista Gargantini, Mendoza, M
+[Jan 27, Sat]
+CA Platense                            0- 0      CA Boca Juniors                    Ciudad de Vicente L�pez, Florida, B
+CA San Lorenzo de Almagro              0- 2      CA Lan�s                           Pedro Bidegain, Flores, C
+Racing Club                            0- 1      CA Uni�n                           Presidente Per�n, Avellaneda, B
+[Jan 28, Sun]
+CA River Plate                         1- 1      AA Argentinos Juniors              M�s Monumental, Belgrano, C
+CD Godoy Cruz Antonio Tomba            2- 0      CSyD Defensa y Justicia            V�ctor Antonio Legrotaglie, Mendoza, M
+Club Estudiantes de La Plata           1- 0      CA Belgrano                        Dr. Jorge Luis Hirschi, La Plata, B
+Round 2:
+[Jan 29, Mon]
+Instituto ACC                          3- 0      Club Atl�tico Tucum�n              Juan Domingo Per�n, C�rdoba, X
+[Jan 30, Tue]
+CA Hurac�n                             1- 2      CA Talleres                        Diego Armando Maradona, Villa General Mitre, C
+CA Lan�s                               0- 2      CA Newell's Old Boys               Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA Rosario Central                     0- 0      CA Banfield                        Gigante de Arroyito, Rosario, S
+CA V�lez Sarsfield                     0- 1      CA Independiente                   Jos� Amalfitani, Liniers, C
+Cd Gimnasia y Esgrima La Plata         2- 3      CS Independiente Rivadavia         Juan Carmelo Zerillo, La Plata, B
+[Jan 31, Wed]
+AA Argentinos Juniors                  2- 0      Deportivo Riestra AFBC             Diego Armando Maradona, Villa General Mitre, C
+CA Barracas Central                    0- 2      CA River Plate                     Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA Belgrano                            1- 1      CA San Lorenzo de Almagro          Julio C�sar Villagra, C�rdoba X
+CSyD Defensa y Justicia                3- 0      CA Platense                        Norberto "Tito" Tomaghello, Gobernador Costa, B
+Racing Club                            3- 0      CA Tigre                           Presidente Per�n, Avellaneda, B
+[Feb 1, Thu]
+CA Boca Juniors                        1- 1      CA Sarmiento                       Pedro Bidegain, Flores, C
+CA Central C�rdoba                     0- 2      CD Godoy Cruz Antonio Tomba        Alfredo Terrera, Santiago del Estero, G
+CA Uni�n                               0- 1      Club Estudiantes de La Plata       15 de Abril, Santa Fe, S
+Round 3:
+[Feb 3, Sat]
+CA Independiente                       0- 1      Cd Gimnasia y Esgrima La Plata     Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CA Talleres                            4- 1      CA Rosario Central                 Mario Alberto Kempes, C�rdoba, X
+CS Independiente Rivadavia             2- 0      CA Hurac�n                         Bautista Gargantini, Mendoza, M
+[Feb 4, Sun]
+CA Newell's Old Boys                   1- 0      CA Belgrano                        Marcelo A. Bielsa, Rosario, S
+CA Platense                            1- 0      CA Central C�rdoba                 Ciudad de Vicente L�pez, Florida, B
+CA River Plate                         5- 0      CA V�lez Sarsfield                 M�s Monumental, Belgrano, C
+Deportivo Riestra AFBC                 0- 1      CA Barracas Central                Guillermo Laza, Villa Soldati, C
+[Feb 5, Mon]
+CA Banfield                            0- 2      Instituto ACC                      Florencio Sola, Banfield, B
+CA San Lorenzo de Almagro              0- 0      CA Uni�n                           Pedro Bidegain, Flores, C
+CA Tigre                               0- 2      CA Boca Juniors                    Jos� Dellagiovanna, Victoria, B
+CD Godoy Cruz Antonio Tomba            1- 0      CA Lan�s                           V�ctor Antonio Legrotaglie, Mendoza, M
+Club Estudiantes de La Plata           0- 0      Racing Club                        UNO Dr. Jorge Luis Hirschi, La Plata, B
+[Feb 6, Tue]
+CA Sarmiento                           2- 3      CSyD Defensa y Justicia            Eva Per�n, Jun�n, B
+Club Atl�tico Tucum�n                  0- 0      AA Argentinos Juniors              Jos� Fierro, San Miguel de Tucum�n, T
+Round 4:
+[Feb 8, Thu]
+CA Hurac�n                             0- 0      CA Independiente                   Tom�s Adolfo Duc�, Parque Patricios, C
+CA Rosario Central                     1- 0      CS Independiente Rivadavia         Estadio San Nicol�s, San Nicol�s de los Arroyos, B
+[Feb 9, Fri]
+CA Uni�n                               1- 3      CA Newell's Old Boys               15 de Abril, Santa Fe, S
+CA V�lez Sarsfield                     3- 1      Cd Gimnasia y Esgrima La Plata     Jos� Amalfitani, Liniers, C
+Club Estudiantes de La Plata           2- 0      CA Tigre                           UNO Dr. Jorge Luis Hirschi, La Plata, B
+Racing Club                            4- 1      CA San Lorenzo de Almagro          Presidente Per�n, Avellaneda, B
+[Feb 10, Sat]
+AA Argentinos Juniors                  4- 2      CA Banfield                        Diego Armando Maradona, Villa General Mitre, C
+CA Belgrano                            0- 1      CD Godoy Cruz Antonio Tomba        Julio C�sar Villagra, C�rdoba X
+CA Boca Juniors                        0- 0      CSyD Defensa y Justicia            Alberto J. Armando, La Boca, C
+CA Central C�rdoba                     3- 0      CA Sarmiento                       Alfredo Terrera, Santiago del Estero, G
+[Feb 11, Sun]
+CA Barracas Central                    2- 0      Club Atl�tico Tucum�n              Tom�s Adolfo Duc�, Parque Patricios, C
+CA Lan�s                               3- 0      CA Platense                        Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+Deportivo Riestra AFBC                 0- 3      CA River Plate                     Guillermo Laza, Villa Soldati, C
+[Feb 12, Mon]
+Instituto ACC                          2- 2      CA Talleres                        Mario Alberto Kempes, C�rdoba, X
+Round 5:
+[Feb 12, Mon]
+CA Newell's Old Boys                   0- 4      Racing Club                        Marcelo A. Bielsa, Rosario, S
+[Feb 13, Tue]
+CA Independiente                       1- 0      CA Rosario Central                 Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CA San Lorenzo de Almagro              1- 1      Club Estudiantes de La Plata       Pedro Bidegain, Flores, C
+Cd Gimnasia y Esgrima La Plata         3- 1      CA Hurac�n                         Juan Carmelo Zerillo, La Plata, B
+CD Godoy Cruz Antonio Tomba            0- 0      CA Uni�n                           Malvinas Argentinas, Mendoza, M
+[Feb 14, Wed]
+CA Banfield                            0- 0      CA Barracas Central                Florencio Sola, Banfield, B
+CA Boca Juniors                        2- 0      CA Central C�rdoba                 Alberto J. Armando, La Boca, C
+CA Sarmiento                           0- 1      CA Lan�s                           Eva Per�n, Jun�n, B
+CA Tigre                               0- 1      CSyD Defensa y Justicia            Jos� Dellagiovanna, Victoria, B
+Club Atl�tico Tucum�n                  0- 0      CA River Plate                     Jos� Fierro, San Miguel de Tucum�n, T
+[Feb 15, Thu]
+CA Platense                            1- 1      CA Belgrano                        Ciudad de Vicente L�pez, Florida, B
+CA Talleres                            2- 1      AA Argentinos Juniors              Mario Alberto Kempes, C�rdoba, X
+CS Independiente Rivadavia             0- 2      Instituto ACC                      Bautista Gargantini, Mendoza, M
+Deportivo Riestra AFBC                 1- 2      CA V�lez Sarsfield                 Guillermo Laza, Villa Soldati, C
+Round 6:
+[Feb 17, Sat]
+CA Rosario Central                     2- 1      Cd Gimnasia y Esgrima La Plata     Gigante de Arroyito, Rosario, S
+CA San Lorenzo de Almagro              2- 0      CA Tigre                           Pedro Bidegain, Flores, C
+Racing Club                            0- 2      CD Godoy Cruz Antonio Tomba        Presidente Per�n, Avellaneda, B
+[Feb 18, Sun]
+CA Lan�s                               2- 1      CA Boca Juniors                    Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA River Plate                         1- 1      CA Banfield                        M�s Monumental, Belgrano, C
+CA V�lez Sarsfield                     1- 0      CA Hurac�n                         Jos� Amalfitani, Liniers, C
+Instituto ACC                          0- 2      CA Independiente                   Juan Domingo Per�n, C�rdoba, X
+[Feb 19, Mon]
+CA Barracas Central                    2- 1      CA Talleres                        Tom�s Adolfo Duc�, Parque Patricios, C
+CA Belgrano                            4- 1      CA Sarmiento                       Julio C�sar Villagra, C�rdoba X
+CA Uni�n                               0- 0      CA Platense                        15 de Abril, Santa Fe, S
+Club Estudiantes de La Plata           2- 0      CA Newell's Old Boys               UNO Dr. Jorge Luis Hirschi, La Plata, B
+Deportivo Riestra AFBC                 1- 0      Club Atl�tico Tucum�n              Guillermo Laza, Villa Soldati, C
+[Feb 20, Tue]
+AA Argentinos Juniors                  2- 1      CS Independiente Rivadavia         Diego Armando Maradona, Villa General Mitre, C
+CSyD Defensa y Justicia                1- 1      CA Central C�rdoba                 Norberto "Tito" Tomaghello, Gobernador Costa, B
+Round 7:
+[Feb 24, Sat]
+CA Belgrano                            2- 2      CA Talleres                        Julio C�sar Villagra, C�rdoba X
+CA Hurac�n                             0- 0      CA San Lorenzo de Almagro          Tom�s Adolfo Duc�, Parque Patricios, C
+CA Independiente                       0- 1      Racing Club                        Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CA Sarmiento                           0- 0      CA Barracas Central                Eva Per�n, Jun�n, B
+CA Uni�n                               4- 1      CS Independiente Rivadavia         15 de Abril, Santa Fe, S
+[Feb 25, Sun]
+CA Lan�s                               1- 1      CA Banfield                        Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA Newell's Old Boys                   0- 1      CA Rosario Central                 Marcelo A. Bielsa, Rosario, S
+CA River Plate                         1- 1      CA Boca Juniors                    M�s Monumental, Belgrano, C
+Cd Gimnasia y Esgrima La Plata         0- 0      Club Estudiantes de La Plata       Juan Carmelo Zerillo, La Plata, B
+Instituto ACC                          0- 2      CD Godoy Cruz Antonio Tomba        Juan Domingo Per�n, C�rdoba, X
+[Feb 26, Mon]
+AA Argentinos Juniors                  3- 1      CA Platense                        Diego Armando Maradona, Villa General Mitre, C
+CA Central C�rdoba                     0- 0      Club Atl�tico Tucum�n              �nico Madre de Ciudades, Santiago del Estero, G
+CA V�lez Sarsfield                     2- 2      CA Tigre                           Jos� Amalfitani, Liniers, C
+CSyD Defensa y Justicia                1- 1      Deportivo Riestra AFBC             Norberto "Tito" Tomaghello, Gobernador Costa, B
+Round 8:
+[Feb 29, Thu]
+CA Hurac�n                             2- 0      CA Rosario Central                 Tom�s Adolfo Duc�, Parque Patricios, C
+Cd Gimnasia y Esgrima La Plata         1- 3      Instituto ACC                      Juan Carmelo Zerillo, La Plata, B
+CS Independiente Rivadavia             1- 3      CA Barracas Central                Bautista Gargantini, Mendoza, M
+[Mar 1, Fri]
+CA Banfield                            2- 0      Deportivo Riestra AFBC             Florencio Sola, Banfield, B
+CA Platense                            0- 0      Racing Club                        Ciudad de Vicente L�pez, Florida, B
+CA Tigre                               1- 0      CA Central C�rdoba                 Jos� Dellagiovanna, Victoria, B
+[Mar 2, Sat]
+CA Independiente                       2- 1      AA Argentinos Juniors              Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CA Sarmiento                           1- 2      CA Uni�n                           Eva Per�n, Jun�n, B
+CA Talleres                            2- 2      CA River Plate                     Mario Alberto Kempes, C�rdoba, X
+Club Atl�tico Tucum�n                  0- 0      CA V�lez Sarsfield                 Jos� Fierro, San Miguel de Tucum�n, T
+[Mar 3, Sun]
+CA Boca Juniors                        3- 2      CA Belgrano                        Alberto J. Armando, La Boca, C
+CA Newell's Old Boys                   2- 2      CA San Lorenzo de Almagro          Marcelo A. Bielsa, Rosario, S
+CD Godoy Cruz Antonio Tomba            1- 2      Club Estudiantes de La Plata       Malvinas Argentinas, Mendoza, M
+CSyD Defensa y Justicia                0- 4      CA Lan�s                           Norberto "Tito" Tomaghello, Gobernador Costa, B
+Round 9:
+[Mar 4, Mon]
+Instituto ACC                          2- 0      CA Hurac�n                         Juan Domingo Per�n, C�rdoba, X
+[Mar 5, Tue]
+CA Barracas Central                    2- 2      CA Independiente                   Tom�s Adolfo Duc�, Parque Patricios, C
+CA V�lez Sarsfield                     1- 0      CA Rosario Central                 Jos� Amalfitani, Liniers, C
+Racing Club                            0- 1      CA Sarmiento                       Presidente Per�n, Avellaneda, B
+[Mar 6, Wed]
+AA Argentinos Juniors                  2- 0      Cd Gimnasia y Esgrima La Plata     Diego Armando Maradona, Villa General Mitre, C
+CA River Plate                         2- 0      CS Independiente Rivadavia         M�s Monumental, Belgrano, C
+CA Uni�n                               1- 0      CA Boca Juniors                    15 de Abril, Santa Fe, S
+Club Atl�tico Tucum�n                  0- 3      CA Banfield                        Jos� Fierro, San Miguel de Tucum�n, T
+Club Estudiantes de La Plata           1- 2      CA Platense                        UNO Dr. Jorge Luis Hirschi, La Plata, B
+[Mar 7, Thu]
+CA Belgrano                            1- 1      CSyD Defensa y Justicia            Julio C�sar Villagra, C�rdoba X
+CA Lan�s                               0- 1      CA Central C�rdoba                 Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA Newell's Old Boys                   1- 0      CA Tigre                           Marcelo A. Bielsa, Rosario, S
+Deportivo Riestra AFBC                 0- 1      CA Talleres                        Guillermo Laza, Villa Soldati, C
+[Mar 21, Thu]
+CA San Lorenzo de Almagro              1- 0      CD Godoy Cruz Antonio Tomba        Pedro Bidegain, Flores, C
+Round 10:
+[Mar 9, Sat]
+CA Independiente                       1- 1      CA River Plate                     Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CA Platense                            0- 0      CA San Lorenzo de Almagro          Ciudad de Vicente L�pez, Florida, B
+CA Rosario Central                     1- 0      Instituto ACC                      Gigante de Arroyito, Rosario, S
+CA Sarmiento                           3- 1      Club Estudiantes de La Plata       Eva Per�n, Jun�n, B
+Cd Gimnasia y Esgrima La Plata         2- 0      CA Barracas Central                Juan Carmelo Zerillo, La Plata, B
+[Mar 10, Sun]
+CA Boca Juniors                        4- 2      Racing Club                        Alberto J. Armando, La Boca, C
+CA Hurac�n                             1- 1      AA Argentinos Juniors              Tom�s Adolfo Duc�, Parque Patricios, C
+CA Talleres                            4- 1      Club Atl�tico Tucum�n              Mario Alberto Kempes, C�rdoba, X
+CD Godoy Cruz Antonio Tomba            1- 1      CA Newell's Old Boys               Malvinas Argentinas, Mendoza, M
+CSyD Defensa y Justicia                2- 1      CA Uni�n                           Norberto "Tito" Tomaghello, Gobernador Costa, B
+[Mar 11, Mon]
+CA Banfield                            1- 2      CA V�lez Sarsfield                 Florencio Sola, Banfield, B
+CA Tigre                               2- 3      CA Lan�s                           Jos� Dellagiovanna, Victoria, B
+CS Independiente Rivadavia             1- 2      Deportivo Riestra AFBC             Bautista Gargantini, Mendoza, M
+[Mar 12, Tue]
+CA Central C�rdoba                     2- 2      CA Belgrano                        �nico Madre de Ciudades, Santiago del Estero, G
+Round 11:
+[Mar 15, Fri]
+CA Newell's Old Boys                   0- 0      CA Platense                        Marcelo A. Bielsa, Rosario, S
+Deportivo Riestra AFBC                 1- 0      CA Independiente                   Guillermo Laza, Villa Soldati, C
+[Mar 16, Sat]
+CA San Lorenzo de Almagro              1- 0      CA Sarmiento                       Pedro Bidegain, Flores, C
+CA V�lez Sarsfield                     1- 0      Instituto ACC                      Jos� Amalfitani, Liniers, C
+Club Atl�tico Tucum�n                  2- 2      CS Independiente Rivadavia         Jos� Fierro, San Miguel de Tucum�n, T
+Racing Club                            1- 1      CSyD Defensa y Justicia            Presidente Per�n, Avellaneda, B
+[Mar 17, Sun]
+CA Banfield                            0- 0      CA Talleres                        Florencio Sola, Banfield, B
+CA Barracas Central                    1- 0      CA Hurac�n                         Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CA River Plate                         3- 1      Cd Gimnasia y Esgrima La Plata     M�s Monumental, Belgrano, C
+CD Godoy Cruz Antonio Tomba            1- 0      CA Tigre                           Malvinas Argentinas, Mendoza, M
+Club Estudiantes de La Plata        abandoned    CA Boca Juniors                   abandoned at 0-0 in 27m, see 12 Apr, UNO Dr. Jorge Luis Hirschi, La Plata, B
+[Mar 18, Mon]
+CA Uni�n                               2- 2      CA Central C�rdoba                 15 de Abril, Santa Fe, S
+[Mar 19, Tue]
+AA Argentinos Juniors                  3- 0      CA Rosario Central                 Diego Armando Maradona, Villa General Mitre, C
+[Mar 20, Wed]
+CA Belgrano                            0- 1      CA Lan�s                           Julio C�sar Villagra, C�rdoba X
+[Apr 12, Fri]
+Club Estudiantes de La Plata           1- 0      CA Boca Juniors                   remaining 63m, see 17 Mar, UNO Dr. Jorge Luis Hirschi, La Plata, B
+Round 12:
+[Mar 27, Wed]
+CA Lan�s                               2- 2      CA Uni�n                           Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+[Mar 28, Thu]
+CA Rosario Central                     1- 2      CA Barracas Central                Gigante de Arroyito, Rosario, S
+Instituto ACC                          1- 2      AA Argentinos Juniors              Juan Domingo Per�n, C�rdoba, X
+[Mar 29, Fri]
+CA Hurac�n                             1- 0      CA River Plate                     Tom�s Adolfo Duc�, Parque Patricios, C
+CA Tigre                               1- 4      CA Belgrano                        Jos� Dellagiovanna, Victoria, B
+CSyD Defensa y Justicia                1- 0      Club Estudiantes de La Plata       Norberto "Tito" Tomaghello, Gobernador Costa, B
+[Mar 30, Sat]
+CA Boca Juniors                        2- 1      CA San Lorenzo de Almagro          Alberto J. Armando, La Boca, C
+CA Central C�rdoba                     1- 3      Racing Club                        �nico Madre de Ciudades, Santiago del Estero, G
+CA Talleres                            1- 0      CA V�lez Sarsfield                 Mario Alberto Kempes, C�rdoba, X
+[Mar 31, Sun]
+CA Independiente                       1- 1      Club Atl�tico Tucum�n              Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CA Sarmiento                           0- 1      CA Newell's Old Boys               Eva Per�n, Jun�n, B
+Cd Gimnasia y Esgrima La Plata         2- 1      Deportivo Riestra AFBC             Juan Carmelo Zerillo, La Plata, B
+CS Independiente Rivadavia             1- 2      CA Banfield                        Bautista Gargantini, Mendoza, M
+[Apr 1, Mon]
+CA Platense                            1- 2      CD Godoy Cruz Antonio Tomba        Ciudad de Vicente L�pez, Florida, B
+Round 13:
+[Apr 5, Fri]
+CA Banfield                            0- 1      CA Independiente                   Florencio Sola, Banfield, B
+CA V�lez Sarsfield                     0- 0      AA Argentinos Juniors              Jos� Amalfitani, Liniers, C
+[Apr 6, Sat]
+CA Newell's Old Boys                   1- 3      CA Boca Juniors                    Marcelo A. Bielsa, Rosario, S
+CA San Lorenzo de Almagro              0- 2      CSyD Defensa y Justicia            Pedro Bidegain, Flores, C
+CA Talleres                            1- 1      CS Independiente Rivadavia         Mario Alberto Kempes, C�rdoba, X
+CA Uni�n                               1- 2      CA Belgrano                        15 de Abril, Santa Fe, S
+Club Estudiantes de La Plata           5- 0      CA Central C�rdoba                 UNO Dr. Jorge Luis Hirschi, La Plata, B
+[Apr 7, Sun]
+CA Barracas Central                    3- 2      Instituto ACC                      Tom�s Adolfo Duc�, Parque Patricios, C
+CA River Plate                         2- 1      CA Rosario Central                 M�s Monumental, Belgrano, C
+Club Atl�tico Tucum�n                  3- 2      Cd Gimnasia y Esgrima La Plata     Jos� Fierro, San Miguel de Tucum�n, T
+Racing Club                            2- 0      CA Lan�s                           Presidente Per�n, Avellaneda, B
+[Apr 8, Mon]
+CA Platense                            3- 1      CA Tigre                           Ciudad de Vicente L�pez, Florida, B
+CD Godoy Cruz Antonio Tomba            1- 0      CA Sarmiento                       Malvinas Argentinas, Mendoza, M
+Deportivo Riestra AFBC                 0- 0      CA Hurac�n                         Guillermo Laza, Villa Soldati, C
+Round 14:
+[Apr 13, Sat]
+CA Hurac�n                             4- 0      Club Atl�tico Tucum�n              Tom�s Adolfo Duc�, Parque Patricios, C
+CA Tigre                               0- 1      CA Uni�n                           Jos� Dellagiovanna, Victoria, B
+[Apr 14, Sun]
+CA Central C�rdoba                     0- 0      CA San Lorenzo de Almagro          �nico Madre de Ciudades, Santiago del Estero, G
+CA Sarmiento                           0- 1      CA Platense                        Eva Per�n, Jun�n, B
+Cd Gimnasia y Esgrima La Plata         1- 2      CA Banfield                        Juan Carmelo Zerillo, La Plata, B
+[Apr 15, Mon]
+AA Argentinos Juniors                  3- 3      CA Barracas Central                Diego Armando Maradona, Villa General Mitre, C
+CA Independiente                       2- 2      CA Talleres                        Libertadores de Am�rica - Ricardo Enrique Bochini, Avellaneda, B
+CS Independiente Rivadavia             0- 1      CA V�lez Sarsfield                 Bautista Gargantini, Mendoza, M
+Instituto ACC                          1- 3      CA River Plate                     Juan Domingo Per�n, C�rdoba, X
+[Apr 16, Tue]
+CA Belgrano                            0- 4      Racing Club                        Julio C�sar Villagra, C�rdoba X
+CA Boca Juniors                        1- 0      CD Godoy Cruz Antonio Tomba        Alberto J. Armando, La Boca, C
+CA Lan�s                               1- 2      Club Estudiantes de La Plata       Ciudad de Lan�s - N�stor D�az P�rez, Remedios de Escalada, B
+CSyD Defensa y Justicia                1- 0      CA Newell's Old Boys               Norberto "Tito" Tomaghello, Gobernador Costa, B
+[Apr 17, Wed]
+CA Rosario Central                     1- 1      Deportivo Riestra AFBC             Gigante de Arroyito, Rosario, S

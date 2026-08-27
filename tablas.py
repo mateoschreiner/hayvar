@@ -365,6 +365,71 @@ def del_equipo(equipo, temporada=None, liga=None, tope=500):
     return _filas(sql, p)
 
 
+def racha_de(equipo, liga=None, tope=5):
+    """
+    Los últimos partidos jugados de un equipo, del más nuevo al más viejo.
+
+    Devuelve el resultado desde el lado de ESTE equipo —"G", "E", "P"— y
+    no desde el del local, que es lo que uno quiere leer en una previa:
+    "viene de ganar tres seguidos" no depende de dónde jugó.
+
+    Sólo los terminados: un partido suspendido o en curso no es racha.
+    """
+    sql = ("SELECT * FROM partidos "
+           " WHERE (local_id=? OR visita_id=?) AND estado='FIN' "
+           "   AND gh IS NOT NULL AND ga IS NOT NULL")
+    p = [equipo, equipo]
+    if liga:
+        sql += " AND liga=?"
+        p.append(liga)
+    sql += " ORDER BY cuando DESC LIMIT ?"
+    p.append(tope)
+    salida = []
+    for m in _filas(sql, p):
+        casa = m["local_id"] == equipo
+        mios = m["gh"] if casa else m["ga"]
+        suyos = m["ga"] if casa else m["gh"]
+        salida.append({
+            "id": m["id"], "cuando": m["cuando"],
+            "rival": m["visita"] if casa else m["local"],
+            "casa": casa, "gf": mios, "gc": suyos,
+            "como": "G" if mios > suyos else ("E" if mios == suyos else "P"),
+        })
+    return salida
+
+
+def goleadores_de(equipo, liga=None, temporada=None, desde=None, tope=6):
+    """
+    Los goleadores de UN equipo, para poder decir quién viene en racha.
+
+    `desde` acota a los partidos posteriores a esa fecha, que es como se
+    mira la forma: no importa quién hizo más goles en todo el año sino
+    quién los viene haciendo ahora.
+    """
+    sql = ("SELECT g.jugador, COUNT(*) AS goles, "
+           "       COUNT(DISTINCT g.partido) AS partidos, "
+           "       MAX(p.cuando) AS ultimo "
+           "  FROM goles g JOIN partidos p ON p.id=g.partido "
+           " WHERE (p.local_id=? OR p.visita_id=?) "
+           # El gol tiene el nombre del equipo que lo hizo: sin esto, los
+           # goles del rival contarían como propios.
+           "   AND (g.equipo IS NULL OR g.equipo=("
+           "        SELECT CASE WHEN p.local_id=? THEN p.local ELSE p.visita END))")
+    p = [equipo, equipo, equipo]
+    if liga:
+        sql += " AND p.liga=?"
+        p.append(liga)
+    if temporada is not None:
+        sql += " AND p.temporada=?"
+        p.append(temporada)
+    if desde:
+        sql += " AND p.cuando>=?"
+        p.append(desde)
+    sql += (" GROUP BY g.jugador ORDER BY goles DESC, partidos ASC LIMIT ?")
+    p.append(tope)
+    return _filas(sql, p)
+
+
 def temporadas(liga):
     """Qué temporadas hay guardadas de un torneo, y cuántos partidos de cada."""
     return _filas(

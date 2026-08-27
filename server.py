@@ -8976,6 +8976,10 @@ def api_historia(q):
     preferible que no haya pestaña a que haya una vacía.
     """
     lid = (q.get("liga") or ["lpf"])[0]
+    # La Primera Nacional va por su propia puerta: no es una copa y trae
+    # los ascendidos además del campeón.
+    if lid == historia.NACIONAL_ES:
+        return historia.de_nacional()
     cual = historia.DE_LA_COMPETENCIA.get(lid)
     if cual:
         salida = historia.de_copa(cual)

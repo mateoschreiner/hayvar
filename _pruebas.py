@@ -6184,6 +6184,119 @@ chequear("la Copa de la Liga cuenta como copa, no como liga",
          "Copa de la Liga Profesional" in _nombres
          and not any(to == "Copa de la Liga" for _t, to, _c in historia.LIGAS))
 
+print("\n── la historia de la Primera Nacional ──")
+# La misma idea que arriba: no se comprueba que "ande", se comprueba que
+# sea CIERTA. Acá el control cruzado son los títulos por club, que RSSSF y
+# Wikipedia publican por separado y coinciden entre sí. Si al transcribir
+# se me hubiera escapado un año o hubiera puesto un club por otro, la
+# cuenta por club no daría.
+_PN = historia.de_nacional()
+# Títulos por club, tal como los publican las dos fuentes.
+_PN_FUENTE = {
+    "Banfield": 3, "Olimpo": 3,
+    "Huracán": 2, "Argentinos Juniors": 2, "Talleres (C)": 2, "Instituto": 2,
+    "Atlético Rafaela": 2, "Atlético Tucumán": 2, "Aldosivi": 2,
+    "Deportivo Armenio": 1, "Deportivo Mandiyú": 1, "Chaco For Ever": 1,
+    "Quilmes": 1, "Lanús": 1, "Gimnasia de Jujuy": 1, "Estudiantes (LP)": 1,
+    "Huracán Corrientes": 1, "Tiro Federal": 1, "Godoy Cruz": 1,
+    "San Martín Tucumán": 1, "River Plate": 1, "Rosario Central": 1,
+    "Arsenal": 1, "Sarmiento (J)": 1, "Tigre": 1, "Belgrano": 1,
+    "Independiente Rivadavia": 1, "Gimnasia y Esgrima (M)": 1,
+}
+_pnMios = {c["club"]: c["total"] for c in _PN["porClub"]}
+chequear("los títulos por club dan los de la fuente",
+         _pnMios == _PN_FUENTE,
+         {k: (_pnMios.get(k), _PN_FUENTE.get(k))
+          for k in set(_pnMios) | set(_PN_FUENTE)
+          if _pnMios.get(k) != _PN_FUENTE.get(k)})
+chequear("y son 39 títulos entre 28 clubes",
+         _PN["total"] == sum(_PN_FUENTE.values()) == 39
+         and len(_PN["porClub"]) == 28,
+         (_PN["total"], len(_PN["porClub"])))
+# Una temporada cargada dos veces no la agarraría el control de arriba si
+# el error fuera duplicar la fila entera de un club que ya tiene dos.
+_pnT = [t for t, _c, _a, _n in historia.NACIONAL]
+chequear("no hay ninguna temporada cargada dos veces",
+         len(_pnT) == len(set(_pnT)) == 41,
+         [t for t in _pnT if _pnT.count(t) > 1])
+# Arranca en 1986, que fue la decisión de alcance: antes de eso la segunda
+# división era la Primera B, que desde ese año pasó a ser la tercera.
+chequear("arranca en 1986, cuando se crea la categoría",
+         _PN["desde"] == "1986/87"
+         and min(int(t[:4]) for t in _pnT) == 1986, _PN["desde"])
+# Los dos años sin campeón son de verdad, no huecos. Si alguien "arreglara"
+# el vacío poniendo un club, esto lo frena.
+_pnAno = {f["temporada"]: f for f in _PN["porAno"]}
+chequear("2014 y 2019/20 no tienen campeón, y es correcto",
+         not _pnAno["2014"]["titulos"] and not _pnAno["2019/20"]["titulos"]
+         and [t for t, c, _a, _n in historia.NACIONAL if not c]
+             == ["2014", "2019/20"],
+         [t for t, c, _a, _n in historia.NACIONAL if not c])
+chequear("y cada uno explica por qué",
+         "no hubo campeón" in (_pnAno["2014"]["nota"] or "")
+         and "pandemia" in (_pnAno["2019/20"]["nota"] or ""))
+# 2014 fue el año de los diez ascensos: es el que más rompe el molde y el
+# primero que se rompería si el formato de la fila cambiara.
+chequear("2014 tiene los diez que ascendieron",
+         len(_pnAno["2014"]["ascendidos"]) == 10
+         and "Colón" in _pnAno["2014"]["ascendidos"],
+         _pnAno["2014"]["ascendidos"])
+# Y 2016 es el opuesto: un solo ascenso, el del campeón.
+chequear("y 2016 ninguno, porque subió sólo el campeón",
+         _pnAno["2016"]["ascendidos"] == []
+         and _pnAno["2016"]["titulos"][0]["campeon"] == "Talleres (C)")
+# 2026 está en curso: no se pone hasta que termine.
+chequear("2026 no está, porque todavía se está jugando",
+         "2026" not in _pnT)
+# Los ascendidos NO son títulos: un club que subió cinco veces por reducido
+# no tiene cinco campeonatos. Es el error más fácil de cometer acá.
+_pnSubio = {n for _t, _c, a, _n in historia.NACIONAL for n in a}
+chequear("los ascendidos no se cuentan como títulos",
+         "Chacarita Juniors" in _pnSubio
+         and "Chacarita Juniors" not in _pnMios,
+         sorted(_pnSubio & set(_pnMios)))
+# Que los nombres sean los nuestros. Si escribo "Gimnasia y Esgrima
+# (Jujuy)" donde nosotros decimos "Gimnasia de Jujuy", el escudo no aparece
+# y el enlace a la ficha no va a ningún lado.
+#
+# Que un club NO se reconozca no es un error: Chacarita, Colón, Quilmes,
+# Almagro y una docena más no juegan ninguna de nuestras catorce
+# competencias, así que el servidor no los conoce y en la pantalla el
+# escudo lo pone la lista de equipos del torneo, que sale del calendario
+# en vivo. Lo que sí sería un error es escribir una VARIANTE de un club
+# que sí conocemos: ahí el nombre se reconoce pero no es el nuestro.
+_pnTodos = set(_pnMios) | _pnSubio
+_pnMal = sorted((n, server.match_team(n, False)) for n in _pnTodos
+                if server.match_team(n, False) not in (None, n))
+chequear("ningún club conocido está escrito con otro nombre", not _pnMal,
+         _pnMal)
+# Y el mismo club no puede estar escrito de dos formas adentro de la
+# lista: "Huracán" y "Huracán (BA)" serían dos clubes distintos para la
+# cuenta de títulos, y uno de los dos quedaría con menos de los que tiene.
+_pnPlano = {}
+for _n in _pnTodos:
+    _pnPlano.setdefault(historia._plano(_n), []).append(_n)
+chequear("y ninguno está escrito de dos formas distintas",
+         not [v for v in _pnPlano.values() if len(v) > 1],
+         [v for v in _pnPlano.values() if len(v) > 1])
+# Y se sirve por su propia puerta, que no es la de las copas.
+_pnApi = server.ROUTES["/api/historia"]({"liga": ["nacional"]})
+chequear("la Primera Nacional tiene su propia historia",
+         _pnApi["titulo"] == "Primera Nacional" and _pnApi["total"] == 39,
+         _pnApi.get("titulo"))
+chequear("y no se la come la de Primera ni la de la copa",
+         server.ROUTES["/api/historia"]({})["total"] == 143
+         and server.ROUTES["/api/historia"]({"liga": ["ca"]})["copa"]
+             == "Copa Argentina")
+chequear("y tiene su pestaña en el submenú",
+         "nacional:['equipos','historia']" in HTML)
+# La pantalla: los ascendidos y la nota de formato son lo nuevo.
+chequear("la pantalla dibuja los ascendidos y el formato",
+         'class="subieron"' in HTML and 'class="hist-formato"' in HTML
+         and "También ascendió" in HTML)
+chequear("y dice 'Sin campeón' donde no hubo",
+         "Sin campeón" in HTML)
+
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)
 _h = server.ROUTES["/api/historia"]({})
@@ -6209,8 +6322,8 @@ chequear("y las copas abajo, separadas",
 # Y al desplegarse, la copa se lee igual que la lista de ligas: la misma
 # función arma las dos.
 chequear("la copa desplegada usa la misma fila que las ligas",
-         "function histFila(temporada, titulos)" in HTML
-         and "histFila(f.temporada,f.titulos)" in HTML
+         "function histFila(temporada, titulos, extra)" in HTML
+         and "histFila(f.temporada,f.titulos,f)" in HTML
          and "histFila(x.temporada,[{campeon:x.campeon}])" in HTML)
 # El total y el desglose, que es lo que hace que el número signifique algo.
 chequear("por club muestra el total y lo discrimina",

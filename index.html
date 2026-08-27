@@ -494,6 +494,18 @@ span.hist-esc{border-radius:50%;background:var(--line)}
 .hist-ano .uno{display:flex;align-items:center;gap:7px;min-width:0}
 .hist-ano .uno .torneo{color:var(--txt3);font-size:11.5px}
 .hist-ano .uno .nm{font-weight:600}
+/* El ascenso: quién más subió esa temporada, y cómo estaba armado el
+   torneo cuando fue raro —que en esta categoría es casi siempre—. */
+.hist-ano.conmas{grid-template-columns:64px 1fr;row-gap:5px}
+.hist-ano .subieron{grid-column:2;display:flex;flex-wrap:wrap;
+  align-items:center;gap:4px 14px}
+.hist-ano .subieron .lb{color:var(--txt3);font-size:11px;
+  text-transform:uppercase;letter-spacing:.04em}
+.hist-ano .subieron .uno .nm{font-weight:500;color:var(--txt2)}
+.hist-ano .subieron img.hist-esc{width:15px;height:15px}
+.hist-ano .hist-formato{grid-column:2;color:var(--txt3);font-size:11.5px;
+  line-height:1.45;max-width:62ch}
+.hist-ano .uno.sin{color:var(--txt3);font-style:italic}
 .hist-nota{color:var(--txt3);font-size:11px;cursor:help}
 .hist-sep{padding:22px 16px 6px;font-size:12px;font-weight:800;
   letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);
@@ -1459,6 +1471,7 @@ const App=(()=>{
   const CON_SECCIONES={
     lpf:['calculadora','equipos','historia'],
     ca:['equipos','historia'],
+    nacional:['equipos','historia'],
   };
 
   const Rutas={
@@ -1704,14 +1717,28 @@ const App=(()=>{
      La usan las ligas y también las copas al desplegarse, a propósito: es
      la misma pregunta —quién ganó qué y cuándo— y conviene que tenga la
      misma forma. */
-  function histFila(temporada, titulos){
-    return `<div class="hist-ano${titulos.length>1?' doble':''}">
+  function histFila(temporada, titulos, extra){
+    const f=extra||{};
+    const subieron=f.ascendidos||[];
+    /* En el ascenso hay años sin campeón —2014 y 2019/20— y no es lo
+       mismo que un dato que nos falte: ese año no hubo. Se dice con
+       todas las letras en vez de dejar el renglón en blanco. */
+    const campeones=titulos.length
+      ? titulos.map(t=>`<span class="uno">
+          ${escudoHist(t.campeon)}${clubHist(t.campeon)}
+          ${t.torneo?`<span class="torneo">${esc(t.torneo)}</span>`:''}
+          ${t.nota?`<span class="hist-nota" title="${esc(t.nota)}">ⓘ</span>`:''}
+        </span>`).join('')
+      : `<span class="uno sin">Sin campeón</span>`;
+    return `<div class="hist-ano${titulos.length>1?' doble':''}${
+        subieron.length||f.nota?' conmas':''}">
       <div class="t">${esc(temporada)}</div>
-      <div class="campeones">${titulos.map(t=>`<span class="uno">
-        ${escudoHist(t.campeon)}${clubHist(t.campeon)}
-        ${t.torneo?`<span class="torneo">${esc(t.torneo)}</span>`:''}
-        ${t.nota?`<span class="hist-nota" title="${esc(t.nota)}">ⓘ</span>`:''}
-      </span>`).join('')}</div>
+      <div class="campeones">${campeones}</div>
+      ${subieron.length?`<div class="subieron">
+        <span class="lb">También ascendió${subieron.length>1?'n':''}</span>
+        ${subieron.map(n=>`<span class="uno">
+          ${escudoHist(n)}${clubHist(n)}</span>`).join('')}</div>`:''}
+      ${f.nota?`<div class="hist-formato">${esc(f.nota)}</div>`:''}
     </div>`;
   }
 
@@ -1722,7 +1749,7 @@ const App=(()=>{
     const cuantos=hist.copa?`${hist.total} ediciones`:`${hist.total} títulos`;
     return `<div class="hist-sep" style="border-top:0;padding-top:14px">
         ${esc(hist.titulo||'Ligas')} · ${cuantos} desde ${esc(hist.desde)}</div>`
-      + hist.porAno.map(f=>histFila(f.temporada,f.titulos)).join('');
+      + hist.porAno.map(f=>histFila(f.temporada,f.titulos,f)).join('');
   }
 
   /* Las copas, abajo y aparte. Cerradas: son ocho y ninguna es lo que la

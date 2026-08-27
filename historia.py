@@ -245,6 +245,114 @@ COPAS = [
     ("Copa del Bicentenario", [("2016", "Lanús")]),
 ]
 
+# ── La Primera Nacional ──────────────────────────────────────────────────
+# (temporada, campeón, [los otros que ascendieron], nota)
+#
+# La segunda división tal como existe hoy nace en 1986, cuando AFA crea la
+# Primera B Nacional y abre la categoría al interior del país. Antes de eso
+# la segunda era la Primera B, que desde 1986 pasó a ser la tercera: contar
+# las dos juntas haría que un mismo torneo signifique dos cosas distintas
+# según el año, así que la lista arranca en 1986/87.
+#
+# Por qué van los ascendidos y no sólo el campeón
+# ──────────────────────────────────────────────
+# Porque en el ascenso subir es el objetivo y salir campeón es una de las
+# formas de lograrlo. El segundo ascenso —reducido, promoción, según la
+# época— se juega tanto o más que el primero, y una lista que sólo dijera
+# el campeón dejaría afuera la mitad de lo que pasó. Tigre 2006/07, por
+# dar uno, subió por reducido y promoción sin salir campeón.
+#
+# El campeón en None quiere decir que ese año no hubo, y son dos casos de
+# verdad, no huecos:
+#
+#   · 2014 fue un torneo de transición en dos zonas para llevar Primera de
+#     20 a 30 equipos. Ascendieron diez y no se coronó campeón. RSSSF
+#     lista a Colón y a Unión como ganadores de zona; Wikipedia dice que
+#     no hubo campeón. Van los dos ganadores de zona en la nota y el
+#     casillero de campeón vacío, que es lo que las dos fuentes admiten.
+#   · 2019/20 lo abandonó AFA por la pandemia el 27 de abril de 2020. Sin
+#     campeón y sin ascensos.
+#
+# 2026 está en curso y por eso no está. No se pone hasta que termine.
+NACIONAL = [
+    ("1986/87", "Deportivo Armenio", ["Banfield"],
+     "Primera edición: 22 equipos y el segundo ascenso por playoff."),
+    ("1987/88", "Deportivo Mandiyú", ["San Martín Tucumán"], None),
+    ("1988/89", "Chaco For Ever", ["Unión"], None),
+    ("1989/90", "Huracán", ["Lanús"], None),
+    ("1990/91", "Quilmes", ["Belgrano"], None),
+    ("1991/92", "Lanús", ["San Martín Tucumán"], None),
+    ("1992/93", "Banfield", ["Gimnasia y Tiro"],
+     "El título se definió por penales ante Colón, 5-4, en Córdoba."),
+    ("1993/94", "Gimnasia de Jujuy", ["Talleres (C)"], None),
+    ("1994/95", "Estudiantes (LP)", ["Colón"], None),
+    ("1995/96", "Huracán Corrientes", ["Unión"],
+     "Apertura y Clausura, con final entre los dos ganadores."),
+    ("1996/97", "Argentinos Juniors", ["Gimnasia y Tiro"],
+     "32 equipos en cuatro subzonas. El campeón salió por tabla."),
+    ("1997/98", "Talleres (C)", ["Belgrano"],
+     "Final entre los ganadores de los dos grupos, por penales."),
+    ("1998/99", "Instituto", ["Chacarita Juniors"],
+     "Zona Metropolitana y Zona Interior, con playoff entre las dos."),
+    ("1999/00", "Huracán", ["Los Andes", "Almagro"],
+     "Se estrena la promoción contra equipos de Primera: tres ascensos."),
+    ("2000/01", "Banfield", ["Nueva Chicago"], None),
+    ("2001/02", "Olimpo", ["Arsenal"],
+     "El Apertura se contó como el campeonato anual de la categoría."),
+    ("2002/03", "Atlético Rafaela", ["Quilmes"],
+     "Ganó el Apertura y el Clausura, así que fue campeón sin final."),
+    ("2003/04", "Instituto",
+     ["Almagro", "Argentinos Juniors", "Huracán (Tres Arroyos)"],
+     "Primer año con cuatro ascensos. La final se definió con gol de oro."),
+    ("2004/05", "Tiro Federal", ["Gimnasia de Jujuy"], None),
+    ("2005/06", "Godoy Cruz", ["Nueva Chicago", "Belgrano"], None),
+    ("2006/07", "Olimpo", ["San Martín San Juan", "Huracán", "Tigre"],
+     "Ganó Apertura y Clausura. Cuatro ascensos, con las dos promociones."),
+    ("2007/08", "San Martín Tucumán", ["Godoy Cruz"],
+     "Vuelve el torneo único de 20 equipos y se termina el Apertura-Clausura."),
+    ("2008/09", "Atlético Tucumán", ["Chacarita Juniors"], None),
+    ("2009/10", "Olimpo", ["Quilmes", "All Boys"], None),
+    ("2010/11", "Atlético Rafaela",
+     ["Unión", "San Martín San Juan", "Belgrano"],
+     "Cuatro ascensos: se ganaron las dos promociones."),
+    ("2011/12", "River Plate", ["Quilmes"], None),
+    ("2012/13", "Rosario Central", ["Gimnasia y Esgrima (LP)", "Olimpo"],
+     "Se eliminan las promociones: ascienden los tres primeros."),
+    ("2013/14", "Banfield", ["Defensa y Justicia", "Independiente"], None),
+    ("2014", None,
+     ["Colón", "Unión", "San Martín San Juan", "Argentinos Juniors",
+      "Nueva Chicago", "Aldosivi", "Crucero del Norte", "Temperley",
+      "Sarmiento (J)", "Huracán"],
+     "Torneo de transición en dos zonas, para llevar Primera de 20 a 30 "
+     "equipos: ascendieron diez y no hubo campeón. Ganaron su zona Colón "
+     "y Unión."),
+    ("2015", "Atlético Tucumán", ["Patronato"], None),
+    ("2016", "Talleres (C)", [],
+     "Transición a una sola rueda y un solo ascenso. Campeón invicto: "
+     "catorce ganados, siete empatados, ninguno perdido."),
+    ("2016/17", "Argentinos Juniors", ["Chacarita Juniors"],
+     "23 equipos y 46 fechas: el torneo más largo de la categoría."),
+    ("2017/18", "Aldosivi", ["San Martín Tucumán"],
+     "Almagro terminó primero en la tabla, pero Aldosivi le ganó 3-1 la "
+     "final por el campeonato."),
+    ("2018/19", "Arsenal", ["Central Córdoba (SdE)"],
+     "Sarmiento terminó primero en la tabla, pero Arsenal le ganó 1-0 la "
+     "final por el campeonato."),
+    ("2019/20", None, [],
+     "AFA abandonó el torneo por la pandemia el 27 de abril de 2020. Sin "
+     "campeón, sin ascensos y sin descensos."),
+    ("2020", "Sarmiento (J)", ["Platense"],
+     "Torneo de transición, para completar la temporada interrumpida."),
+    ("2021", "Tigre", ["Barracas Central"],
+     "35 equipos en dos zonas, con final entre los dos ganadores."),
+    ("2022", "Belgrano", ["Instituto"],
+     "37 equipos en zona única: el campeón salió por tabla, sin final."),
+    ("2023", "Independiente Rivadavia", ["Deportivo Riestra"], None),
+    ("2024", "Aldosivi", ["San Martín San Juan"],
+     "38 equipos en dos grupos de 19: la edición más numerosa."),
+    ("2025", "Gimnasia y Esgrima (M)", ["Estudiantes (RC)"], None),
+]
+
 # La primera temporada del profesionalismo, para poder decirlo en pantalla
 # sin repetir el número en tres lugares.
 DESDE = LIGAS[0][0]
@@ -386,6 +494,55 @@ def titulos_de(club):
 DE_LA_COMPETENCIA = {
     "ca": "Copa Argentina",
 }
+
+# La Primera Nacional no es una copa y no sale de `COPAS`: tiene ascendidos
+# además de campeón, así que va por su propia puerta.
+NACIONAL_ES = "nacional"
+
+
+def de_nacional():
+    """
+    La historia de la Primera Nacional, con la misma forma que las otras.
+
+    Devuelve `porAno` y `porClub` como las demás para que la pantalla sea
+    una sola, y agrega dos cosas que las otras no tienen: los ascendidos de
+    cada temporada y la nota de formato cuando el torneo fue raro, que en
+    esta categoría es casi siempre.
+
+    Los títulos por club cuentan **campeonatos**, no ascensos. Un club que
+    subió cinco veces por reducido no tiene cinco títulos, y sumarlos sería
+    exactamente el error que esta lista trata de no cometer.
+    """
+    campeones = [(t, c) for t, c, _a, _n in NACIONAL if c]
+    por_ano = []
+    for temporada, campeon, ascendidos, nota in sorted(
+            NACIONAL, key=lambda x: _clave(x[0]), reverse=True):
+        por_ano.append({
+            "temporada": temporada,
+            # Sin campeón la lista va vacía y la pantalla lo dice con la
+            # nota. Es distinto de "no lo sabemos": ese año no hubo.
+            "titulos": ([{"torneo": "", "campeon": campeon, "nota": None}]
+                        if campeon else []),
+            "ascendidos": list(ascendidos),
+            "nota": nota,
+        })
+    return {
+        "copa": "Primera Nacional",
+        "titulo": "Primera Nacional",
+        "unidad": "título",
+        "desde": NACIONAL[0][0],
+        "total": len(campeones),
+        "porAno": por_ano,
+        "porClub": por_club_de(campeones),
+        "copas": [],
+        "conAscensos": True,
+        "fuente": "RSSSF (Gorgazzi y Villa Martínez), cruzada con Wikipedia",
+        "nota": ("Campeones de la segunda división desde que se creó la "
+                 "Primera B Nacional, en 1986. Al lado de cada campeón van "
+                 "los otros que ascendieron esa temporada: en el ascenso "
+                 "subir es el objetivo y el campeonato es una de las "
+                 "formas de lograrlo."),
+    }
 
 
 def de_copa(nombre):

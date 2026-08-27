@@ -2331,6 +2331,28 @@ chequear("lo que borra o gasta está en la lista de privadas",
                              "/api/nombres", "/api/corregir", "/api/copia",
                              "/admin"},
          sorted(server.PRIVADAS))
+# Y la puerta que no era una puerta: cualquier dirección desconocida caía
+# en `super().do_GET()`, que es el servidor de archivos de la biblioteca.
+# O sea que /server.py bajaba el código, /render.yaml la configuración del
+# hosting y /clave.txt la clave de la API el día que ese archivo estuviera
+# al lado del código —que es como está en la máquina de casa—. La base se
+# salvó de casualidad, porque vive en otro disco.
+chequear("una dirección desconocida no cae en el servidor de archivos",
+         "return super().do_GET()\n" not in _SRV.split("if path.lstrip")[0]
+         .split("La página, comprimida")[-1])
+chequear("y lo que se sirve tal cual es una lista corta y escrita",
+         server.ESTATICOS == {"favicon.ico", "favicon.png", "favicon.svg",
+                              "apple-touch-icon.png", "licencia.txt"},
+         sorted(server.ESTATICOS))
+# Ninguno de los que se sirven puede ser código ni configuración.
+chequear("y ahí no hay ni código ni configuración",
+         not [n for n in server.ESTATICOS
+              if n.endswith((".py", ".yaml", ".yml", ".db", ".json", ".md"))])
+# La lista se compara por nombre entero: sin esto, "..%2f" o "/../clave.txt"
+# se normalizan a algo que no está en la lista y rebotan igual.
+chequear("y se compara el nombre entero, no el final",
+         'path.lstrip("/") in ESTATICOS' in _SRV)
+
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")
          < _SRV.index('if path == "/api/raw":'))

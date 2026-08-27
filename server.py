@@ -163,6 +163,15 @@ PRIVADAS = {
 # tiene que estar abierta. La que muestra los datos juntados es /api/visitas.
 
 
+# Los únicos archivos de la carpeta que se sirven tal cual. Es una lista
+# escrita a mano y a propósito: lo que no está acá, no se baja. Ver el
+# final de `do_GET`.
+ESTATICOS = {
+    "favicon.ico", "favicon.png", "favicon.svg", "apple-touch-icon.png",
+    "licencia.txt",
+}
+
+
 def con_llave(q, headers=None):
     """¿Este pedido tiene permiso para las puertas de servicio?"""
     if EN_CASA:
@@ -10787,7 +10796,22 @@ class Handler(SimpleHTTPRequestHandler):
         # pestaña nueva y Google lo puede indexar.
         if path in ("/", "/index.html") or _titulo_de_ruta(path):
             return self._pagina("/" if path == "/index.html" else path)
-        return super().do_GET()
+        # Y lo que no es nuestro, no existe.
+        #
+        # Acá antes estaba `return super().do_GET()`, que le pasaba la
+        # pelota al servidor de archivos de la biblioteca: cualquier
+        # dirección desconocida se resolvía como un archivo de la carpeta.
+        # Eso quería decir que /server.py bajaba el código entero,
+        # /render.yaml la configuración del hosting, y /clave.txt la clave
+        # de la API el día que ese archivo estuviera al lado del código
+        # —que es como está en mi máquina—. La base se salvaba de casualidad,
+        # porque vive en otro disco.
+        #
+        # Ahora la lista está escrita y es corta: son los cinco archivos
+        # que la página pide de verdad. Todo lo demás es 404.
+        if path.lstrip("/") in ESTATICOS:
+            return super().do_GET()
+        self.send_error(404)
 
 
 def precalentar():

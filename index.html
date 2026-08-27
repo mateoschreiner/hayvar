@@ -395,6 +395,10 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .eq-item .nm{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 
+/* El clásico rival, con su escudo cuando lo tenemos */
+.cl-clasico{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.cl-clasico img{width:19px;height:19px;object-fit:contain;flex:none}
+
 /* ── En qué categorías jugó el club ── */
 .temporadas{padding:2px 16px 4px}
 .temporadas .fila{display:flex;align-items:center;gap:9px;padding:3px 0;
@@ -429,10 +433,17 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .cl-rend .pie b.g{color:#0e9d5c}
 .cl-rend .pie b.e{color:var(--txt2)}
 .cl-rend .pie b.p{color:#d13438}
-.cl-rend .goles{margin-left:auto;font-variant-numeric:tabular-nums;
-  font-weight:700;color:var(--txt)}
-.cl-rend .goles .sep{color:var(--txt3);margin:0 1px}
-.cl-rend .goles .lb{font-weight:400;color:var(--txt2);margin-left:3px}
+/* Los goles, con su propia barra: a favor contra en contra, sobre el total */
+.cl-rend .goles{display:flex;align-items:center;gap:8px;margin-top:9px}
+.cl-rend .goles .n{font-size:12px;font-weight:700;
+  font-variant-numeric:tabular-nums;min-width:22px}
+.cl-rend .goles .n.gf{text-align:right;color:#0e6fd1}
+.cl-rend .goles .n.gc{color:#b0562a}
+.cl-rend .goles .barra{flex:1;min-width:0}
+.cl-rend .goles .barra .gf{background:#2f6fed}
+.cl-rend .goles .barra .gc{background:#e0863f}
+.cl-rend .lbgoles{display:flex;justify-content:space-between;margin-top:4px;
+  padding:0 30px;font-size:10.5px;color:var(--txt3)}
 
 /* ── Contra qué se compara al jugador ── */
 .radar-cual{display:flex;gap:4px;flex-wrap:wrap;padding:2px 0 10px}
@@ -570,6 +581,10 @@ span.hist-esc{border-radius:50%;background:var(--line)}
 .cl-jug:hover{color:var(--acc)}
 .cl-jug .num{width:22px;text-align:center;font-weight:800;color:var(--txt3);font-size:11.5px;flex:none}
 .cl-jug .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* El dorsal de verdad, cuando el club tiene: al lado del nombre, chiquito,
+   porque el número grande de la izquierda ahora es el orden en la lista. */
+.cl-jug .nm .dorsal{margin-left:7px;font-size:10px;font-weight:700;
+  color:var(--txt3);font-variant-numeric:tabular-nums}
 .cl-jug .pj{font-size:10.5px;color:var(--txt3)}
 /* la bandera del jugador. Ancho fijo aunque no haya bandera, así los
    nombres no bailan entre los que la tienen y los que no */
@@ -3344,6 +3359,12 @@ const App=(()=>{
     const tramo=(n,clase,que)=>n
       ? `<i class="${clase}" style="width:${n/r.pj*100}%"
            title="${n} ${que}"></i>` : '';
+    /* Los goles, con la misma idea: la barra reparte a favor y en contra
+       sobre el total, así que se ve si el equipo hace más de los que
+       recibe sin leer los números. El caso raro de 0 a 0 en todo el torneo
+       se reparte al medio, que es lo que corresponde. */
+    const tot=r.gf+r.gc;
+    const aFavor=tot?r.gf/tot*100:50;
     return `<div class="cl-rend">
       <div class="barra">
         ${tramo(r.g,'g','ganados')}${tramo(r.e,'e','empatados')}${tramo(r.p,'p','perdidos')}
@@ -3352,9 +3373,16 @@ const App=(()=>{
         <span><b class="g">${r.g}</b> ganados</span>
         <span><b class="e">${r.e}</b> empatados</span>
         <span><b class="p">${r.p}</b> perdidos</span>
-        <span class="goles">${r.gf}<span class="sep">:</span>${r.gc}
-          <span class="lb">goles</span></span>
       </div>
+      <div class="goles">
+        <span class="n gf">${r.gf}</span>
+        <span class="barra" title="${r.gf} a favor, ${r.gc} en contra">
+          <i class="gf" style="width:${aFavor}%"></i>
+          <i class="gc" style="width:${100-aFavor}%"></i>
+        </span>
+        <span class="n gc">${r.gc}</span>
+      </div>
+      <div class="lbgoles"><span>goles a favor</span><span>en contra</span></div>
     </div>`;
   }
 
@@ -3426,19 +3454,48 @@ const App=(()=>{
       return t.total+`<div class="pie">${esc(partes.join(' · '))} · `
         +enlace({t:'liga', id:'lpf', sec:'historia'},'ver la historia')+`</div>`;
     };
+    /* El clásico rival, con su escudo si lo tenemos.
+
+       El escudo sale de las listas de equipos que ya están cargadas, así
+       que aparece cuando el rival juega alguna de las competencias del
+       sitio. Muchos clásicos del ascenso son de liga regional —Gutiérrez
+       Sport Club, Atlético Lambert, Central Ballester— y de ésos no vamos
+       a tener escudo nunca: van con el nombre solo, que es el dato. */
+    const clasicoClub=f=>{
+      if(!f.clasico) return '';
+      const e=clubConocido(f.clasico);
+      return `<span class="cl-clasico">${e&&e.logo
+          ? `<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
+        <span>${esc(f.clasico)}</span></span>`
+        +(f.clasicoNombre?`<div class="pie">${esc(f.clasicoNombre)}</div>`:'');
+    };
     const dato=(lb,vl)=>vl?`<div class="cl-dato"><div class="lb">${lb}</div>
       <div class="vl">${vl}</div></div>`:'';
 
     // plantel agrupado por puesto
-    let plantel='', ultimo='';
+    /* El plantel va numerado de corrido, no por dorsal.
+
+       En el ascenso argentino se usa la numeración del 1 al 11 por
+       partido: el jugador no tiene un número fijo, así que mostrar "el
+       dorsal" era mostrar el número que le tocó la última vez que lo
+       vimos, que no significa nada. Un número de orden sí: dice cuántos
+       son y en qué lugar de la lista está cada uno.
+
+       Los que tienen dorsal de verdad —los de Primera— lo siguen viendo,
+       al lado del nombre. */
+    const conDorsal=(d.plantel||[]).some(j=>!j.dt&&j.n!=null);
+    let plantel='', ultimo='', orden=0;
     (d.plantel||[]).forEach(j=>{
-      // El técnico va con su propio rótulo y con "DT" donde va el dorsal:
+      // El técnico va con su propio rótulo y con "DT" donde va el número:
       // la fuente le pone -1, que en la pantalla no quiere decir nada.
       const pu=j.dt?'Cuerpo técnico':(j.puesto||'Sin puesto');
       if(pu!==ultimo){ plantel+=`<div class="cl-puesto">${esc(pu)}</div>`; ultimo=pu; }
+      if(!j.dt) orden++;
       plantel+=`<a class="cl-jug"
         href="${esc(Rutas.url(rutaJugador(j.nombre,j.id)))}" data-ir>
-        <span class="num">${j.dt?'DT':(j.n??'–')}</span><span class="nm">${esc(j.nombre)}</span>
+        <span class="num">${j.dt?'DT':orden}</span><span class="nm">${esc(j.nombre)}${
+          conDorsal&&!j.dt&&j.n!=null
+            ? `<span class="dorsal">${j.n}</span>`:''}</span>
         <span class="pais">${j.bandera
           ? `<img src="${esc(j.bandera)}" alt="${esc(j.pais||'')}"
                title="${esc(j.pais||'')}" loading="lazy">` : ''}</span></a>`;
@@ -3485,12 +3542,11 @@ const App=(()=>{
              liga y una Supercopa no son lo mismo y el total solo no lo
              dice. Los que nunca salieron campeones no muestran nada. */''}
         ${dato('Títulos', titulosClub(i.titulos))}
-        ${/* Para un club del ascenso, dónde juega y en qué categoría ubican
-             bastante más que el nombre del estadio: a Deportivo Rincón lo
-             sitúa "Rincón de los Sauces, Neuquén", no "Elías Moisés
-             Gómez". Por eso van antes. */''}
-        ${dato('Dónde juega', i.ciudad?esc(i.ciudad)
-          +(i.division?`<div class="pie">${esc(i.division)}</div>`:''):'')}
+        ${/* La categoría no va acá: ya la dice el bloque de partidos de
+             abajo, y ahí dice la verdad de hoy —si el club asciende, un
+             dato guardado a mano queda viejo—. Y la ciudad repetía lo que
+             ya dice "Dónde queda". */''}
+        ${dato('Clásico', clasicoClub(i))}
         ${dato('Estadio', i.estadio?esc(i.estadio)+(i.estadioApodo?`<div class="pie">${esc(i.estadioApodo)}</div>`:''):'')}
         ${dato('Capacidad', i.capacidad?i.capacidad.toLocaleString('es-AR')+`<div class="pie">personas</div>`:'')}
         ${dato('Dónde queda', i.direccion||i.mapa?esc(i.direccion||'Ver en el mapa')
@@ -3607,6 +3663,10 @@ const App=(()=>{
     // El nombre bueno lo sabe el servidor: "argentinos juniors" entró por
     // la dirección y sale "Argentinos Juniors".
     if(S.clubInfo.club) $('.tag').textContent=S.clubInfo.club;
+    /* La lista de Primera, para poder ponerle el escudo al clásico rival.
+       Está cacheada: si el visitante ya pasó por Primera o por el modo
+       club no cuesta un pedido, y si no, es uno solo y liviano. */
+    if((S.clubInfo.info||{}).clasico) await equipos('lpf');
     drawClub();
     status('ok',`<b>${esc(S.clubInfo.club)}</b> · ficha del club`);
   }

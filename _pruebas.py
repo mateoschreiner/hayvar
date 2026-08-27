@@ -5273,8 +5273,19 @@ if _sh.which("node"):
             "info": {"nombre": "Club Atlético River Plate",
                      "apodo": "El Millonario", "fundado": 1901,
                      "estadio": "Más Monumental", "capacidad": 85018,
+                     "clasico": "Boca Juniors",
+                     "clasicoNombre": "Superclásico",
                      "titulos": _hist.titulos_de("River Plate")},
-            "historial": [], "plantel": [], "fixture": [], "radar": None,
+            # Un plantel con dorsales de verdad, que es el caso de Primera:
+            # va numerado de corrido igual, y el dorsal al lado del nombre.
+            "historial": [],
+            "plantel": [{"nombre": "Franco Armani", "id": 1,
+                         "puesto": "Arquero", "n": 1},
+                        {"nombre": "Marcos Acuña", "id": 2,
+                         "puesto": "Defensor", "n": 8},
+                        {"nombre": "Un Técnico", "id": 3, "n": -1,
+                         "dt": True}],
+            "fixture": [], "radar": None,
             "partidos": {}, "sitio": None, "tienda": None},
         "/api/club": {"club": "River Plate", "partidos": {}},
         # Un club sin ficha cargada a mano: sin estadio, sin camisetas y
@@ -5283,11 +5294,26 @@ if _sh.which("node"):
         "/api/club-info?name=deportivo%20madryn": {
             "club": "Deportivo Madryn", "escudo": "/img/x/9",
             "primary": "#0a7d3a", "accent": "#f2f2f2", "var": "#0a7d3a",
+            # El clásico de un club del ascenso: el rival no está en ninguna
+            # lista nuestra —juega en el Federal A—, así que va sin escudo.
+            # Ahí es donde un `logo` inexistente rompía la tarjeta.
             "info": {"ciudad": "Puerto Madryn, Chubut",
                      "division": "Primera Nacional", "capacidad": 8000,
+                     "clasico": "Guillermo Brown",
+                     "clasicoNombre": "Clásico del Golfo",
                      "temporadas": {"Primera Nacional": 4,
                                     "Torneo Federal A": 9}},
-            "historial": [], "plantel": [],
+            # Y un plantel sin dorsales, que es el caso del ascenso: el
+            # número de la izquierda tiene que ser el orden en la lista.
+            "historial": [],
+            "plantel": [{"nombre": "Un Arquero", "id": 11,
+                         "puesto": "Arquero", "n": None},
+                        {"nombre": "Un Defensor", "id": 12,
+                         "puesto": "Defensor", "n": None},
+                        {"nombre": "Otro Defensor", "id": 13,
+                         "puesto": "Defensor", "n": None},
+                        {"nombre": "El Técnico", "id": 14, "n": -1,
+                         "dt": True}],
             "fixture": [{"nombre": "Copa Argentina", "copa": True,
                          "posicion": None,
                          "rendimiento": {"pj": 4, "g": 2, "e": 1, "p": 1,
@@ -5373,6 +5399,19 @@ App.init();
       .match(/<i class="[gep]"/g)?.length || 0,
     rendPie: ((main.match(/class="cl-rend">[\s\S]*?class="pie">([\s\S]*?)<\/div>/)
       || ['',''])[1]).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+    /* La barra de goles, que es la otra mitad del bloque: dos tramos y los
+       dos números a los costados. */
+    golesTramos: [...((main.match(/class="goles">[\s\S]*?class="lbgoles"/)
+      || [''])[0]).matchAll(/<i class="(g[fc])"/g)].map(m=>m[1]),
+    golesNumeros: [...main.matchAll(/class="n g[fc]">(\\d+)</g)].map(m=>m[1]),
+    /* El clásico: el nombre del rival, si vino con escudo, y el nombre del
+       partido abajo. */
+    clasico: (main.match(/class="cl-clasico">[\s\S]*?<span>([^<]+)</) || [])[1] || '',
+    clasicoEscudo: /class="cl-clasico">\s*<img/.test(main),
+    /* El plantel: el número grande de la izquierda y el dorsal chico.
+       Vive a la derecha, abajo del último y el próximo partido. */
+    numeros: [...der.matchAll(/class="num">([^<]*)</g)].map(m=>m[1]),
+    dorsales: [...der.matchAll(/class="dorsal">([^<]*)</g)].map(m=>m[1]),
     categorias: [...der.matchAll(/class="nm">([^<]+)<\/span>\s*<span class="barra">/g)]
       .map(m => m[1]),
     catTotal: (der.match(/(\d+) temporadas en\s*total/) || [])[1] || ''}));
@@ -5544,16 +5583,37 @@ App.init();
                  _s6["caras"] == 1, _s6["caras"])
         # Muestra lo que hay y nada más: este club no tiene estadio
         # cargado ni títulos, así que esas dos tarjetas no aparecen.
+        #
+        # "Dónde juega" ya no está: decía la ciudad, que es lo mismo que
+        # dice "Dónde queda" tres tarjetas más allá, y la competencia ya
+        # la encabeza el bloque de partidos de abajo.
         chequear("muestra lo que hay y no inventa el resto",
-                 _s6["fichaDatos"] == ["Dónde juega", "Capacidad"],
+                 _s6["fichaDatos"] == ["Clásico", "Capacidad"],
                  _s6["fichaDatos"])
+        # El clásico de un club del ascenso: el rival juega en otra
+        # categoría y no tenemos su escudo, así que va con el nombre solo.
+        chequear("el clásico aparece aunque no tengamos el escudo del rival",
+                 _s6["clasico"] == "Guillermo Brown"
+                 and not _s6["clasicoEscudo"],
+                 (_s6["clasico"], _s6["clasicoEscudo"]))
         # La barra de ganados, empatados y perdidos, que reemplaza al
         # gráfico de "cómo juega" en los clubes que no son de Primera.
         chequear("la barra de rendimiento se dibuja en el torneo",
                  _s6["rendTramos"] == 3, _s6["rendTramos"])
         chequear("y dice cuántos ganó, empató y perdió",
-                 _s6["rendPie"] == "2 ganados 1 empatados 1 perdidos 6 : 4 goles",
+                 _s6["rendPie"] == "2 ganados 1 empatados 1 perdidos",
                  _s6["rendPie"])
+        # Los goles, en su propia barra: a favor contra en contra.
+        chequear("los goles van en barra, no en texto",
+                 _s6["golesTramos"] == ["gf", "gc"], _s6["golesTramos"])
+        chequear("con los dos números a los costados",
+                 _s6["golesNumeros"] == ["6", "4"], _s6["golesNumeros"])
+        # El plantel del ascenso no tiene dorsal fijo: el número de la
+        # izquierda es el orden en la lista, y el DT no entra en la cuenta.
+        chequear("el plantel va numerado de corrido y sin dorsales",
+                 _s6["numeros"] == ["1", "2", "3", "DT"]
+                 and _s6["dorsales"] == [],
+                 (_s6["numeros"], _s6["dorsales"]))
         # Y la trayectoria, abajo del plantel: de la categoría más alta a
         # la más baja, no en el orden en que vino el dato.
         chequear("y en qué categorías jugó, de la más alta a la más baja",
@@ -5568,11 +5628,22 @@ App.init();
     chequear("la ficha del club se abre", _s4 is not None, _s4)
     if _s4:
         chequear("y los títulos van con el estadio y la capacidad",
-                 _s4["fichaDatos"][:3] == ["Títulos", "Estadio", "Capacidad"],
-                 _s4["fichaDatos"][:4])
+                 _s4["fichaDatos"][:4] == ["Títulos", "Clásico", "Estadio",
+                                           "Capacidad"],
+                 _s4["fichaDatos"][:5])
         chequear("con el total y el desglose debajo",
                  _s4["fichaTitulos"] == ["46", "37 ligas · 9 copas · "],
                  _s4["fichaTitulos"])
+        # Acá el rival sí es un club nuestro, así que va con su escudo.
+        chequear("y el clásico va con el escudo del rival cuando lo tenemos",
+                 _s4["clasico"] == "Boca Juniors" and _s4["clasicoEscudo"],
+                 (_s4["clasico"], _s4["clasicoEscudo"]))
+        # Un plantel de Primera sí tiene dorsal fijo: se numera de corrido
+        # igual —el orden en la lista— y el dorsal va al lado del nombre.
+        chequear("un plantel con dorsales muestra los dos números",
+                 _s4["numeros"] == ["1", "2", "DT"]
+                 and _s4["dorsales"] == ["1", "8"],
+                 (_s4["numeros"], _s4["dorsales"]))
 
 
 print("\n── los promedios: el año que viene y lo que necesita cada uno ──")
@@ -6296,7 +6367,7 @@ chequear("el técnico se reconoce en un solo lugar",
          and 'or es_tecnico(f.get("puesto"), f.get("pos")))' in _SRV)
 chequear("y en el plantel dice DT, no -1",
          'f["dt"] = True' in _SRV and 'f["n"] = None' in _SRV
-         and "j.dt?'DT':(j.n??'–')" in HTML)
+         and "j.dt?'DT':orden" in HTML)
 chequear("y va al final, no ordenado por un número que no tiene",
          '5 if x.get("dt") else puesto_rango' in _SRV
          and "j.dt?'Cuerpo técnico'" in HTML)
@@ -6415,11 +6486,23 @@ _sin_ruta = [n for n in fichas.CLUBES
              if server.RUTAS_CLUB.get(slug_js(n)) != n]
 chequear("y cada club nuevo tiene su propia dirección", not _sin_ruta,
          _sin_ruta)
-# La pantalla: dónde juega y en qué categoría, que para un club del
-# ascenso ubican más que el nombre del estadio.
-chequear("la ficha muestra dónde juega y en qué categoría",
-         "${dato('Dónde juega', i.ciudad?esc(i.ciudad)" in HTML
-         and "i.division?`<div class=\"pie\">${esc(i.division)}" in HTML)
+# La tarjeta "Dónde juega" ya no está: decía la ciudad y la categoría, y
+# las dos estaban repetidas —la ciudad en "Dónde queda", la categoría en el
+# encabezado del bloque de partidos—. En su lugar va el clásico.
+chequear("la ficha ya no repite la ciudad ni la categoría",
+         "Dónde juega" not in HTML)
+chequear("y en ese lugar va el clásico rival",
+         "${dato('Clásico', clasicoClub(i))}" in HTML)
+
+# El clásico de casi todos: seis clubes no tienen y quedan sin la tarjeta.
+_clasicos = [n for n, f in fichas.CLUBES.items() if f.get("clasico")]
+chequear("y está cargado para la gran mayoría de los clubes",
+         len(_clasicos) >= 27, len(_clasicos))
+# El rival tiene que ser otro club, no el mismo: un copiar y pegar acá
+# pone a un club de clásico contra sí mismo y no lo nota nadie.
+_solos = [n for n, f in fichas.CLUBES.items()
+          if f.get("clasico") and server.norm(f["clasico"]) == server.norm(n)]
+chequear("y ninguno es clásico de sí mismo", not _solos, _solos)
 
 # La capacidad y la trayectoria salen de Wikipedia, que es una sola fuente
 # consistente: en el ascenso argentino no hay dos que coincidan, y una

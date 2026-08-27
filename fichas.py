@@ -493,6 +493,63 @@ _WIKIPEDIA = {
                               "Primera D": 12}),
 }
 
+# ── El clásico rival ─────────────────────────────────────────────────────
+#
+# (rival, cómo se llama la rivalidad). El nombre va en None cuando la
+# rivalidad no tiene uno propio y consagrado: "el clásico de tal lugar" es
+# una descripción, no un nombre, y ponerlo como si lo fuera sería inventar.
+#
+# Seis clubes no tienen clásico y eso también es un dato: Agropecuario,
+# Camioneros, Ciudad de Bolívar, Deportivo Rincón y Real Pilar son
+# demasiado nuevos —el más viejo es de 2002— y Deportivo Armenio no tiene
+# arraigo barrial: se fundó en CABA, jugó de prestado treinta años y recién
+# tuvo cancha propia en Escobar en 1992. Su artículo habla de "enemistad"
+# con Fénix y Villa Dálmine, nunca de clásico.
+CLASICOS = {
+    "Acassuso": ("Central Ballester", None),
+    "Argentino Merlo": ("Deportivo Merlo", "Clásico de Merlo"),
+    "Argentino Monte Maíz": ("Atlético Lambert", "Clásico de Monte Maíz"),
+    "Atenas Río Cuarto": ("Estudiantes de Río Cuarto", "Clásico Riocuartense"),
+    "Atlanta": ("Chacarita Juniors", "Clásico de Villa Crespo"),
+    "Atlético Rafaela": ("9 de Julio de Rafaela", "Clásico Rafaelino"),
+    "Chaco For Ever": ("Sarmiento de Resistencia", "Clásico Chaqueño"),
+    "Claypole": ("San Martín de Burzaco", "Clásico de Almirante Brown"),
+    "CSCyD Gimnasia y Esgrima (Chivilcoy)": ("Independiente de Chivilcoy",
+                                             "Clásico de Chivilcoy"),
+    "Deportivo Madryn": ("Guillermo Brown", "Clásico del Golfo"),
+    "Deportivo Maipú": ("Gutiérrez Sport Club", "Clásico Maipucino"),
+    "Deportivo Morón": ("Almirante Brown", "Clásico del Oeste"),
+    "Estudiantes": ("Almagro", "Clásico de Tres de Febrero"),
+    "Gimnasia de Jujuy": ("Altos Hornos Zapla", "Clásico Jujeño"),
+    "Gimnasia y Tiro": ("Juventud Antoniana", "Viejo Clásico Salteño"),
+    # El histórico es Andes Talleres, que no se juega desde 1993. Y el
+    # nombre "Clásico Mendocino" es de Gimnasia y Esgrima contra
+    # Independiente Rivadavia, no de éste: por eso va sin nombre.
+    "Godoy Cruz": ("Independiente Rivadavia", None),
+    "Ituzaingó": ("Midland", None),
+    "Midland": ("Ituzaingó", None),
+    "Olimpo": ("Villa Mitre", "Clásico Bahiense"),
+    "San Martín San Juan": ("Sportivo Desamparados", "Clásico Sanjuanino"),
+    "San Martín Tucumán": ("Atlético Tucumán", "Clásico Tucumano"),
+    "San Miguel": ("Colegiales", None),
+    "Sarmiento De La Banda": ("Central Argentino de La Banda",
+                              "Clásico Bandeño"),
+    "Sportivo Barracas": ("Barracas Central", "Clásico Barraqueño"),
+    "Sportivo Belgrano": ("Antártida Argentina", None),
+    "Temperley": ("Los Andes", "Clásico de Lomas"),
+    "Tristan Suárez": ("Brown de Adrogué", "Clásico Sureño"),
+    # San Martín de Formosa queda afuera a propósito: hay tres candidatos y
+    # las fuentes no coinciden. Wikipedia dice 1º de Mayo, el artículo de
+    # Sportivo Patria se adjudica el "Clásico Formoseño", y la prensa del
+    # Federal A se lo da a Sol de América. Con tres respuestas distintas,
+    # ninguna.
+}
+
+for _n, (_riv, _como) in CLASICOS.items():
+    CLUBES[_n]["clasico"] = _riv
+    if _como:
+        CLUBES[_n]["clasicoNombre"] = _como
+
 # Los estadios que están en obra ahora mismo: la cifra de Wikipedia es la
 # de antes de la reforma y va a quedar corta.
 EN_OBRA = {"Godoy Cruz", "Deportivo Madryn", "Ciudad De Bolivar",

@@ -440,6 +440,120 @@ def copias():
     return sorted(salida, key=lambda x: x["archivo"], reverse=True)
 
 
+def _camino_de_copia(nombre):
+    """
+    El camino real de una copia, o None si el nombre no es de una copia.
+
+    Es la única puerta por la que se llega a un archivo desde afuera, así
+    que acá está toda la desconfianza junta. El nombre tiene que ser un
+    nombre pelado —nada de barras ni de `..`, que sirven para salir de la
+    carpeta y leer o borrar cualquier otra cosa del disco—, tiene que
+    empezar con el prefijo de las copias, y el archivo tiene que existir.
+
+    Con eso, lo único alcanzable es una copia. La base **no** es
+    alcanzable: se llama distinto y no lleva el prefijo.
+    """
+    if RUTA == ":memory:" or not nombre:
+        return None
+    if "/" in nombre or "\\" in nombre or nombre.startswith("."):
+        return None
+    if not nombre.startswith(os.path.basename(RUTA) + ".copia-"):
+        return None
+    camino = os.path.join(os.path.dirname(RUTA) or ".", nombre)
+    # Y una última: después de resolver, tiene que seguir estando en la
+    # carpeta de la base. Cinturón y tiradores.
+    if os.path.dirname(os.path.abspath(camino)) != os.path.dirname(
+            os.path.abspath(RUTA)):
+        return None
+    return camino if os.path.isfile(camino) else None
+
+
+def borrar_copia(nombre):
+    """
+    Borra una copia. Sólo una copia: a la base no se llega desde acá.
+
+    Devuelve {"borrado": ..., "bytes": ...}, o {"error": ...}.
+    """
+    camino = _camino_de_copia(nombre)
+    if not camino:
+        return {"error": "no es una copia de esta base"}
+    try:
+        tam = os.path.getsize(camino)
+        os.remove(camino)
+    except OSError as e:
+        return {"error": str(e)}
+    return {"borrado": nombre, "bytes": tam}
+
+
+def revisar(nombre=None):
+    """
+    ¿La base —o una copia— está sana?
+
+    Corre las dos revisiones que trae SQLite:
+
+    - `integrity_check` recorre la base entera: páginas, índices y árboles.
+      Es lento y es el que hay que mirar. Devuelve "ok" o la lista de lo
+      que encontró roto.
+    - `foreign_key_check` busca filas que apunten a algo que ya no está.
+      En nuestro caso serían goles o alineaciones de un partido borrado.
+
+    Sin `nombre` revisa la base de verdad. Con `nombre`, la copia que se
+    diga, que es lo que uno quiere antes de confiar en un respaldo: una
+    copia rota no se nota hasta el día que la necesitás.
+    """
+    if RUTA == ":memory:":
+        return {"error": "la base está en memoria"}
+    if nombre:
+        camino = _camino_de_copia(nombre)
+        if not camino:
+            return {"error": "no es una copia de esta base"}
+    else:
+        camino = RUTA
+    salida = {"archivo": os.path.basename(camino)}
+    try:
+        salida["bytes"] = os.path.getsize(camino)
+    except OSError:
+        pass
+    # Sólo lectura y una conexión aparte: revisar no tiene por qué poder
+    # escribir, y la de siempre está en uso.
+    try:
+        c = sqlite3.connect("file:%s?mode=ro" % camino, uri=True, timeout=60)
+    except sqlite3.Error as e:
+        return dict(salida, error=str(e))
+    try:
+        filas = c.execute("PRAGMA integrity_check").fetchall()
+        salida["integridad"] = [f[0] for f in filas] or ["sin respuesta"]
+        salida["sana"] = salida["integridad"] == ["ok"]
+        try:
+            malas = c.execute("PRAGMA foreign_key_check").fetchall()
+            salida["huerfanas"] = len(malas)
+        except sqlite3.Error:
+            salida["huerfanas"] = None
+        # Y cuánto hay adentro, que es la otra mitad de la pregunta: una
+        # base puede estar íntegra y vacía, y eso también es un problema.
+        cuentas = {}
+        try:
+            tablas = [t[0] for t in c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+            for t in tablas:
+                try:
+                    cuentas[t] = c.execute(
+                        'SELECT COUNT(*) FROM "%s"' % t.replace('"', '""')
+                    ).fetchone()[0]
+                except sqlite3.Error:
+                    cuentas[t] = None
+        except sqlite3.Error:
+            pass
+        salida["filas"] = cuentas
+    except sqlite3.Error as e:
+        salida["error"] = str(e)
+        salida["sana"] = False
+    finally:
+        c.close()
+    return salida
+
+
 def _tamano():
     """
     Lo que ocupa la base en el disco, contando todos sus archivos.

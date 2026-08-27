@@ -96,6 +96,13 @@ tr.recorrido+tr td{border-top:0}
   font-weight:600;background:var(--nav);color:#fff;border:0;border-radius:8px;
   cursor:pointer}
 .err{color:var(--mal);font-size:12.5px;margin-top:10px}
+/* Bajar la copia tiene que ser un enlace de verdad —son 200 MB y los
+   escribe el navegador, no nosotros— pero al lado de dos botones queda
+   raro si no se parece a un botón. */
+a.bt{display:inline-block;font:inherit;font-size:12px;padding:3px 9px;
+  border:1px solid var(--line);border-radius:6px;background:var(--card);
+  color:var(--txt);text-decoration:none;cursor:pointer}
+a.bt:hover{background:var(--bg)}
 footer{max-width:1180px;margin:0 auto;padding:6px 18px 30px;
   font-size:11.5px;color:var(--txt3)}
 </style>
@@ -116,7 +123,7 @@ let LLAVE = new URLSearchParams(location.search).get('llave') || '';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const megas = b => (b / 1048576).toFixed(1) + ' MB';
+const megas = b => b == null ? '—' : (b / 1048576).toFixed(1) + ' MB';
 const miles = n => (n ?? 0).toLocaleString('es-AR');
 
 function rato(s){
@@ -587,14 +594,83 @@ function listaDeCopias(copias){
   if(!copias || !copias.length)
     return `<div style="padding:8px 14px" class="vacio">Todavía no hay
       ninguna copia. <button onclick="soloCopia()">Sacar una ahora</button></div>`;
+  /* Cada copia con lo que se le puede hacer.
+
+     El orden de los botones es el orden en que hay que usarlos: revisar,
+     bajar, borrar. Borrar va último y pregunta, porque una copia que
+     borrás sin haber bajado es una copia que no tenés. */
+  // Se guarda para poder redibujar después de revisar o de borrar sin
+  // tener que volver a pedir la lista.
+  ultimasCopias = copias;
   return `<div style="padding:10px 14px">
     <div class="rot">Copias en el disco</div>
-    ${copias.map(c => `<div style="font-size:12.5px;color:var(--txt2)">
-      ${esc(c.archivo)} · ${megas(c.bytes)}</div>`).join('')}
-    <div style="margin-top:8px"><button onclick="soloCopia()">Sacar otra</button>
+    ${copias.map(c => `<div style="font-size:12.5px;color:var(--txt2);
+        display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">
+      <span>${esc(c.archivo)} · ${megas(c.bytes)}</span>
+      <button onclick="revisarCopia('${esc(c.archivo)}')">Revisar</button>
+      <a class="bt" href="${esc(conLlave('/api/copia?bajar='
+          + encodeURIComponent(c.archivo)))}">Bajar</a>
+      <button onclick="borrarCopia('${esc(c.archivo)}', '${megas(c.bytes)}')"
+        >Borrar</button>
+    </div>`).join('')}
+    <div style="margin-top:8px">
+      <button onclick="soloCopia()">Sacar otra</button>
+      <button onclick="revisarCopia('')">Revisar la base</button>
       <span class="vacio" style="padding:0 0 0 8px">Están en el mismo disco
-        que la base.</span></div></div>`;
+        que la base: una copia acá no salva de perder el disco.</span>
+    </div></div>`;
 }
+
+/* Bajar es un enlace y no un `fetch`: son 200 MB, y así los guarda el
+   navegador de a poco en vez de juntarlos en memoria antes de escribir.
+   Como es un enlace, la llave tiene que ir en la dirección. */
+function conLlave(u){
+  return LLAVE ? u + '&llave=' + encodeURIComponent(LLAVE) : u;
+}
+
+async function revisarCopia(nombre){
+  const caja = $('#corregir');
+  const antes = caja.innerHTML;
+  caja.innerHTML = '<div class="vacio">Revisando… puede tardar un rato.</div>';
+  try{
+    const r = await pedir('/api/copia?revisar=' + (nombre
+      ? encodeURIComponent(nombre) : 'si'));
+    const filas = Object.entries(r.filas || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([t, n]) => `${esc(t)} ${n === null ? '?' : n.toLocaleString('es-AR')}`)
+      .join(' · ');
+    caja.innerHTML = `<div class="tarj"><b style="font-size:20px;color:${
+      r.sana ? 'var(--ok, #1a8f3c)' : '#c62828'}">${
+      r.sana ? 'Sana' : 'Algo anda mal'}</b>
+      <span>${esc(r.archivo || '')} · ${megas(r.bytes)}</span></div>
+      <div style="padding:10px 14px;font-size:12.5px;color:var(--txt2)">
+        <div>${esc((r.integridad || [r.error || 'sin respuesta']).join(' · '))}</div>
+        ${r.huerfanas != null ? `<div>${r.huerfanas} filas huérfanas</div>` : ''}
+        ${filas ? `<div style="margin-top:6px">${filas}</div>` : ''}
+      </div>${listaDeCopias(ultimasCopias)}`;
+  }catch(e){ caja.innerHTML = antes; alert('No se pudo: ' + e.message); }
+}
+
+async function borrarCopia(nombre, cuanto){
+  if(!confirm('Borrar ' + nombre + ' (' + cuanto + ')?\n\n'
+      + 'Esto no se puede deshacer. Bajala antes si todavía no lo hiciste.')) return;
+  const caja = $('#corregir');
+  const antes = caja.innerHTML;
+  caja.innerHTML = '<div class="vacio">Borrando…</div>';
+  try{
+    const r = await pedir('/api/copia?borrar=' + encodeURIComponent(nombre));
+    if(r.error) throw new Error(r.error);
+    const lista = await pedir('/api/copia');
+    ultimasCopias = lista.copias || [];
+    caja.innerHTML = `<div class="tarj"><b style="font-size:20px">Borrada</b>
+      <span>${esc(r.borrado)} · ${megas(r.bytes)} liberados</span></div>
+      ${listaDeCopias(ultimasCopias)}`;
+  }catch(e){ caja.innerHTML = antes; alert('No se pudo: ' + e.message); }
+}
+
+// La última lista que vimos, para poder redibujarla después de revisar o
+// borrar sin volver a pedirla.
+let ultimasCopias = [];
 
 async function soloCopia(){
   const caja = $('#corregir');

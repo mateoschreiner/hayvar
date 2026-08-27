@@ -2328,7 +2328,8 @@ chequear("lo que borra o gasta está en la lista de privadas",
          server.PRIVADAS == {"/api/recorrido", "/api/raw", "/api/contenido",
                              "/api/diagnostico", "/api/tiempos",
                              "/api/base", "/api/visitas", "/api/colores",
-                             "/api/nombres", "/api/corregir", "/admin"},
+                             "/api/nombres", "/api/corregir", "/api/copia",
+                             "/admin"},
          sorted(server.PRIVADAS))
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")
@@ -3775,6 +3776,46 @@ console.log(JSON.stringify({
         # Porque si el disco molesta, la salida es agrandarlo, no borrar
         # partidos: son 25 centavos de dólar por giga por mes.
         chequear("con el precio del disco a la vista", _adm["diceElPrecio"])
+
+    # Y la lista de copias, que es por donde se baja y se borra la base.
+    _cola2 = """
+LLAVE = 'la-llave';
+const s = listaDeCopias([{archivo:'base.sqlite.copia-20260827-101500',
+                          bytes: 216268800}]);
+console.log(JSON.stringify({
+  revisar: s.indexOf('revisarCopia(') >= 0,
+  borrar: s.indexOf('borrarCopia(') >= 0,
+  /* Bajar tiene que ser un enlace de verdad y no un fetch: son 200 MB y
+     los escribe el navegador. Y como es un enlace, la llave va en la
+     dirección o rebota con 403. */
+  bajaPorEnlace: /<a class="bt" href="\\/api\\/copia\\?bajar=/.test(s),
+  llaveEnElEnlace: s.indexOf('llave=la-llave') >= 0,
+  avisaDelDisco: s.indexOf('mismo disco') >= 0}));
+"""
+    # `listaDeCopias` vive después del corte de "armar todo", así que acá
+    # va el script entero menos la última línea, que es la que arranca la
+    # página y pide una pantalla que no existe.
+    _jstodo = re.findall(r"<script>(.*?)</script>", _ADM, re.S)[-1]
+    _jstodo = _jstodo.replace("if(LLAVE) cargar(); else pedirLlave('');", "")
+    with _tmp.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                 encoding="utf-8") as _f:
+        _f.write("globalThis.location={search:'',hash:''};\n" + _jstodo + _cola2)
+        _rc = _f.name
+    _pc = _sub.run(["node", _rc], capture_output=True, text=True, timeout=60)
+    os.unlink(_rc)
+    _cop = json.loads(_pc.stdout) if _pc.returncode == 0 and _pc.stdout else None
+    chequear("el administrador dibuja las copias con sus botones",
+             _cop is not None, _pc.stderr.strip().splitlines()[:2])
+    if _cop:
+        chequear("con revisar, bajar y borrar",
+                 _cop["revisar"] and _cop["bajaPorEnlace"] and _cop["borrar"],
+                 _cop)
+        chequear("y la llave viaja en el enlace de bajada",
+                 _cop["llaveEnElEnlace"], _cop)
+        # El aviso importa: una copia en el mismo disco que la base no
+        # salva de perder el disco, y es fácil creer que sí.
+        chequear("y avisa que la copia está en el mismo disco",
+                 _cop["avisaDelDisco"], _cop)
 
 print("\n── no guardar lo que nadie va a volver a leer ──")
 # El 84% del disco eran 2.638 respuestas crudas de partidos, 161 MB, y no
@@ -6918,6 +6959,50 @@ try:
     _hay = _alm.copias()
     chequear("las copias se pueden ver desde afuera",
              any(c["bytes"] == _copia["bytes"] for c in _hay), _hay)
+
+    # ── Revisar la base ────────────────────────────────────────────────
+    # Una copia rota no se nota hasta el día que la necesitás, así que
+    # antes de confiar en ella hay que abrirla y mirarla entera.
+    _rev = _alm.revisar()
+    chequear("la base se revisa y sale sana",
+             _rev.get("sana") and _rev.get("integridad") == ["ok"], _rev)
+    chequear("y dice cuántas filas tiene cada tabla",
+             _rev.get("filas", {}).get("partidos") == 3, _rev.get("filas"))
+    _nomb = os.path.basename(_copia["archivo"])
+    _revc = _alm.revisar(_nomb)
+    chequear("y la copia también se puede revisar",
+             _revc.get("sana") and _revc.get("filas", {}).get("partidos") == 3,
+             _revc)
+
+    # ── Y borrarla, que es lo único destructivo de todo esto ───────────
+    # La regla es una sola: desde afuera sólo se llega a una copia. Todo
+    # lo que no sea exactamente el nombre de una copia de ESTA base tiene
+    # que rebotar, porque del otro lado hay un `os.remove`.
+    for _malo in ["base.sqlite", os.path.basename(_alm.RUTA),
+                  "../" + _nomb, "/etc/passwd", _nomb + "/../../etc/passwd",
+                  ".ssh", "otra.sqlite.copia-20260101-000000"]:
+        chequear("no se llega a %r desde afuera" % _malo,
+                 _alm._camino_de_copia(_malo) is None
+                 and "error" in _alm.borrar_copia(_malo)
+                 and "error" in _alm.revisar(_malo))
+    # El nombre vacío es el único que no es un intento de nada: `revisar()`
+    # sin nombre quiere decir "la base", y eso está bien. Lo que no puede
+    # es borrar: un `borrar` sin nombre tiene que rebotar igual.
+    chequear("el nombre vacío revisa la base pero no borra nada",
+             _alm._camino_de_copia("") is None
+             and "error" in _alm.borrar_copia("")
+             and _alm.revisar("").get("sana"))
+    # Y lo más importante de todo: que la base siga estando después.
+    chequear("y la base sigue estando después de todos esos intentos",
+             os.path.exists(_alm.RUTA))
+    # Ahora sí, la de verdad.
+    _fue = _alm.borrar_copia(_nomb)
+    chequear("una copia sí se puede borrar",
+             _fue.get("borrado") == _nomb and _fue.get("bytes") > 0, _fue)
+    chequear("y después ya no está",
+             not os.path.exists(_copia["archivo"]) and not _alm.copias())
+    chequear("y borrarla dos veces no revienta",
+             "error" in _alm.borrar_copia(_nomb))
 finally:
     _alm.RUTA = _ruta_real
     _alm._local = _threading.local()
@@ -6926,6 +7011,20 @@ finally:
 chequear("la corrección tiene su dirección y está cerrada",
          "/api/corregir" in server.ROUTES
          and "/api/corregir" in server.PRIVADAS)
+
+# La puerta de las copias: bajarlas, revisarlas y borrarlas. Cerrada, que
+# por ahí sale la base entera con todo lo que juntamos.
+chequear("la puerta de las copias está cerrada",
+         "/api/copia" in server.PRIVADAS)
+# Se manda de a pedazos y no armada en memoria: son 206 MB y el servidor
+# tiene 512. Cargarla entera para mandarla lo mata.
+chequear("y la copia se manda de a pedazos, no entera en memoria",
+         "shutil.copyfileobj(f, self.wfile" in _SRV)
+chequear("y con el nombre para que el navegador la guarde",
+         "Content-Disposition" in _SRV and "attachment; filename=" in _SRV)
+# No hay "borrar todas": una por una y por su nombre entero.
+chequear("y no existe un borrar todas",
+         "borrar_todas" not in _SRV and "borrar_todas" not in _ALM)
 chequear("y no aplica nada sin pedirlo expresamente",
          'aplicar = (q.get("aplicar") or [""])[0] == "si"' in _SRV)
 

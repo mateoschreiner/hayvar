@@ -38,6 +38,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import threading
@@ -154,6 +155,7 @@ PRIVADAS = {
     "/api/colores",       # baja los treinta escudos para comparar colores
     "/api/nombres",       # recorre el calendario de las trece competencias
     "/api/corregir",      # reescribe el club de partidos ya guardados
+    "/api/copia",         # revisa, baja y borra las copias de la base
     "/admin",             # la página que junta todo lo de arriba
 }
 # Ojo: /api/visita —sin la ese— NO va acá. Es la que usa la página para
@@ -10463,6 +10465,56 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(anotar_visita(self, q))
             except Exception:
                 return self._json({"ok": False})
+
+        # Las copias de la base: revisarlas, bajarlas y borrarlas.
+        #
+        # Va acá y no en la tabla de rutas porque bajar una copia son 200 MB
+        # que no pueden pasar por el armador de JSON: se mandan de a pedazos
+        # directo al cable, sin cargar el archivo entero en memoria. El
+        # servidor tiene 512 MB y la copia pesa 206.
+        if path == "/api/copia":
+            quiere = (q.get("bajar") or [""])[0]
+            if quiere:
+                camino = almacen._camino_de_copia(quiere)
+                if not camino:
+                    return self._json({"error": "no es una copia de esta base"},
+                                      404)
+                try:
+                    tam = os.path.getsize(camino)
+                    f = open(camino, "rb")
+                except OSError as e:
+                    return self._json({"error": str(e)}, 500)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                # Que el navegador la guarde en vez de intentar mostrarla.
+                self.send_header("Content-Disposition",
+                                 'attachment; filename="%s"'
+                                 % quiere.replace('"', ""))
+                self.send_header("Content-Length", str(tam))
+                self.end_headers()
+                self._ultimo_tamano = tam
+                try:
+                    shutil.copyfileobj(f, self.wfile, 1024 * 256)
+                except Exception:
+                    pass                 # se cortó del otro lado, es normal
+                finally:
+                    f.close()
+                return
+            # Borrar: sólo copias, nunca la base —lo garantiza `almacen`— y
+            # sólo si la pedís por su nombre entero. No hay "borrar todas".
+            fuera = (q.get("borrar") or [""])[0]
+            if fuera:
+                return self._json(almacen.borrar_copia(fuera))
+            # Revisar: sin nombre, la base; con nombre, esa copia.
+            if q.get("revisar"):
+                cual = (q.get("revisar") or [""])[0]
+                return self._json(almacen.revisar(cual if cual != "si" else None))
+            return self._json({"copias": _sin_reventar(almacen.copias, []),
+                               "como": {
+                                   "revisar la base": "/api/copia?revisar=si",
+                                   "revisar una copia": "/api/copia?revisar=NOMBRE",
+                                   "bajarla": "/api/copia?bajar=NOMBRE",
+                                   "borrarla": "/api/copia?borrar=NOMBRE"}})
 
         # passthrough crudo para inspeccionar la API: /api/raw?path=games/results
         if path == "/api/raw":

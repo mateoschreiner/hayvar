@@ -629,7 +629,7 @@ function conLlave(u){
 }
 
 async function revisarCopia(nombre){
-  const caja = $('#corregir');
+  const caja = $('#copias');
   const antes = caja.innerHTML;
   caja.innerHTML = '<div class="vacio">Revisando… puede tardar un rato.</div>';
   try{
@@ -654,7 +654,7 @@ async function revisarCopia(nombre){
 async function borrarCopia(nombre, cuanto){
   if(!confirm('Borrar ' + nombre + ' (' + cuanto + ')?\n\n'
       + 'Esto no se puede deshacer. Bajala antes si todavía no lo hiciste.')) return;
-  const caja = $('#corregir');
+  const caja = $('#copias');
   const antes = caja.innerHTML;
   caja.innerHTML = '<div class="vacio">Borrando…</div>';
   try{
@@ -673,7 +673,7 @@ async function borrarCopia(nombre, cuanto){
 let ultimasCopias = [];
 
 async function soloCopia(){
-  const caja = $('#corregir');
+  const caja = $('#copias');
   const antes = caja.innerHTML;
   caja.innerHTML = '<div class="vacio">Copiando…</div>';
   try{
@@ -687,10 +687,10 @@ async function soloCopia(){
 
 async function cargar(){
   $('#app').innerHTML = '<div class="vacio" style="padding:60px">Cargando…</div>';
-  let t, base, cont, rec, diag, vis, col, nom;
+  let t, base, cont, rec, diag, vis, col, nom, cop;
   try{
     // se piden todas juntas: es la misma idea que usamos en la portada
-    [t, base, cont, rec, diag, vis, col, nom] = await Promise.all([
+    [t, base, cont, rec, diag, vis, col, nom, cop] = await Promise.all([
       pedir('/api/tiempos'),
       pedir('/api/base'),
       pedir('/api/contenido'),
@@ -703,6 +703,8 @@ async function cargar(){
       // Recorre el calendario de las trece competencias; si tarda o falla,
       // el resto del admin se muestra igual.
       pedir('/api/nombres').catch(() => null),
+      // Las copias que hay en el disco. Es sólo un listdir, no cuesta nada.
+      pedir('/api/copia').catch(() => null),
     ]);
   }catch(e){
     return pedirLlave(e.message === '403'
@@ -747,6 +749,8 @@ async function cargar(){
       ${tablaDePartidos(base)}
       <h2>Qué ocupa el disco</h2>
       ${queOcupa(base)}
+      <h2>Copias de la base</h2>
+      <div id="copias">${listaDeCopias((cop || {}).copias)}</div>
       <h2>Cuánto tarda cada cosa</h2>
       ${tiempos(t)}
       <h2>Qué hay guardado</h2>

@@ -483,17 +483,25 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .pv-radar .ejes .v{font-size:7px;font-weight:600;fill:var(--txt3)}
 .pv-radar.grande{width:230px}
 .pv-radar.grande .ejes{display:block}
-@media(max-width:560px){
-  .pv-radar{width:76px}
-  .pv-radar.grande{width:168px}
+/* En el teléfono el radar arranca chico y se amplía al tocarlo: grande de
+   entrada, en una pantalla angosta, se come el partido entero. En
+   escritorio hay lugar y va grande de una. */
+@media(max-width:620px){
+  .pv-top{grid-template-columns:1fr auto 1fr}
+  .pv-radar,.pv-radar.grande{width:82px}
+  .pv-radar .ejes{display:none}
+  .pv-radar.abierto,.pv-radar.grande.abierto{width:min(78vw,300px)}
+  .pv-radar.abierto .ejes{display:block}
+  .pv-medio{min-width:82px}
 }
 .pv-pie{margin-top:8px;display:flex;align-items:center;
   justify-content:space-between;gap:10px;font-size:11px;color:var(--txt3)}
 .pv-pie .ic,.pv-extra .ic{width:13px;height:13px;vertical-align:-2px;
   margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.2;
   stroke-linecap:round;stroke-linejoin:round}
-.pv-pie .abrir{font-weight:700;color:var(--acc,#e01e2b);white-space:nowrap}
-.pv.abierta .pv-pie .abrir{visibility:hidden}
+.pv-pie{flex-wrap:wrap}
+.pv-pie .pv-ir{margin-left:auto;font-size:11.5px;font-weight:700;
+  color:var(--acc,#e01e2b);text-decoration:none;white-space:nowrap}
 
 /* La zona, abajo del nombre. Es la pregunta "¿contra quién compite?" y
    en un torneo de dos zonas no se puede leer una posición sin saberlo. */
@@ -516,25 +524,39 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   font-size:10.5px;color:var(--txt3)}
 .pv-hist .pie b{color:var(--txt)}
 
-/* La ficha que se abre al tocar el partido. */
-.pv{cursor:pointer}
-.pv.abierta{background:var(--bg)}
-.pv-ficha:empty{display:none}
-.pv-ficha{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
-.pv-ficha .relato{margin:0 0 10px;font-size:13px;line-height:1.6;
-  color:var(--txt)}
-.pv-extra{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11.5px;
-  color:var(--txt2)}
-.pv-extra .vacio2,.pv-extra .cargando{color:var(--txt3);font-style:italic}
-.pv-ir{display:inline-block;margin-top:10px;font-size:12px;font-weight:700;
-  color:var(--acc,#e01e2b);text-decoration:none}
+/* El relato, adentro de cada partido. */
+.pv .relato{margin:12px 0 0;padding-top:11px;font-size:13px;line-height:1.6;
+  color:var(--txt);border-top:1px dashed var(--line)}
+/* El signo de pregunta de cada eje: chiquito, y la explicación aparece al
+   dejar el cursor encima. */
+.pv-radar .ejes .q{fill:var(--txt3);font-size:6.5px;font-weight:800}
+.pv-radar .ejes text{cursor:help}
+
+/* Las tablas al costado. */
+.tp{padding:2px 0 8px}
+.tp-tit{font-size:10.5px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--txt3);padding:8px 14px 5px}
+.tp-fila{display:grid;grid-template-columns:20px 18px 1fr auto;
+  align-items:center;gap:7px;padding:3px 14px;font-size:12px}
+.tp-fila .p{color:var(--txt3);font-variant-numeric:tabular-nums;
+  text-align:right}
+.tp-fila img{width:16px;height:16px;object-fit:contain}
+.tp-fila .sinesc{width:16px}
+.tp-fila .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-fila .pts{font-weight:800;font-variant-numeric:tabular-nums}
+/* Los que juegan esta fecha, marcados: es el motivo por el que la tabla
+   está en esta pantalla y no en otra. */
+.tp-fila.juega{background:var(--bg);border-radius:6px}
+.tp-fila.juega .nm{font-weight:700}
+.tp-corte{text-align:center;color:var(--txt3);font-size:11px;padding:1px 0}
 .pv-elegido .club.big{font-size:14px;color:var(--txt)}
 .pv-elegido .club.big img.hist-esc{width:22px;height:22px}
 
-.pv{padding:12px 14px;border-bottom:1px solid var(--line)}
-.pv:last-of-type{border-bottom:0}
-.pv.clasico{background:rgba(224,30,43,.05);
-  box-shadow:inset 3px 0 0 var(--acc,#e01e2b)}
+/* Cada partido es su propia caja, con la misma forma que el resto de la
+   página: así se lee como una tarjeta y no como un renglón de una lista. */
+.pv{padding:14px}
+.pv.clasico{box-shadow:inset 3px 0 0 var(--acc,#e01e2b),var(--shadow)}
+
 .pv-et{font-size:10.5px;font-weight:800;letter-spacing:.06em;
   text-transform:uppercase;color:var(--acc,#e01e2b);margin-bottom:7px}
 .pv-top{display:grid;grid-template-columns:1fr auto 1fr;
@@ -1931,6 +1953,21 @@ const App=(()=>{
      superpuestas y no leyendo diez números. Va chico porque en una previa
      de quince partidos no puede ocupar media pantalla; al tocarlo se
      agranda y recién ahí aparecen los nombres de cada eje. */
+  /* Qué mide cada eje. Un gráfico con cinco puntas sin explicar es un
+     adorno: el que lo mira tiene derecho a saber de dónde sale cada
+     número antes de sacar una conclusión. */
+  const QUE_MIDE={
+    Ataque:'Goles a favor por partido. 100 son dos goles por partido, que '
+      +'en el fútbol argentino es muchísimo.',
+    Defensa:'Goles en contra por partido, dado vuelta: cuanto más alto, '
+      +'menos le convierten.',
+    Efectividad:'Puntos por partido sobre los tres posibles. 100 sería '
+      +'ganar todos.',
+    Contundencia:'Qué porcentaje de los partidos ganó. No mira empates: '
+      +'sólo triunfos.',
+    Momento:'Cómo viene en los últimos cinco partidos, con la misma '
+      +'cuenta de puntos. Es la forma, no la temporada.'};
+
   function radarDoble(id, a, b, p, grande){
     if(!a||!b) return '';
     /* Los colores salen de la misma puerta que la barra del historial:
@@ -1961,8 +1998,8 @@ const App=(()=>{
       const anc=Math.abs(dx)<6?'middle':(dx<0?'end':'start');
       const dy=(y-cy)<-6?-4:((y-cy)>6?4:0);
       return `<text x="${x.toFixed(1)}" y="${(y+dy).toFixed(1)}"
-        text-anchor="${anc}">
-        <tspan x="${x.toFixed(1)}" dy="0">${esc(k)}</tspan>
+        text-anchor="${anc}"><title>${esc(QUE_MIDE[k]||'')}</title>
+        <tspan x="${x.toFixed(1)}" dy="0">${esc(k)} <tspan class="q">?</tspan></tspan>
         <tspan class="v" x="${x.toFixed(1)}" dy="8">${a[k]} · ${b[k]}</tspan>
       </text>`;
     };
@@ -2051,12 +2088,6 @@ const App=(()=>{
       </div></div>`;
   }
 
-  // Los partidos de la previa que ya se abrieron, con lo que trajo el
-  // servidor: el árbitro y la TV salen del detalle de cada partido, que se
-  // pide sólo cuando alguien lo abre. Quince pedidos de entrada para un
-  // dato que casi nadie mira sería tirar la conexión de la gente.
-  const previaAbierta={}, previaDetalle={};
-
   const ICONO_SILBATO=`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">
     <path d="M9.5 5.5h4.2a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1H9.5"/>
     <circle cx="5.6" cy="7.9" r="3.6"/><circle cx="5.6" cy="7.9" r="1.2"/>
@@ -2066,47 +2097,61 @@ const App=(()=>{
     <path d="M5 1.8 8 4.4 11 1.8"/>
   </svg>`;
 
-  async function abrirPrevia(id){
-    const caja=document.getElementById('fic'+id);
-    const tarjeta=document.getElementById('pv'+id);
-    if(!caja||!tarjeta) return;
-    if(previaAbierta[id]){                       // cerrar
-      previaAbierta[id]=false;
-      caja.innerHTML=''; tarjeta.classList.remove('abierta');
-      const r=document.getElementById('rad'+id);
-      if(r) r.classList.remove('grande');
-      return;
-    }
-    previaAbierta[id]=true;
-    tarjeta.classList.add('abierta');
-    // El radar grande es la mitad de la gracia de abrir el partido.
-    const r=document.getElementById('rad'+id);
-    if(r) r.classList.add('grande');
-    const p=(previaDatos.partidos||[]).find(x=>String(x.id)===String(id));
-    caja.innerHTML=`${p&&p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
-      <div class="pv-extra"><span class="cargando">Buscando el árbitro…</span></div>`;
-    if(previaDetalle[id]===undefined){
-      try{ previaDetalle[id]=await get('/api/match?id='+encodeURIComponent(id)); }
-      catch(e){ previaDetalle[id]=null; }
-    }
-    if(!previaAbierta[id]) return;               // lo cerró mientras cargaba
-    const d=previaDetalle[id]||{};
-    const linea=(ic,t)=>t?`<span>${ic}${esc(t)}</span>`:'';
-    const extra=[linea(ICONO_SILBATO,d.referee),
-                 linea(ICONO_TV,(d.tv||[]).join(' · ')),
-                 linea(ICONO_CANCHA,d.venue||(p&&p.venue))].filter(Boolean);
-    caja.innerHTML=`${p&&p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
-      ${extra.length?`<div class="pv-extra">${extra.join('')}</div>`
-                    :'<div class="pv-extra"><span class="vacio2">Todavía no '
-                     +'se sabe quién dirige ni por dónde se ve.</span></div>'}
-      ${(()=>{const r=p&&rutaPartido({liveId:p.id,home:p.home,away:p.away});
-        return r?`<a class="pv-ir" href="${esc(Rutas.url(r))}" data-ir
-          onclick="event.stopPropagation()">Ir al partido ›</a>`:'';})()}`;
-  }
-
   // Lo último que contestó la previa, para poder armar la ficha de un
   // partido sin volver a pedir todo.
   let previaDatos={};
+
+  /* Las tablas al costado de la previa.
+
+     Es la pregunta que sigue naturalmente a "¿qué se juega cada uno?":
+     dónde está parado. Se muestran las zonas y la anual, que son las dos
+     que deciden algo —una los playoffs, la otra las copas y el descenso—
+     y en corto: los primeros y los últimos, que es lo que se mira. */
+  function tablitaPrevia(nombre, filas, marcar){
+    if(!filas||!filas.length) return '';
+    const n=filas.length;
+    const corte=n>12?[0,1,2,3,4,5,6,7]:null;
+    const fila=r=>`<div class="tp-fila${
+        marcar&&marcar.has(norm(r.team.name))?' juega':''}">
+      <span class="p">${r.pos}</span>
+      ${r.team.logo?`<img src="${esc(r.team.logo)}" alt="" loading="lazy">`
+                   :'<span class="sinesc"></span>'}
+      <span class="nm">${esc(r.team.short||r.team.name)}</span>
+      <span class="pts">${r.pts}</span></div>`;
+    const arriba=corte?filas.slice(0,8):filas;
+    const abajo=corte&&n>10?filas.slice(-3):[];
+    return `<div class="tp">
+      <div class="tp-tit">${esc(nombre)}</div>
+      ${arriba.map(fila).join('')}
+      ${abajo.length?`<div class="tp-corte">···</div>${abajo.map(fila).join('')}`:''}
+    </div>`;
+  }
+
+  async function tablasDeLaPrevia(ps){
+    const el=$('#right'); if(!el) return;
+    // Quiénes juegan esta fecha, para marcarlos en la tabla.
+    const juegan=new Set();
+    (ps||[]).forEach(p=>{
+      ['home','away'].forEach(l=>{ const t=p[l]; if(t&&t.name)
+        juegan.add(norm(t.canon||t.name)); });
+    });
+    let z=null, a=null;
+    try{ [z,a]=await Promise.all([
+      get('/api/standings').catch(()=>null),
+      get('/api/annual').catch(()=>null)]); }catch(e){}
+    const partes=[];
+    (((z||{}).zones)||[]).forEach(x=>{
+      partes.push(tablitaPrevia(x.name||'Zona', x.rows, juegan));
+    });
+    if(a&&a.rows&&a.rows.length)
+      partes.push(tablitaPrevia('Tabla anual', a.rows, juegan));
+    if(!partes.length) return;
+    el.insertAdjacentHTML('beforeend', `<div class="globo">
+      <div class="cl-sec">Cómo está la tabla</div>
+      ${partes.join('')}
+      <div class="note" style="padding:6px 14px 12px">Los que juegan esta
+        fecha van marcados.</div></div>`);
+  }
 
   async function seccionPrevia(){
     const main=$('#matches');
@@ -2140,9 +2185,7 @@ const App=(()=>{
         <b>${d.ronda?'Fecha '+d.ronda:'Los próximos partidos'}</b>
         <span>${ps.length} ${ps.length===1?'partido':'partidos'}</span>
       </div>
-      <div class="globo">
-      ${ps.map(p=>`<div class="pv${p.clasico?' clasico':''}" id="pv${p.id}"
-          onclick="App.abrirPrevia('${p.id}')">
+      ${ps.map(p=>`<div class="globo pv${p.clasico?' clasico':''}" id="pv${p.id}">
         ${p.clasico?`<div class="pv-et">${esc(p.clasico)}</div>`:''}
         <div class="pv-cuando">${esc(cuandoJuega(p.start))}
           ${/* La zona va una sola vez y en el medio: los dos equipos son
@@ -2154,7 +2197,7 @@ const App=(()=>{
           ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
                  (p.seJuega||{}).home,(p.aSeguir||{}).home)}
           <div class="pv-medio">
-            ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,p)
+            ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,p,true)
               || '<span class="pv-vs">vs</span>'}
           </div>
           ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away,
@@ -2162,16 +2205,34 @@ const App=(()=>{
         </div>
         ${p.dato?`<div class="pv-dato">${esc(p.dato)}</div>`:''}
         ${histBarra(p)}
+        ${p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
         <div class="pv-pie">
           ${p.venue?`<span>${ICONO_CANCHA}${esc(p.venue)}</span>`:''}
-          <span class="abrir">Ver la previa completa ›</span>
+          ${p.referee?`<span>${ICONO_SILBATO}${esc(p.referee)}</span>`:''}
+          ${(p.tv||[]).length?`<span>${ICONO_TV}${esc(p.tv.join(' · '))}</span>`:''}
+          ${(()=>{const r=rutaPartido({liveId:p.liveId,home:p.home,away:p.away});
+            return r?`<a class="pv-ir" href="${esc(Rutas.url(r))}" data-ir
+              >Ir al partido ›</a>`:'';})()}
         </div>
-        <div class="pv-ficha" id="fic${p.id}"></div>
       </div>`).join('')}
-      <div class="note" style="padding:12px 16px">${esc(d.nota)}</div>
-      </div>`;
-    const eq=d.equipoDeLaFecha;
-    $('#right').innerHTML=(d.delaFecha||eq)?`<div class="globo">
+      <div class="globo"><div class="note" style="padding:12px 16px">${
+        esc(d.nota)}</div></div>`;
+    const eq=d.equipoDeLaFecha, pf=d.partidoDeLaFecha;
+    $('#right').innerHTML=(d.delaFecha||eq||pf)?`<div class="globo">
+      ${pf?`<div class="cl-sec">El partido de la fecha</div>
+      <div class="pv-elegido pf">
+        <div class="cruce">
+          ${pf.home&&pf.home.logo?`<img src="${esc(pf.home.logo)}" alt="">`:''}
+          <span>${esc(enMayusculas((pf.home||{}).name||''))}</span>
+          <i>vs</i>
+          ${pf.away&&pf.away.logo?`<img src="${esc(pf.away.logo)}" alt="">`:''}
+          <span>${esc(enMayusculas((pf.away||{}).name||''))}</span>
+        </div>
+        <div class="dd">${esc(cuandoJuega(pf.start))}</div>
+        <div class="pie">${esc(pf.porque)}. Se elige por el gráfico y no por
+          la tabla: un puntero que empata sin goles todas las semanas no da
+          un partido lindo.</div>
+      </div>`:''}
       ${d.delaFecha?`<div class="cl-sec">El jugador de la fecha</div>
       <div class="pv-elegido">
         <a href="${esc(Rutas.url(rutaJugador(d.delaFecha.nombre)))}" data-ir>
@@ -2197,6 +2258,9 @@ const App=(()=>{
           fecha. La racha desempata.</div>
       </div>`:''}
       </div>`:'';
+    // Las tablas van después, sin frenar el dibujo: son dos pedidos más
+    // y la previa ya se ve.
+    if(S.liga==='lpf') tablasDeLaPrevia(ps);
     status('ok',`<b>${ps.length}</b> partidos · previa de la fecha`);
   }
 
@@ -7600,11 +7664,12 @@ const App=(()=>{
     serie(id){ const k=S.series[id]; if(k) Rutas.ir(rutaSerie(k)); },
     // Nacionales o internacionales, en la pantalla de Títulos.
     verTitulos(cual){ verTitulos(cual); },
-    abrirPrevia(id){ abrirPrevia(id); },
     // El radar de la previa: chiquito por defecto, grande al tocarlo.
+    // En el teléfono el radar arranca chico: esto lo amplía. En
+    // escritorio ya está grande y el toque no cambia nada.
     verRadar(id){
       const c=document.getElementById('rad'+id); if(!c) return;
-      c.classList.toggle('grande');
+      c.classList.toggle('abierto');
     },
     girarKit(i){
       const p=document.getElementById('kit'+i); if(!p) return;

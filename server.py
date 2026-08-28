@@ -43,6 +43,7 @@ import sys
 import time
 import threading
 import unicodedata
+import zlib
 from html.parser import HTMLParser
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -9221,7 +9222,21 @@ def _relato(p):
     ren = p.get("rendimiento") or {}
     zon = {k: ((p.get("seJuega") or {}).get(k) or {}) for k in ("home", "away")}
 
-    def como_viene(lado):
+    # Para que dos previas seguidas no se lean igual, cada situación tiene
+    # varias formas de decirse y se elige una fija por partido. Fija y no
+    # al azar a propósito: si cambiara en cada recarga, el mismo partido
+    # diría cosas distintas cada vez que alguien entra, y eso se nota.
+    # `hash()` de Python es aleatorio por proceso: con él, el mismo
+    # partido decía una cosa hoy y otra después de reiniciar el servidor.
+    # `crc32` siempre da lo mismo para el mismo texto, que es lo que hace
+    # falta acá.
+    semilla = zlib.crc32(("%s|%s" % (p["home"].get("name"),
+                                     p["away"].get("name"))).encode("utf-8"))
+
+    def elegir(ops, salto=0):
+        return ops[(semilla + salto) % len(ops)]
+
+    def como_viene(lado, salto):
         """Una sola idea por equipo: la que más lo describe hoy."""
         r = ren.get(lado) or {}
         racha = (p.get("racha") or {}).get(lado) or []
@@ -9230,24 +9245,50 @@ def _relato(p):
             if x["como"] != como:
                 break
             seguidas += 1
+        gf = (r["gf"] / float(r["pj"])) if r.get("pj") else 0
+        gc = (r["gc"] / float(r["pj"])) if r.get("pj") else 0
         if como == "G" and seguidas >= 3:
-            return "llega lanzado, con %d triunfos al hilo" % seguidas
+            return elegir(["llega lanzado, con %d triunfos al hilo" % seguidas,
+                           "viene de ganar %d seguidos" % seguidas,
+                           "atraviesa su mejor momento: %d triunfos en fila"
+                           % seguidas], salto)
         if como == "P" and seguidas >= 3:
-            return "viene golpeado: %d derrotas seguidas" % seguidas
+            return elegir(["viene golpeado: %d derrotas seguidas" % seguidas,
+                           "no gana hace %d partidos y necesita cortar la "
+                           "racha" % seguidas,
+                           "está en crisis, con %d caídas al hilo" % seguidas],
+                          salto)
+        if como == "E" and seguidas >= 3:
+            return elegir(["empató los últimos %d y no arranca" % seguidas,
+                           "acumula %d empates seguidos" % seguidas], salto)
         if como == "G" and seguidas == 2:
-            return "encadenó dos triunfos"
+            return elegir(["encadenó dos triunfos",
+                           "ganó los dos últimos"], salto)
+        if r.get("pj") and gf >= 1.8:
+            return elegir(["es de los que más convierten: %.1f goles por "
+                           "partido" % gf,
+                           "tiene el ataque más suelto del torneo"], salto)
+        if r.get("pj") and gc <= 0.7 and r["pj"] >= 4:
+            return elegir(["se hizo fuerte atrás: apenas %.1f goles en "
+                           "contra por partido" % gc,
+                           "casi no recibe goles"], salto)
         if r.get("pj"):
             media = (3 * r["g"] + r["e"]) / float(r["pj"])
             if media >= 2.0:
-                return "es de lo mejor del torneo"
+                return elegir(["es de lo mejor del torneo",
+                               "viene siendo de los más regulares"], salto)
             if media <= 0.9:
-                return "no encuentra el rumbo"
+                return elegir(["no encuentra el rumbo",
+                               "está lejos de lo que esperaba",
+                               "no levanta"], salto)
         if como == "G":
-            return "viene de ganar"
+            return elegir(["viene de ganar", "llega con un triunfo fresco"],
+                          salto)
         if como == "P":
-            return "viene de perder"
+            return elegir(["viene de perder", "arrastra la última derrota"],
+                          salto)
         if como == "E":
-            return "viene de empatar"
+            return elegir(["viene de empatar", "no pudo con el último"], salto)
         return ""
 
     def apuro(lado):
@@ -9269,15 +9310,19 @@ def _relato(p):
     fr = []
     # La entrada: qué partido es. Un clásico se anuncia como clásico.
     if p.get("clasico"):
-        fr.append("%s y %s juegan el %s." % (hn, an, p["clasico"]))
+        fr.append(elegir(["%s y %s juegan el %s." % (hn, an, p["clasico"]),
+                          "Hay %s: %s recibe a %s." % (p["clasico"], hn, an)]))
     else:
-        fr.append("%s recibe a %s." % (hn, an))
+        fr.append(elegir(["%s recibe a %s." % (hn, an),
+                          "%s es local ante %s." % (hn, an),
+                          "%s va a la cancha de %s." % (an, hn)]))
     # Cómo llega cada uno, en una frase por equipo y con lo que se juega.
-    for lado, nombre in (("home", hn), ("away", an)):
-        cv, ap = como_viene(lado), apuro(lado)
+    for i, (lado, nombre) in enumerate((("home", hn), ("away", an))):
+        cv, ap = como_viene(lado, i), apuro(lado)
+        quien = elegir(["El local", "El dueño de casa"], i) if lado == "home" \
+            else elegir(["El visitante", "El equipo visitante"], i)
         if cv and ap:
-            fr.append(("El local %s, %s." if lado == "home"
-                       else "El visitante %s, %s.") % (cv, ap))
+            fr.append("%s %s, %s." % (quien, cv, ap))
         elif cv:
             fr.append("%s %s." % (nombre, cv))
         elif ap:
@@ -9345,6 +9390,43 @@ def _radar_equipo(rend, racha):
         "Contundencia": tope(rend["g"] / pj, 1.0),
         "Momento": forma,
     }
+
+
+def _quien_dirige(ids):
+    """
+    El árbitro y la TV de varios partidos, pedidos todos juntos.
+
+    No están en el calendario: hay que pedir el detalle de cada partido.
+    Antes se pedían de a uno al abrir la tarjeta; ahora la previa se abre
+    entera, así que se piden los quince a la vez. En fila serían quince
+    esperas, así que van en paralelo y con un tope de espera: si alguno
+    tarda, ese partido sale sin árbitro y el resto no lo espera.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    salida = {}
+    if not ids:
+        return salida
+
+    def uno(gid):
+        try:
+            d = fetch("game", {"gameId": gid}, ttl=600)
+            g = d.get("game") or (d.get("games") or [{}])[0] or {}
+            arb = ""
+            for o in (g.get("officials") or []):
+                if o.get("name"):
+                    arb = re.sub(r"^\s*Árbitro:\s*", "", o["name"]).strip()
+                    break
+            tv = [t.get("name") for t in (g.get("tvNetworks") or [])
+                  if t.get("name")]
+            return gid, {"referee": arb, "tv": tv}
+        except Exception:
+            return gid, None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(ids))) as pool:
+        for gid, r in pool.map(uno, ids):
+            if r:
+                salida[gid] = r
+    return salida
 
 
 def api_previa(q):
@@ -9431,7 +9513,13 @@ def api_previa(q):
                     "pts": 3 * ren["g"] + ren["e"], "pj": ren["pj"],
                     "racha": sum(1 for x in ra_[:3] if x["como"] == "G")})
         salida.append({
-            "id": g.get("id"), "start": g.get("start"),
+            "id": g.get("id"),
+            # El id de AFA identifica el partido en el calendario, pero el
+            # detalle —árbitro, TV, formaciones— vive en 365scores y va con
+            # OTRO id. Sin este campo el enlace armaba /partido/df-7-union-
+            # sarmie, que no es una dirección nuestra y daba 404.
+            "liveId": g.get("liveId"),
+            "start": g.get("start"),
             "home": h, "away": a, "zone": g.get("zone"),
             "stage": g.get("stage") or "", "venue": g.get("venue") or "",
             "clasico": clasico,
@@ -9449,6 +9537,13 @@ def api_previa(q):
             "aSeguir": {"home": jh, "away": ja},
         })
         salida[-1]["relato"] = _relato(salida[-1])
+    # El árbitro y la TV de todos, pedidos juntos: la previa se abre
+    # entera y no hay nada que esperar a que alguien toque.
+    dirigen = _quien_dirige([p["liveId"] for p in salida if p.get("liveId")])
+    for p in salida:
+        d = dirigen.get(p.get("liveId")) or {}
+        p["referee"] = d.get("referee") or ""
+        p["tv"] = d.get("tv") or []
     # El jugador de la fecha: el mejor de los elegidos partido por partido,
     # con la misma regla. Primero los que están en racha.
     candidatos.sort(key=lambda j: (j["porque"] != "en racha",
@@ -9456,12 +9551,47 @@ def api_previa(q):
     # Y el equipo de la fecha: el que mejor viene, medido en puntos por
     # partido, y con la racha como desempate.
     equipos.sort(key=lambda e: (-(e["pts"] / (e["pj"] or 1)), -e["racha"]))
+
+    # Y el partido de la fecha: el mejor contra el mejor.
+    #
+    # No se elige por la tabla. La tabla premia al que viene sumando, y un
+    # puntero que empata 0 a 0 todas las semanas no da un partido lindo.
+    # Se elige por lo que dice el gráfico: los dos equipos que mejor
+    # atacan y mejor defienden. Es la diferencia entre "el partido más
+    # importante" y "el partido que hay que ver", y acá queremos el
+    # segundo.
+    #
+    # Ataque y defensa pesan doble sobre efectividad y momento: dos
+    # equipos que hacen goles y no reciben es lo que hace un partidazo,
+    # sumar de a tres empatando no.
+    def peso(p):
+        r = p.get("radar") or {}
+        h, a = r.get("home"), r.get("away")
+        if not h or not a:
+            return -1
+        def de(x):
+            return (2 * x["Ataque"] + 2 * x["Defensa"] + x["Efectividad"]
+                    + x["Contundencia"] + x["Momento"]) / 7.0
+        # El más flojo de los dos manda: un partidazo lo hacen los DOS.
+        # Con el promedio, un equipazo contra uno malo ganaba a dos buenos.
+        return min(de(h), de(a))
+    conRadar = [p for p in salida if peso(p) >= 0]
+    mejor = max(conRadar, key=peso) if conRadar else None
+
     return {
         "liga": lid, "ronda": ronda,
         "cuando": min((g.get("start") or "") for g in dela) or None,
         "partidos": salida,
         "delaFecha": candidatos[0] if candidatos else None,
         "equipoDeLaFecha": equipos[0] if equipos else None,
+        "partidoDeLaFecha": ({
+            "id": mejor.get("id"), "liveId": mejor.get("liveId"),
+            "home": mejor.get("home"), "away": mejor.get("away"),
+            "start": mejor.get("start"), "clasico": mejor.get("clasico"),
+            "porque": ("El mejor contra el mejor%s"
+                       % (", y encima es el %s" % mejor["clasico"]
+                          if mejor.get("clasico") else "")),
+        } if mejor else None),
         "nota": ("Sale de lo que ya está guardado: los cruces anteriores, "
                  "los últimos partidos de cada uno y quién viene "
                  "convirtiendo. Se va llenando a medida que el torneo "

@@ -440,10 +440,25 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .calhead .bt-previa:hover{opacity:.9}
 @media(max-width:520px){ .calhead .bt-previa{font-size:10.5px;padding:4px 9px} }
 
-.pv-cab{position:sticky;top:0;z-index:5;text-align:center;
+/* La leyenda de los dos números, arriba a la derecha, en el mismo color
+   en que aparecen en cada fila. Sin esto, dos números pegados no dicen
+   cuál es cuál. */
+.cl-sec.con-ley{display:flex;align-items:center;justify-content:space-between}
+.cl-sec .leyenda{display:flex;gap:5px}
+.cl-sec .leyenda i{font-style:normal;font-size:9.5px;font-weight:800;
+  letter-spacing:.05em;padding:1px 6px;border-radius:5px}
+.cl-sec .leyenda .nac{background:var(--bg);color:var(--txt2)}
+.cl-sec .leyenda .int{background:rgba(47,111,237,.12);color:#1d4ed8}
+
+/* El encabezado de la fecha, pegado arriba.
+   El `top` no es 0: arriba está la barra del sitio, y con 0 el encabezado
+   se metía abajo de ella y no se veía. Y el ancestro no puede tener
+   `overflow:hidden`, que anula el sticky de todo lo que tenga adentro:
+   por eso esto vive AFUERA del `.globo` y no adentro. */
+.pv-cab{position:sticky;top:calc(var(--enc,56px) + 8px);z-index:20;text-align:center;
   padding:10px 14px;margin-bottom:10px;border-radius:12px;
   background:var(--card);border:1px solid var(--line);
-  box-shadow:0 2px 10px rgba(0,0,0,.06)}
+  box-shadow:0 4px 14px rgba(0,0,0,.10)}
 .pv-cab b{display:block;font-size:17px;letter-spacing:-.01em}
 .pv-cab span{font-size:12px;color:var(--txt3)}
 .pv-cuando{text-align:center;font-size:11.5px;font-weight:700;
@@ -455,10 +470,10 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .pv-lado .juega i{font-style:normal;font-size:10.5px;line-height:1.35;
   color:var(--txt2)}
 .pv-medio{display:flex;align-items:center;justify-content:center;
-  min-width:74px}
+  min-width:104px}
 /* El radar: chiquito entre los dos escudos, grande al tocarlo. Los
    nombres de los ejes aparecen recién cuando hay lugar para leerlos. */
-.pv-radar{width:74px;cursor:pointer;transition:width .18s ease}
+.pv-radar{width:104px;cursor:pointer;transition:width .18s ease}
 .pv-radar svg{width:100%;height:auto;display:block;overflow:visible}
 .pv-radar .red{fill:none;stroke:var(--line);stroke-width:1}
 .pv-radar polygon.a,.pv-radar polygon.b{fill-opacity:.22;stroke-width:1.6;
@@ -466,14 +481,53 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .pv-radar .ejes{display:none}
 .pv-radar .ejes text{font-size:7px;font-weight:700;fill:var(--txt2)}
 .pv-radar .ejes .v{font-size:6px;font-weight:400;fill:var(--txt3)}
-.pv-radar.grande{width:190px}
+.pv-radar.grande{width:230px}
 .pv-radar.grande .ejes{display:block}
 @media(max-width:560px){
-  .pv-radar{width:58px}
-  .pv-radar.grande{width:150px}
+  .pv-radar{width:76px}
+  .pv-radar.grande{width:168px}
 }
-.pv-pie .ic{width:13px;height:13px;vertical-align:-2px;margin-right:5px;
-  fill:none;stroke:var(--txt3);stroke-width:1.2}
+.pv-pie{margin-top:8px;display:flex;align-items:center;
+  justify-content:space-between;gap:10px;font-size:11px;color:var(--txt3)}
+.pv-pie .ic,.pv-extra .ic{width:13px;height:13px;vertical-align:-2px;
+  margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.2;
+  stroke-linecap:round;stroke-linejoin:round}
+.pv-pie .abrir{font-weight:700;color:var(--acc,#e01e2b);white-space:nowrap}
+.pv.abierta .pv-pie .abrir{visibility:hidden}
+
+/* La zona, abajo del nombre. Es la pregunta "¿contra quién compite?" y
+   en un torneo de dos zonas no se puede leer una posición sin saberlo. */
+.pv-lado .zona{font-size:9.5px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--txt3);background:var(--bg);
+  border-radius:5px;padding:1px 6px}
+
+/* El historial, en barra: un 4-3-3 no se lee de un vistazo, una barra
+   partida en tres sí. */
+.pv-hist{margin-top:10px}
+.pv-hist .lb{font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--txt3);margin-bottom:4px}
+.pv-hist .barra{display:flex;height:7px;border-radius:99px;overflow:hidden;
+  background:var(--bg)}
+.pv-hist .barra i{display:block;background:var(--txt3)}
+.pv-hist .barra i:nth-child(1){background:#2f6fed}
+.pv-hist .barra i:nth-child(2){background:#c9ccd4}
+.pv-hist .barra i:nth-child(3){background:#e5484d}
+.pv-hist .pie{display:flex;justify-content:space-between;margin-top:4px;
+  font-size:10.5px;color:var(--txt3)}
+.pv-hist .pie b{color:var(--txt)}
+
+/* La ficha que se abre al tocar el partido. */
+.pv{cursor:pointer}
+.pv.abierta{background:var(--bg)}
+.pv-ficha:empty{display:none}
+.pv-ficha{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.pv-ficha .relato{margin:0 0 10px;font-size:13px;line-height:1.6;
+  color:var(--txt)}
+.pv-extra{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11.5px;
+  color:var(--txt2)}
+.pv-extra .vacio2,.pv-extra .cargando{color:var(--txt3);font-style:italic}
+.pv-ir{display:inline-block;margin-top:10px;font-size:12px;font-weight:700;
+  color:var(--acc,#e01e2b);text-decoration:none}
 .pv-elegido .club.big{font-size:14px;color:var(--txt)}
 .pv-elegido .club.big img.hist-esc{width:22px;height:22px}
 
@@ -504,12 +558,20 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   flex-wrap:wrap}
 .pv-seguir .lb{font-size:10px;text-transform:uppercase;letter-spacing:.05em;
   color:var(--txt3)}
-.pv-jug{display:inline-flex;flex-direction:column;padding:4px 9px;
-  border:1px solid var(--line);border-radius:8px;text-decoration:none;
-  color:inherit}
+.pv-jug{display:flex;flex-direction:column;align-items:center;gap:1px;
+  margin-top:6px;padding:5px 9px;border:1px solid var(--line);
+  border-radius:9px;text-decoration:none;color:inherit;background:var(--card);
+  max-width:100%}
 .pv-jug:hover{background:var(--bg)}
-.pv-jug .nm{font-size:12px;font-weight:700}
-.pv-jug .dd{font-size:10.5px;color:var(--txt3)}
+.pv-jug .lb{font-size:9px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--txt3)}
+.pv-jug .nm{font-size:12px;font-weight:700;display:flex;align-items:center;
+  gap:5px;max-width:100%;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+/* El dorsal adelante, que es lo que se ve desde la tribuna. */
+.pv-jug .nm b{font-size:10px;background:var(--nav);color:#fff;
+  border-radius:5px;padding:0 5px;flex:none}
+.pv-jug .dd{font-size:10px;color:var(--txt3);text-align:center}
 .pv-pie{margin-top:8px;font-size:11px;color:var(--txt3)}
 .pv-elegido{padding:12px 16px 16px}
 .pv-elegido .nm{font-size:16px;font-weight:800}
@@ -1855,8 +1917,15 @@ const App=(()=>{
      superpuestas y no leyendo diez números. Va chico porque en una previa
      de quince partidos no puede ocupar media pantalla; al tocarlo se
      agranda y recién ahí aparecen los nombres de cada eje. */
-  function radarDoble(id, a, b, ca, cb){
+  function radarDoble(id, a, b, p, grande){
     if(!a||!b) return '';
+    /* Los colores salen de la misma puerta que la barra del historial:
+       el color principal del club, salvo que sea tan claro que se pierda,
+       y ahí el segundo. Si los dos clubes tienen colores parecidos, la
+       función devuelve null y se cae al azul y rojo de siempre, que es lo
+       correcto: dos formas del mismo color no se distinguen. */
+    const col=coloresDelHistorial(p)||{};
+    const ca=col.local||'#2f6fed', cb=col.visita||'#e5484d';
     const ejes=Object.keys(a);
     const n=ejes.length, R=42, cx=50, cy=50;
     const punto=(v,i)=>{
@@ -1871,7 +1940,8 @@ const App=(()=>{
         text-anchor="middle" dominant-baseline="middle">${esc(k)}
         <tspan class="v">${a[k]}-${b[k]}</tspan></text>`;
     };
-    return `<div class="pv-radar" id="rad${id}" onclick="App.verRadar('${id}')"
+    return `<div class="pv-radar${grande?' grande':''}" id="rad${id}"
+        onclick="event.stopPropagation();App.verRadar('${id}')"
         title="Tocá para agrandar">
       <svg viewBox="-30 -30 160 160" aria-hidden="true">
         ${[100,66,33].map(r=>`<polygon class="red" points="${
@@ -1888,11 +1958,17 @@ const App=(()=>{
 
   const bolita=r=>`<i class="bo ${r.como}" title="${esc(r.rival)} ${r.gf}-${r.gc}"></i>`;
 
-  function aSeguirHtml(j, lado){
+  /* El jugador a seguir, abajo del escudo de su equipo. Con el dorsal
+     adelante: el nombre solo no alcanza cuando el que lee no sigue a ese
+     club, y el número es lo que se ve desde la tribuna. */
+  function aSeguirHtml(j){
     if(!j) return '';
-    return `<a class="pv-jug ${lado}" href="${esc(Rutas.url(rutaJugador(j.nombre)))}" data-ir>
-      <span class="nm">${esc(j.nombre)}</span>
+    return `<a class="pv-jug" href="${esc(Rutas.url(rutaJugador(j.nombre)))}"
+        data-ir onclick="event.stopPropagation()">
+      <span class="lb">A seguir</span>
+      <span class="nm">${j.n!=null?`<b>${j.n}</b>`:''}${esc(j.nombre)}</span>
       <span class="dd">${j.goles} ${j.goles===1?'gol':'goles'}${
+        j.puesto?' · '+esc(j.puesto):''}${
         j.porque==='en racha'?' · en racha':''}</span></a>`;
   }
 
@@ -1919,25 +1995,104 @@ const App=(()=>{
     <rect x="12.5" y="5.5" width="2.5" height="5"/>
   </svg>`;
 
+  /* El historial entre los dos, con la barra de colores de cada club: la
+     misma que usa la página del partido. Un "4-3-3" no se lee de un
+     vistazo; una barra partida en tres, sí. */
+  function histBarra(p){
+    const h=p.historial;
+    if(!h||!h.pj) return '';
+    const col=coloresDelHistorial(p)||{};
+    const an=(n,c)=>`<i style="width:${100*n/h.pj}%${
+      c?';background:'+esc(c):''}"></i>`;
+    return `<div class="pv-hist">
+      <div class="lb">Se cruzaron ${h.pj} ${h.pj===1?'vez':'veces'}</div>
+      <div class="barra">${an(h.gano_a,col.local)}${an(h.empates,'')}${
+        an(h.gano_b,col.visita)}</div>
+      <div class="pie">
+        <span><b>${h.gano_a}</b> ${esc(enMayusculas(p.home.name))}</span>
+        <span><b>${h.empates}</b> ${h.empates===1?'empate':'empates'}</span>
+        <span><b>${h.gano_b}</b> ${esc(enMayusculas(p.away.name))}</span>
+      </div></div>`;
+  }
+
+  // Los partidos de la previa que ya se abrieron, con lo que trajo el
+  // servidor: el árbitro y la TV salen del detalle de cada partido, que se
+  // pide sólo cuando alguien lo abre. Quince pedidos de entrada para un
+  // dato que casi nadie mira sería tirar la conexión de la gente.
+  const previaAbierta={}, previaDetalle={};
+
+  const ICONO_SILBATO=`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M9.5 5.5h4.2a1 1 0 0 1 1 1v1.6a1 1 0 0 1-1 1H9.5"/>
+    <circle cx="5.6" cy="7.9" r="3.6"/><circle cx="5.6" cy="7.9" r="1.2"/>
+  </svg>`;
+  const ICONO_TV=`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="1.5" y="4.5" width="13" height="9" rx="1.4"/>
+    <path d="M5 1.8 8 4.4 11 1.8"/>
+  </svg>`;
+
+  async function abrirPrevia(id){
+    const caja=document.getElementById('fic'+id);
+    const tarjeta=document.getElementById('pv'+id);
+    if(!caja||!tarjeta) return;
+    if(previaAbierta[id]){                       // cerrar
+      previaAbierta[id]=false;
+      caja.innerHTML=''; tarjeta.classList.remove('abierta');
+      const r=document.getElementById('rad'+id);
+      if(r) r.classList.remove('grande');
+      return;
+    }
+    previaAbierta[id]=true;
+    tarjeta.classList.add('abierta');
+    // El radar grande es la mitad de la gracia de abrir el partido.
+    const r=document.getElementById('rad'+id);
+    if(r) r.classList.add('grande');
+    const p=(previaDatos.partidos||[]).find(x=>String(x.id)===String(id));
+    caja.innerHTML=`${p&&p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
+      <div class="pv-extra"><span class="cargando">Buscando el árbitro…</span></div>`;
+    if(previaDetalle[id]===undefined){
+      try{ previaDetalle[id]=await get('/api/match?id='+encodeURIComponent(id)); }
+      catch(e){ previaDetalle[id]=null; }
+    }
+    if(!previaAbierta[id]) return;               // lo cerró mientras cargaba
+    const d=previaDetalle[id]||{};
+    const linea=(ic,t)=>t?`<span>${ic}${esc(t)}</span>`:'';
+    const extra=[linea(ICONO_SILBATO,d.referee),
+                 linea(ICONO_TV,(d.tv||[]).join(' · ')),
+                 linea(ICONO_CANCHA,d.venue||(p&&p.venue))].filter(Boolean);
+    caja.innerHTML=`${p&&p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
+      ${extra.length?`<div class="pv-extra">${extra.join('')}</div>`
+                    :'<div class="pv-extra"><span class="vacio2">Todavía no '
+                     +'se sabe quién dirige ni por dónde se ve.</span></div>'}
+      <a class="pv-ir" href="${esc(Rutas.url({t:'partido', id}))}" data-ir
+         onclick="event.stopPropagation()">Ir al partido ›</a>`;
+  }
+
+  // Lo último que contestó la previa, para poder armar la ficha de un
+  // partido sin volver a pedir todo.
+  let previaDatos={};
+
   async function seccionPrevia(){
     const main=$('#matches');
     main.innerHTML='<div class="skel"></div><div class="skel"></div>';
     let d; try{ d=await get('/api/previa?liga='+encodeURIComponent(S.liga)); }
     catch(e){ return status('err','No se pudo cargar: '+esc(e.message)); }
     if(d.error) return status('err',esc(d.error));
+    previaDatos=d;
     const ps=d.partidos||[];
     if(!ps.length){
       main.innerHTML=`<div class="globo"><div class="vacio">
         ${esc(d.nota||'No hay fecha por jugar.')}</div></div>`;
       return status('ok','sin fecha por jugar');
     }
-    const lado=(e,r,vd,sj)=>`<div class="pv-lado">
+    const lado=(e,r,vd,sj,j)=>`<div class="pv-lado">
       ${e&&e.logo?`<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
       <span class="nm">${esc(enMayusculas(e&&e.name||''))}</span>
+      ${sj&&sj.zona?`<span class="zona">${esc(sj.zona)}</span>`:''}
       ${r&&r.length?`<span class="bolas">${r.slice().reverse().map(bolita).join('')}</span>`:''}
       ${vd?`<span class="viene">${esc(vd)}</span>`:''}
-      ${(sj&&sj.length)?`<span class="juega">${sj.map(x=>
+      ${(sj&&sj.dice&&sj.dice.length)?`<span class="juega">${sj.dice.map(x=>
         `<i>${esc(x)}</i>`).join('')}</span>`:''}
+      ${aSeguirHtml(j)}
     </div>`;
     main.innerHTML=`
       <div class="pv-cab">
@@ -1945,33 +2100,27 @@ const App=(()=>{
         <span>${ps.length} ${ps.length===1?'partido':'partidos'}</span>
       </div>
       <div class="globo">
-      ${ps.map(p=>`<div class="pv${p.clasico?' clasico':''}">
+      ${ps.map(p=>`<div class="pv${p.clasico?' clasico':''}" id="pv${p.id}"
+          onclick="App.abrirPrevia('${p.id}')">
         ${p.clasico?`<div class="pv-et">${esc(p.clasico)}</div>`:''}
         <div class="pv-cuando">${esc(cuandoJuega(p.start))}</div>
         <div class="pv-top">
           ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
-                 (p.seJuega||{}).home)}
+                 (p.seJuega||{}).home,(p.aSeguir||{}).home)}
           <div class="pv-medio">
-            ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,
-                         (p.home||{}).primary,(p.away||{}).primary)
+            ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,p)
               || '<span class="pv-vs">vs</span>'}
           </div>
           ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away,
-                 (p.seJuega||{}).away)}
+                 (p.seJuega||{}).away,(p.aSeguir||{}).away)}
         </div>
         ${p.dato?`<div class="pv-dato">${esc(p.dato)}</div>`:''}
-        ${p.historial&&p.historial.pj?`<div class="pv-hist">
-          Se cruzaron ${p.historial.pj}
-          ${p.historial.pj===1?'vez':'veces'}:
-          <b>${p.historial.gano_a}</b> ${esc(enMayusculas(p.home.name))} ·
-          <b>${p.historial.empates}</b> empates ·
-          <b>${p.historial.gano_b}</b> ${esc(enMayusculas(p.away.name))}
-        </div>`:''}
-        ${(p.aSeguir&&(p.aSeguir.home||p.aSeguir.away))?`<div class="pv-seguir">
-          <span class="lb">A seguir</span>
-          ${aSeguirHtml(p.aSeguir.home,'h')}${aSeguirHtml(p.aSeguir.away,'a')}
-        </div>`:''}
-        ${p.venue?`<div class="pv-pie">${ICONO_CANCHA}${esc(p.venue)}</div>`:''}
+        ${histBarra(p)}
+        <div class="pv-pie">
+          ${p.venue?`<span>${ICONO_CANCHA}${esc(p.venue)}</span>`:''}
+          <span class="abrir">Ver la previa completa ›</span>
+        </div>
+        <div class="pv-ficha" id="fic${p.id}"></div>
       </div>`).join('')}
       <div class="note" style="padding:12px 16px">${esc(d.nota)}</div>
       </div>`;
@@ -2098,7 +2247,9 @@ const App=(()=>{
     // sencillamente falso, así que el nombre lo manda el servidor.
     const unidad=hist.unidad||'liga';
     return `<div class="globo">
-      <div class="cl-sec">Títulos por club</div>
+      <div class="cl-sec con-ley">Títulos por club
+        <span class="leyenda"><i class="nac">NAC</i><i class="int">INT</i></span>
+      </div>
       ${hist.porClub.map(c=>`<details class="hist-club">
         <summary>
           <span class="pos">${c.pos}</span>
@@ -7400,6 +7551,7 @@ const App=(()=>{
     serie(id){ const k=S.series[id]; if(k) Rutas.ir(rutaSerie(k)); },
     // Nacionales o internacionales, en la pantalla de Títulos.
     verTitulos(cual){ verTitulos(cual); },
+    abrirPrevia(id){ abrirPrevia(id); },
     // El radar de la previa: chiquito por defecto, grande al tocarlo.
     verRadar(id){
       const c=document.getElementById('rad'+id); if(!c) return;

@@ -6479,10 +6479,15 @@ chequear("los goles del rival no cuentan como propios",
          "AND (g.equipo IS NULL OR g.equipo=(" in _TBL)
 # El jugador a seguir se elige por lo que viene haciendo, no a dedo.
 chequear("el jugador a seguir se elige por la racha, no a dedo",
-         '"porque": "en racha"' in _SRV
-         and '"porque": "goleador del equipo"' in _SRV)
+         'armar(recientes[0], "en racha")' in _SRV
+         and 'armar(todos[0], "goleador del equipo")' in _SRV)
+# Y con el dorsal, que es lo que se ve desde la tribuna: el nombre solo no
+# alcanza cuando el que lee no sigue a ese club.
+chequear("y va con su dorsal y su puesto",
+         '"n": f.get("n"), "puesto": f.get("puesto")' in _SRV
+         and 'j.n!=null?`<b>${j.n}</b>`' in HTML)
 chequear("y si nadie convirtió, no se inventa un nombre",
-         "    return None\n\n\ndef _radar_equipo" in _SRV)
+         "    return None\n\n\ndef _relato" in _SRV)
 chequear("el de la fecha sale de los mismos, con la misma regla",
          'candidatos.sort(key=lambda j: (j["porque"] != "en racha",' in _SRV)
 # La pantalla.
@@ -6492,7 +6497,7 @@ chequear("la previa se dibuja",
 chequear("con la racha en bolitas y el clásico destacado",
          'class="bo ${r.como}"' in HTML and "p.clasico?' clasico':''" in HTML)
 chequear("y el jugador a seguir de cada partido y de la fecha",
-         "function aSeguirHtml(j, lado)" in HTML
+         "function aSeguirHtml(j)" in HTML
          and 'class="pv-elegido"' in HTML
          and "El jugador de la fecha" in HTML)
 # Va en todos los torneos: se arma con lo guardado de cada uno.
@@ -6562,29 +6567,48 @@ chequear("y una liga que no existe no revienta",
 # ── El contexto: por qué juega cada uno ──────────────────────────────────
 # Es lo que la tabla sola no contesta. La tabla dice que va décimo; no dice
 # que con tres puntos entra a los playoffs.
-_zon = {server.norm("Racing"): {"pos": 1, "de": 15, "pts": 30, "lider": 30},
+_zon = {server.norm("Racing"): {"pos": 1, "de": 15, "pts": 30, "lider": 30,
+                                "octavo": 18, "zona": "Zona A"},
         server.norm("Independiente"): {"pos": 4, "de": 15, "pts": 24,
-                                       "lider": 30},
-        server.norm("Platense"): {"pos": 13, "de": 15, "pts": 9, "lider": 30}}
+                                       "lider": 30, "octavo": 18,
+                                       "zona": "Zona A"},
+        server.norm("Platense"): {"pos": 13, "de": 15, "pts": 14,
+                                  "lider": 30, "octavo": 18,
+                                  "zona": "Zona B"}}
 _pro = {server.norm("Platense"): {"pos": 29, "de": 30, "desciende": True,
-                                  "alBorde": False},
+                                  "alBorde": True, "necesita": None,
+                                  "salvado": False, "enRiesgo": True},
         server.norm("Independiente"): {"pos": 27, "de": 30,
-                                       "desciende": False, "alBorde": True}}
-chequear("al puntero le dice que es puntero",
-         server._que_se_juega("Racing", _zon, _pro)[0]
-         == "Puntero de su zona con 30 puntos",
-         server._que_se_juega("Racing", _zon, _pro))
-chequear("al cuarto, a cuánto está y que entra a los playoffs",
-         server._que_se_juega("Independiente", _zon, _pro)[:2]
-         == ["4º, a 6 del puntero", "Hoy entra a los playoffs"],
-         server._que_se_juega("Independiente", _zon, _pro))
-chequear("y al que se está yendo, que se está yendo",
-         any("descenso" in x for x in
-             server._que_se_juega("Platense", _zon, _pro)),
-         server._que_se_juega("Platense", _zon, _pro))
+                                       "desciende": False, "alBorde": True,
+                                       "necesita": 7, "salvado": False,
+                                       "enRiesgo": True}}
+_dice = lambda n: server._que_se_juega(n, _zon, _pro)["dice"]
+chequear("al puntero le dice dónde va y que es puntero",
+         _dice("Racing")[:2] == ["1º de 15 con 30 puntos", "Puntero"],
+         _dice("Racing"))
+# Nada de "por poco": a cuántos puntos está. La diferencia entre informar
+# y rellenar es un número.
+chequear("y al de afuera, a cuántos puntos está de entrar",
+         "A 4 puntos de los playoffs" in _dice("Platense"),
+         _dice("Platense"))
+chequear("al cuarto, a cuánto del puntero y que entra",
+         _dice("Independiente")[:2] == ["4º de 15 con 24 puntos",
+                                        "A 6 del puntero"],
+         _dice("Independiente"))
+# Y en promedios, cuántos puntos necesita para estar salvo, que es el
+# número que la gente busca todos los lunes.
+chequear("y cuántos puntos necesita para salvarse",
+         "Necesita 7 puntos para estar salvo" in _dice("Independiente"),
+         _dice("Independiente"))
+chequear("al que se está yendo, que se está yendo",
+         any("descenso" in x for x in _dice("Platense")), _dice("Platense"))
+# La zona va aparte del texto: en un torneo de dos zonas, una posición sin
+# la zona no se puede leer.
+chequear("y la zona viaja aparte para poder mostrarla",
+         server._que_se_juega("Racing", _zon, _pro)["zona"] == "Zona A")
 # Un equipo del que no sabemos nada no recibe una frase inventada.
 chequear("y del que no sabemos nada no dice nada",
-         server._que_se_juega("Cualquiera", _zon, _pro) == [])
+         server._que_se_juega("Cualquiera", _zon, _pro)["dice"] == [])
 
 # ── El radar de los dos equipos ──────────────────────────────────────────
 _ren = {"pj": 10, "g": 6, "e": 2, "p": 2, "gf": 18, "gc": 8}
@@ -6604,16 +6628,29 @@ chequear("y un equipo que no jugó no tiene radar",
 # La pantalla: chiquito entre los escudos, grande al tocarlo, y los
 # nombres de los ejes recién cuando hay lugar para leerlos.
 chequear("el radar se dibuja chiquito y se agranda al tocarlo",
-         "function radarDoble(id, a, b, ca, cb)" in HTML
+         "function radarDoble(id, a, b, p, grande)" in HTML
          and "App.verRadar(" in HTML
-         and ".pv-radar.grande{width:190px}" in HTML
+         and ".pv-radar.grande{width:230px}" in HTML
          and ".pv-radar .ejes{display:none}" in HTML
          and ".pv-radar.grande .ejes{display:block}" in HTML)
+# Los colores salen de la misma puerta que la barra del historial: el
+# principal del club salvo que se pierda, y el segundo si no. Y si los dos
+# clubes tienen colores parecidos, se cae al azul y rojo de siempre: dos
+# formas del mismo color no se distinguen.
+chequear("y usa los colores de cada club, con la regla de contraste",
+         "const col=coloresDelHistorial(p)||{};" in HTML
+         and "const ca=col.local||'#2f6fed', cb=col.visita||'#e5484d';" in HTML)
 # El encabezado de la fecha: centrado y pegado arriba. Con quince partidos,
 # scrolleando se pierde de vista qué fecha se está mirando.
-chequear("el encabezado de la fecha queda fijo arriba",
-         ".pv-cab{position:sticky;top:0" in HTML
-         and "text-align:center" in HTML.split(".pv-cab{")[1][:120])
+# El `top` no es 0: arriba está la barra del sitio y con 0 el encabezado
+# quedaba escondido detrás. Y tiene que vivir AFUERA del `.globo`, porque
+# el `overflow:hidden` de la caja anula el sticky de todo lo de adentro.
+chequear("el encabezado de la fecha queda fijo abajo de la barra del sitio",
+         ".pv-cab{position:sticky;top:calc(var(--enc,56px) + 8px)" in HTML
+         and "text-align:center" in HTML.split(".pv-cab{")[1][:160])
+chequear("y no está adentro de la caja, que le anularía el sticky",
+         HTML.index('<div class="pv-cab">') < HTML.index('''      <div class="globo">
+      ${ps.map'''))
 chequear("el partido dice el día y la hora, no sólo la hora",
          "function cuandoJuega(iso)" in HTML
          and "DIA_CORTO[d.getDay()]" in HTML)
@@ -6624,6 +6661,11 @@ chequear("el contexto de cada equipo se dibuja",
 chequear("y a la derecha van el jugador y el equipo de la fecha",
          "El jugador de la fecha" in HTML and "El equipo de la fecha" in HTML
          and '"equipoDeLaFecha"' in _SRV)
+# El jugador va abajo del escudo de SU equipo, no en una fila común: así
+# se sabe de cuál de los dos es sin leer.
+chequear("y cada jugador va abajo del escudo de su equipo",
+         "${aSeguirHtml(j)}\n    </div>`;" in HTML
+         and '(p.aSeguir||{}).home)}' in HTML)
 # El equipo de la fecha se elige por rendimiento, con la racha de desempate.
 chequear("el equipo de la fecha se elige por puntos por partido",
          'equipos.sort(key=lambda e: (-(e["pts"] / (e["pj"] or 1)), -e["racha"]))'
@@ -6631,6 +6673,54 @@ chequear("el equipo de la fecha se elige por puntos por partido",
 # Y el botón en la portada, que es de donde viene la gente.
 chequear("la portada tiene el botón a la previa",
          'class="bt-previa" href="/liga-profesional/previa"' in HTML)
+
+# ── La ficha que se abre al tocar el partido ─────────────────────────────
+chequear("el partido se abre y se cierra en el lugar",
+         "async function abrirPrevia(id)" in HTML
+         and "App.abrirPrevia('${p.id}')" in HTML
+         and "if(previaAbierta[id]){" in HTML)
+# Y al abrirlo, el radar se agranda: es la mitad de la gracia.
+chequear("y al abrirlo el radar se agranda solo",
+         "if(r) r.classList.add('grande');" in HTML)
+# El árbitro y la TV salen del detalle de cada partido, y ese detalle se
+# pide SÓLO al abrirlo. Quince pedidos de entrada para un dato que casi
+# nadie mira sería tirarle la conexión a la gente.
+chequear("el árbitro y la TV se piden recién al abrir el partido",
+         "previaDetalle[id]=await get('/api/match?id=" in HTML
+         and "const previaAbierta={}, previaDetalle={};" in HTML)
+chequear("y van con su dibujito cada uno",
+         "const ICONO_SILBATO=" in HTML and "const ICONO_TV=" in HTML
+         and "linea(ICONO_SILBATO,d.referee)" in HTML)
+# Si el partido se cierra mientras el detalle viajaba, no se pinta encima.
+chequear("y si lo cerraste mientras cargaba, no se pinta",
+         "if(!previaAbierta[id]) return;" in HTML)
+# El párrafo: se arma con números, no se inventa.
+_rel = server._relato({
+    "home": {"name": "racing"}, "away": {"name": "independiente"},
+    "rendimiento": {"home": {"pj": 10, "g": 6, "e": 2, "p": 2,
+                             "gf": 18, "gc": 8}, "away": None},
+    "vieneDe": {"home": "Viene de 3 triunfos seguidos", "away": ""},
+    "seJuega": {"home": {"dice": ["1º de 15 con 30 puntos"]},
+                "away": {"dice": []}},
+    "dato": "Independiente no le gana a Racing hace 7 partidos",
+    "historial": {"pj": 10, "gano_a": 4, "gano_b": 3, "empates": 3},
+    "clasico": "Clásico de Avellaneda"})
+chequear("el relato arranca por el clásico y usa los números",
+         _rel.startswith("Es el Clásico de Avellaneda.")
+         and "20 en 10 partidos" in _rel
+         and "no le gana" in _rel and "cruces anteriores" in _rel, _rel)
+# Del equipo del que no sabemos nada, no se dice nada: sin esto salía un
+# elogio genérico, que es exactamente lo que una previa no tiene que ser.
+chequear("y del equipo sin datos no dice nada",
+         "Independiente lleva" not in _rel, _rel)
+chequear("sin nada que contar, el párrafo queda vacío",
+         server._relato({"home": {"name": "a"}, "away": {"name": "b"},
+                         "rendimiento": {}, "vieneDe": {}, "seJuega": {},
+                         "dato": "", "historial": None,
+                         "clasico": ""}) == "")
+# El historial también en la pantalla principal, y en barra.
+chequear("el historial va en barra en la lista, no sólo en la ficha",
+         "function histBarra(p)" in HTML and "${histBarra(p)}" in HTML)
 
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)

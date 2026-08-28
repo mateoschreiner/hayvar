@@ -9062,30 +9062,47 @@ def _que_se_juega(canon, zonas, promedios):
     """
     dice = []
     fila = zonas.get(norm(canon or ""))
+    zona = None
     if fila:
         pos, de, pts = fila["pos"], fila["de"], fila["pts"]
+        zona = fila.get("zona")
         lider = fila.get("lider")
+        dice.append("%dº de %d con %d puntos" % (pos, de, pts))
         if pos == 1:
-            dice.append("Puntero de su zona con %d puntos" % pts)
-        elif lider is not None and pos <= 8:
+            dice.append("Puntero")
+        elif lider is not None:
             falta = lider - pts
-            dice.append("%dº, a %d del puntero" % (pos, falta) if falta
-                        else "%dº, igualado con el puntero" % pos)
-        else:
-            dice.append("%dº de %d en su zona" % (pos, de))
-        # Los ocho de cada zona entran a los playoffs. Es lo que más se
-        # mira de la tabla después del descenso.
+            dice.append("A %d del puntero" % falta if falta
+                        else "Igualado con el puntero")
+        # Los ocho de cada zona entran a los playoffs. En vez de decir
+        # "por poco", que no es un dato, va a cuántos puntos está: es la
+        # diferencia entre informar y rellenar.
+        octavo = fila.get("octavo")
         if pos <= 8:
-            dice.append("Hoy entra a los playoffs")
-        elif pos <= 11:
-            dice.append("Está afuera de los playoffs por poco")
+            if octavo is not None and pos > 1:
+                dice.append("Entra a los playoffs por %d punto%s"
+                            % (pts - octavo, "" if pts - octavo == 1 else "s")
+                            if pts > octavo else "Entra a los playoffs")
+            else:
+                dice.append("Entra a los playoffs")
+        elif octavo is not None:
+            falta = octavo - pts
+            dice.append("A %d punto%s de los playoffs"
+                        % (falta, "" if falta == 1 else "s"))
     p = promedios.get(norm(canon or ""))
     if p:
         if p.get("desciende"):
             dice.append("Hoy se va al descenso (%dº en promedios)" % p["pos"])
-        elif p.get("alBorde"):
-            dice.append("%dº en la tabla de promedios" % p["pos"])
-    return dice
+        elif p.get("necesita"):
+            # Este número ya lo calcula la calculadora de promedios: cuántos
+            # puntos le faltan para no poder ser alcanzado.
+            dice.append("Necesita %d punto%s para estar salvo"
+                        % (p["necesita"], "" if p["necesita"] == 1 else "s"))
+        elif p.get("enRiesgo"):
+            dice.append("%dº en promedios, todavía alcanzable" % p["pos"])
+        elif p.get("salvado") and p.get("alBorde"):
+            dice.append("%dº en promedios, ya salvado" % p["pos"])
+    return {"zona": zona, "dice": dice}
 
 
 def _contexto_de_liga(lid):
@@ -9100,32 +9117,43 @@ def _contexto_de_liga(lid):
     zonas, promedios = {}, {}
     try:
         for z in (api_standings({}).get("zones") or []):
-            lider = (z["rows"][0]["pts"] if z.get("rows") else None)
-            for r in z["rows"]:
+            filas = z.get("rows") or []
+            lider = filas[0]["pts"] if filas else None
+            # Los puntos del octavo, que es la línea de los playoffs. Con
+            # eso se puede decir "a 3 de entrar" en vez de "por poco".
+            octavo = filas[7]["pts"] if len(filas) > 7 else None
+            for r in filas:
                 zonas[norm(r["team"]["name"])] = {
-                    "pos": r["pos"], "de": len(z["rows"]),
-                    "pts": r["pts"], "zona": z.get("name"), "lider": lider}
+                    "pos": r["pos"], "de": len(filas),
+                    "pts": r["pts"], "zona": z.get("name"),
+                    "lider": lider, "octavo": octavo}
     except Exception:
         pass
     if lid == "lpf":
         try:
             filas = api_promedios({}).get("rows") or []
-            # La tabla ya viene ordenada por promedio y numerada. Los dos
-            # últimos se van; los tres de arriba de ésos son los que
-            # miran la tabla todos los lunes.
+            # La tabla ya viene ordenada por promedio y numerada, y trae
+            # calculado cuántos puntos le faltan a cada uno para no poder
+            # ser alcanzado. Ese número es el que contesta la pregunta de
+            # verdad: no "está cerca", sino "necesita 7".
             n = len(filas)
             for r in filas:
                 pos = r.get("pos") or 0
                 promedios[norm(r["team"]["name"])] = {
                     "pos": pos, "de": n,
                     "desciende": n and pos > n - 2,
-                    "alBorde": n and n - 5 < pos <= n - 2}
+                    "alBorde": n and n - 8 < pos <= n,
+                    "necesita": r.get("necesita"),
+                    "salvado": r.get("salvado"),
+                    # Sigue en riesgo mientras alguno de abajo lo pueda
+                    # alcanzar, aunque hoy esté cómodo en la tabla.
+                    "enRiesgo": bool(r.get("riesgo"))}
         except Exception:
             pass
     return zonas, promedios
 
 
-def _jugador_a_seguir(equipo_id, liga, temporada, desde):
+def _jugador_a_seguir(equipo_id, canon, liga, temporada, desde):
     """
     A quién mirar de cada equipo.
 
@@ -9136,17 +9164,81 @@ def _jugador_a_seguir(equipo_id, liga, temporada, desde):
     """
     if not equipo_id:
         return None
+
+    # El dorsal y el puesto, para saber de quién estamos hablando: un
+    # nombre solo no alcanza cuando el que lee no sigue a ese club. Sale
+    # del plantel, que ya está guardado y no cuesta un pedido.
+    porNombre = {}
+    for j in (plantel_de(canon) if canon else []):
+        porNombre[norm(j.get("nombre") or "")] = j
+
+    def armar(g, porque):
+        f = porNombre.get(norm(g["jugador"])) or {}
+        return {"nombre": g["jugador"], "goles": g["goles"],
+                "partidos": g["partidos"], "porque": porque,
+                "n": f.get("n"), "puesto": f.get("puesto")}
+
     recientes = tablas.goleadores_de(equipo_id, liga, temporada, desde, 3)
     if recientes and recientes[0]["goles"]:
-        g = recientes[0]
-        return {"nombre": g["jugador"], "goles": g["goles"],
-                "partidos": g["partidos"], "porque": "en racha"}
+        return armar(recientes[0], "en racha")
     todos = tablas.goleadores_de(equipo_id, liga, temporada, None, 3)
     if todos and todos[0]["goles"]:
-        g = todos[0]
-        return {"nombre": g["jugador"], "goles": g["goles"],
-                "partidos": g["partidos"], "porque": "goleador del equipo"}
+        return armar(todos[0], "goleador del equipo")
     return None
+
+
+def _relato(p):
+    """
+    El párrafo de la previa: cómo llega cada uno, en dos o tres frases.
+
+    Se arma con lo que ya calculamos —la racha, el rendimiento, lo que se
+    juega y el historial— y NO se inventa nada: cada frase sale de un
+    número. Si de un equipo no sabemos nada, no aparece en el párrafo en
+    vez de recibir un elogio genérico.
+
+    Es texto armado, no escrito: dice lo que los datos dicen y se queda
+    callado donde no hay datos. Un "será un partido parejo" no informa a
+    nadie y encima suena a relleno, que es justo lo que una previa no
+    tiene que ser.
+    """
+    fr = []
+    hn = enmayus(p["home"].get("name") or "")
+    an = enmayus(p["away"].get("name") or "")
+    ren = p.get("rendimiento") or {}
+    for lado, nombre in (("home", hn), ("away", an)):
+        r = ren.get(lado)
+        viene = (p.get("vieneDe") or {}).get(lado)
+        sj = ((p.get("seJuega") or {}).get(lado) or {}).get("dice") or []
+        partes = []
+        if r and r.get("pj"):
+            partes.append("lleva %d en %d partidos y un promedio de %.2f "
+                          "goles por partido"
+                          % (3 * r["g"] + r["e"], r["pj"],
+                             r["gf"] / float(r["pj"])))
+        if viene:
+            partes.append(viene[0].lower() + viene[1:])
+        if not partes:
+            continue
+        frase = "%s %s" % (nombre, " y ".join(partes))
+        if sj:
+            frase += ". %s" % sj[0]
+        fr.append(frase + ".")
+    if p.get("dato"):
+        fr.append(p["dato"] + ".")
+    h = p.get("historial")
+    if h and h.get("pj"):
+        fr.append("En los %d cruces anteriores %s ganó %d, %s %d y "
+                  "empataron %d."
+                  % (h["pj"], hn, h["gano_a"], an, h["gano_b"], h["empates"]))
+    if p.get("clasico"):
+        fr.insert(0, "Es el %s." % p["clasico"])
+    return " ".join(fr)
+
+
+def enmayus(s):
+    """La primera letra de cada palabra. La pantalla hace lo mismo."""
+    return " ".join(w[:1].upper() + w[1:] if w else w
+                    for w in (s or "").split(" "))
 
 
 def _radar_equipo(rend, racha):
@@ -9231,8 +9323,8 @@ def api_previa(q):
                                dia=(g.get("start") or "")[:10]) or None
         rh = tablas.racha_de(ih, lid) if ih else []
         ra = tablas.racha_de(ia, lid) if ia else []
-        jh = _jugador_a_seguir(ih, lid, temporada, desde)
-        ja = _jugador_a_seguir(ia, lid, temporada, desde)
+        jh = _jugador_a_seguir(ih, ch, lid, temporada, desde)
+        ja = _jugador_a_seguir(ia, ca, lid, temporada, desde)
         for j, club in ((jh, ch), (ja, ca)):
             if j:
                 candidatos.append(dict(j, club=club, partido=g.get("id")))
@@ -9273,6 +9365,7 @@ def api_previa(q):
                       "away": _radar_equipo(rena, ra)},
             "aSeguir": {"home": jh, "away": ja},
         })
+        salida[-1]["relato"] = _relato(salida[-1])
     # El jugador de la fecha: el mejor de los elegidos partido por partido,
     # con la misma regla. Primero los que están en racha.
     candidatos.sort(key=lambda j: (j["porque"] != "en racha",

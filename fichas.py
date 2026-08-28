@@ -577,8 +577,11 @@ CLASICOS_PRIMERA = {
     "Belgrano": ("Talleres (C)", "Clásico cordobés"),
     "Instituto": ("Belgrano", "Clásico cordobés"),
     "Atlético Tucumán": ("San Martín Tucumán", "Clásico tucumano"),
-    "Godoy Cruz": ("Independiente Rivadavia", "Clásico mendocino"),
-    "Independiente Rivadavia": ("Godoy Cruz", "Clásico mendocino"),
+    # El clásico mendocino es Gimnasia contra Independiente Rivadavia, no
+    # Godoy Cruz contra Independiente Rivadavia: salió al verificar los
+    # historiales. El rival clásico de Godoy Cruz es Andes Talleres, que
+    # no juega Primera, así que Godoy Cruz queda sin clásico acá.
+    "Independiente Rivadavia": ("Gimnasia y Esgrima (M)", "Clásico mendocino"),
     "Gimnasia y Esgrima (M)": ("Independiente Rivadavia", "Clásico mendocino"),
     "Unión": ("Colón", "Clásico santafesino"),
     "Aldosivi": ("Alvarado", "Clásico marplatense"),

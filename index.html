@@ -523,6 +523,10 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .pv-hist .pie{display:flex;justify-content:space-between;margin-top:4px;
   font-size:10.5px;color:var(--txt3)}
 .pv-hist .pie b{color:var(--txt)}
+/* Qué incluye ese total y cómo vienen los últimos cruces. Va chiquito:
+   es la letra chica que hace que el número grande signifique algo. */
+.pv-hist .pie.chico{justify-content:center;gap:8px;margin-top:3px;
+  font-size:10px}
 
 /* El relato, adentro de cada partido. */
 .pv .relato{margin:12px 0 0;padding-top:11px;font-size:13px;line-height:1.6;
@@ -2115,18 +2119,32 @@ const App=(()=>{
        simplemente no aparecía nunca. */
     if(!h||!h.jugados) return '';
     const col=coloresDelHistorial(p)||{};
-    const an=(n,c)=>`<i style="width:${100*n/h.jugados}%${
+    const total=(p.historialCompleto||h).jugados||1;
+    const an=(n,c)=>`<i style="width:${100*n/total}%${
       c?';background:'+esc(c):''}"></i>`;
+    /* El total histórico, cuando lo tenemos cargado a mano.
+
+       La fuente devuelve quince cruces y nada más, así que "se cruzaron
+       15 veces" en un Superclásico es directamente falso. Cuando hay
+       total verificado, la barra muestra ÉSE y los quince quedan como
+       "los últimos". Cuando no, se dice que son los últimos y listo. */
+    const c=p.historialCompleto;
+    const usa=c||h;
     return `<div class="pv-hist">
-      <div class="lb">Se cruzaron ${h.jugados} ${
-        h.jugados===1?'vez':'veces'}</div>
-      <div class="barra">${an(h.gano,col.local)}${an(h.empates,'')}${
-        an(h.perdio,col.visita)}</div>
+      <div class="lb">${c
+        ? `Se enfrentaron ${c.jugados} veces desde ${c.desde}`
+        : `Los últimos ${h.jugados} ${h.jugados===1?'cruce':'cruces'}`}
+        ${c?`<span class="hist-nota" title="${esc(c.nota)}">ⓘ</span>`:''}</div>
+      <div class="barra">${an(usa.gano,col.local)}${an(usa.empates,'')}${
+        an(usa.perdio,col.visita)}</div>
       <div class="pie">
-        <span><b>${h.gano}</b> ${esc(enMayusculas(p.home.name))}</span>
-        <span><b>${h.empates}</b> ${h.empates===1?'empate':'empates'}</span>
-        <span><b>${h.perdio}</b> ${esc(enMayusculas(p.away.name))}</span>
-      </div></div>`;
+        <span><b>${usa.gano}</b> ${esc(enMayusculas(p.home.name))}</span>
+        <span><b>${usa.empates}</b> ${usa.empates===1?'empate':'empates'}</span>
+        <span><b>${usa.perdio}</b> ${esc(enMayusculas(p.away.name))}</span>
+      </div>
+      ${c?`<div class="pie chico">${esc(c.incluye)} · en los últimos ${
+        h.jugados}: ${h.gano}-${h.empates}-${h.perdio}</div>`:''}
+    </div>`;
   }
 
   const ICONO_SILBATO=`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">

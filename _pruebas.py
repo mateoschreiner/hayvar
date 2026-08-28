@@ -6848,6 +6848,77 @@ _pelado = server._relato({"home": {"name": "acassuso"},
 chequear("sin datos igual dice quién juega contra quién",
          "Acassuso" in _pelado and "Claypole" in _pelado
          and _pelado.endswith("."), _pelado)
+print("\n── el historial entre dos clubes ──")
+import historiales                                                # noqa: E402
+# La regla de siempre: los tres números tienen que sumar el total. Escribí
+# los diez de memoria y los diez estaban mal; éstos son los que sobrevivieron
+# a la verificación.
+for _par, _d in historiales.CLASICOS.items():
+    _suma = _d["ganoA"] + _d["empates"] + _d["ganoB"]
+    chequear("%s vs %s: los números suman el total" % _par,
+             _suma == _d["jugados"] or _d.get("noSuma"),
+             (_suma, _d["jugados"]))
+# El único que no suma es Huracán-San Lorenzo, y por un motivo documentado:
+# un partido del Apertura 1997 se les dio por perdido a los DOS. Si algún
+# día otro par aparece con `noSuma`, que sea una decisión y no un descuido.
+chequear("y el único que no suma es el que tiene su explicación",
+         [p for p, d in historiales.CLASICOS.items() if d.get("noSuma")]
+         == [("Huracán", "San Lorenzo")])
+chequear("y esa explicación está escrita",
+         "por perdido a los dos"
+         in historiales.CLASICOS[("Huracán", "San Lorenzo")]["nota"])
+# Los que no se pudieron confirmar NO se publican. Un historial inventado
+# se lee igual que uno verdadero, y ése es el problema.
+chequear("los dudosos están anotados y no publicados",
+         len(historiales.DUDOSOS) == 3
+         and not (set(historiales.DUDOSOS) & set(historiales.CLASICOS)),
+         sorted(historiales.DUDOSOS))
+chequear("y cada uno dice por qué",
+         all(len(v) > 80 for v in historiales.DUDOSOS.values()))
+# Pedirlo al revés da vuelta ganados y perdidos, y nada más.
+_ab = historiales.entre("Boca Juniors", "River Plate")
+_ba = historiales.entre("River Plate", "Boca Juniors")
+chequear("pedirlo al revés da vuelta los números",
+         _ab["gano"] == _ba["perdio"] == 94
+         and _ab["perdio"] == _ba["gano"] == 88
+         and _ab["empates"] == _ba["empates"] == 84
+         and _ab["jugados"] == _ba["jugados"] == 266, (_ab, _ba))
+chequear("y un par que no tenemos devuelve nada, no un cero",
+         historiales.entre("Platense", "Tigre") is None)
+# "Total oficial" no significa lo mismo en cada clásico: el rosarino y el
+# santafesino cuentan ligas regionales y el Superclásico no. Sin decirlo,
+# alguien compara 279 con 266 como si fueran la misma unidad.
+chequear("cada par dice qué incluye ese total",
+         all(d.get("incluye") and d.get("nota")
+             for d in historiales.CLASICOS.values()))
+chequear("y la pantalla lo muestra",
+         "esc(c.incluye)" in HTML and 'class="pie chico"' in HTML)
+# Los cruces recientes: quince y nada más, y por eso el total va aparte.
+chequear("los cruces se piden por gameId, no por los dos equipos",
+         'fetch("games/h2h", {"gameId": gid}' in _SRV)
+chequear("y los que todavía no se jugaron no son historial",
+         'if m.get("status") != "FIN":' in _SRV.split("def cruces_anteriores")[1]
+         [:1400])
+# Se guardan con su id de verdad: la clave primaria es la que evita que se
+# dupliquen. Y no pueden pisar lo que guardó el recolector del torneo.
+chequear("los cruces se guardan sin pisar lo del recolector",
+         "tablas.guardar(liga, None, list(porId.values()), False)" in _SRV)
+chequear("y el mismo cruce que viene por dos partidos se junta antes",
+         "porId[m[\"id\"]] = m" in _SRV)
+# Se guardan al abrir la previa: así el historial se llena solo, fecha a
+# fecha. Y va DESPUÉS de armar las tarjetas, porque lo que se guarda ahora
+# se ve recién la próxima vez: hacer esperar por eso no tiene sentido.
+chequear("los cruces se guardan al abrir la previa",
+         "_sin_reventar(lambda: guardar_cruces(salida, lid), None)" in _SRV)
+chequear("y después de armar las tarjetas, no antes",
+         _SRV.index('salida[-1]["relato"] = _relato')
+         < _SRV.index("guardar_cruces(salida, lid)"))
+# Y la pantalla: cuando hay total verificado se muestra ÉSE, no los quince.
+chequear("con total verificado la barra muestra el total, no los últimos",
+         "const usa=c||h;" in HTML
+         and "Se enfrentaron ${c.jugados} veces desde ${c.desde}" in HTML
+         and "Los últimos ${h.jugados}" in HTML)
+
 # El historial también en la pantalla principal, y en barra.
 chequear("el historial va en barra en la lista, no sólo en la ficha",
          "function histBarra(p)" in HTML and "${histBarra(p)}" in HTML)
@@ -6856,7 +6927,8 @@ chequear("el historial va en barra en la lista, no sólo en la ficha",
 # falso y la función devolvía vacío.
 chequear("y lee las claves que el servidor devuelve de verdad",
          "if(!h||!h.jugados) return '';" in HTML
-         and "an(h.gano,col.local)" in HTML and "an(h.perdio,col.visita)" in HTML
+         and "an(usa.gano,col.local)" in HTML
+         and "an(usa.perdio,col.visita)" in HTML
          and "h.gano_a" not in HTML and "h.gano_b" not in HTML)
 chequear("y el relato también",
          'h.get("jugados"), h.get("gano"), h.get("perdio")' in _SRV

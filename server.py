@@ -54,6 +54,7 @@ import almacen
 import escudos
 import fichas
 import historia
+import historiales
 import tablas
 import visitas
 import apifootball
@@ -9515,6 +9516,79 @@ def _radar_equipo(rend, racha):
     }
 
 
+def cruces_anteriores(gid):
+    """
+    Los cruces anteriores entre los dos equipos de un partido.
+
+    365scores los tiene, pero con dos trampas que costaron encontrar:
+
+      · La clave es `gameId`, no `competitors`. Pidiéndolo por los dos
+        equipos contesta 500.
+      · Devuelve **quince y nada más**. Probé nueve formas de pedir más
+        —count, limit, maxGames, pageSize, showAll…— y todas devuelven
+        quince. No es el historial completo: es el historial reciente.
+        Para Boca-River eso son cinco años y medio.
+
+    Lo bueno: mezcla competencias. En la misma lista vienen los cruces de
+    liga, los de la Copa de la Liga y los de Copa Argentina, que es como
+    se cuenta un historial de verdad.
+    """
+    if not gid:
+        return []
+    try:
+        d = fetch("games/h2h", {"gameId": gid}, ttl=86400)
+    except Exception:
+        return []
+    juegos = ((d.get("game") or {}).get("h2hGames")
+              or d.get("h2hGames") or [])
+    salida = []
+    for g in juegos:
+        try:
+            m = map_game(g)
+        except Exception:
+            continue
+        # Los que todavía no se jugaron no son historial.
+        if m.get("status") != "FIN":
+            continue
+        salida.append(m)
+    return salida
+
+
+def guardar_cruces(partidos, liga="lpf"):
+    """
+    Guarda los cruces anteriores de estos partidos.
+
+    Van a la misma tabla que el resto, con su id de verdad: la clave
+    primaria es la que evita que se dupliquen, y un cruce que ya
+    estuviera guardado por el recolector se actualiza en vez de repetirse.
+
+    Se piden en paralelo porque son quince pedidos por fecha y en fila
+    serían quince esperas. La respuesta se guarda un día: un historial no
+    cambia de un minuto al otro.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    ids = [p.get("liveId") for p in partidos if p.get("liveId")]
+    if not ids:
+        return {"pedidos": 0, "cruces": 0, "guardados": 0}
+    with ThreadPoolExecutor(max_workers=min(6, len(ids))) as pool:
+        listas = list(pool.map(cruces_anteriores, ids))
+    # El mismo cruce puede venir por dos partidos distintos de la fecha.
+    # Se junta por id antes de escribir para no mandarlo dos veces.
+    porId = {}
+    for lista in listas:
+        for m in lista:
+            porId[m["id"]] = m
+    guardados = 0
+    if porId:
+        # `principal=False`: esto es historial traído de costado y no puede
+        # pisar lo que guardó el recolector del torneo, que es la fuente
+        # buena para los partidos de esta temporada.
+        guardados = _sin_reventar(
+            lambda: tablas.guardar(liga, None, list(porId.values()), False), 0)
+    return {"pedidos": len(ids), "cruces": sum(len(x) for x in listas),
+            "guardados": guardados}
+
+
 def _quien_dirige(ids):
     """
     El árbitro y la TV de varios partidos, pedidos todos juntos.
@@ -9643,6 +9717,10 @@ def _api_previa(q):
         ia = tablas.equipo_id(ca, lid) if ca else None
         hist = historial_entre(ih, ia, excluir=g.get("id"),
                                dia=(g.get("start") or "")[:10]) or None
+        # Y el total histórico, que la fuente no da: son quince cruces y
+        # nada más. Esto es lo que permite decir "se enfrentaron 266
+        # veces" en vez de "quince".
+        completo = historiales.entre(ch, ca)
         rh = tablas.racha_de(ih, lid) if ih else []
         ra = tablas.racha_de(ia, lid) if ia else []
         jh = _jugador_a_seguir(ih, ch, lid, temporada, desde)
@@ -9681,6 +9759,7 @@ def _api_previa(q):
             "stage": g.get("stage") or "", "venue": g.get("venue") or "",
             "clasico": clasico,
             "historial": hist,
+            "historialCompleto": completo,
             "dato": _el_dato(hist, h.get("name"), a.get("name")),
             "racha": {"home": rh, "away": ra},
             "vieneDe": {"home": _racha_texto(rh), "away": _racha_texto(ra)},
@@ -9694,6 +9773,19 @@ def _api_previa(q):
             "aSeguir": {"home": jh, "away": ja},
         })
         salida[-1]["relato"] = _relato(salida[-1])
+    # Los cruces anteriores de esta fecha, guardados al pasar.
+    #
+    # Es lo que hace que el historial se vaya llenando solo: cada vez que
+    # alguien abre la previa, los quince cruces de cada partido quedan en
+    # la base. La fecha que viene trae otros quince, y así. La respuesta
+    # se cachea un día, así que abrir la previa diez veces no son diez
+    # pedidos.
+    #
+    # Va después de armar las tarjetas y no antes: lo que se guarda ahora
+    # se ve recién la próxima vez, y hacer esperar a la gente por un dato
+    # que todavía no puede usar no tiene sentido.
+    _sin_reventar(lambda: guardar_cruces(salida, lid), None)
+
     # El árbitro y la TV de todos, pedidos juntos: la previa se abre
     # entera y no hay nada que esperar a que alguien toque.
     dirigen = _quien_dirige([p["liveId"] for p in salida if p.get("liveId")])

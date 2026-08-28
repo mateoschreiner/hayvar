@@ -9673,18 +9673,32 @@ def bajar_historiales_de_fondo(partidos):
     cruces que se juegan, y de ahí en más no hay nada más que pedir.
     """
     pares = []
-    for p in partidos:
-        a = (p.get("home") or {}).get("canon")
-        b = (p.get("away") or {}).get("canon")
-        if a and b and historiales.id_de(a) and historiales.id_de(b) \
-                and not tablas.tiene_cruces(a, b):
-            pares.append((a, b))
+    try:
+        for p in partidos:
+            a = (p.get("home") or {}).get("canon")
+            b = (p.get("away") or {}).get("canon")
+            if a and b and historiales.id_de(a) and historiales.id_de(b) \
+                    and not tablas.tiene_cruces(a, b):
+                pares.append((a, b))
+    except Exception as e:
+        # Esto corre ANTES del hilo, así que su error no lo agarra el
+        # `try` de adentro. Es justo donde se rompía todo sin avisar.
+        _anotar(("la fecha", "entera"), estado="error",
+                detalle="%s: %s" % (type(e).__name__, e))
+        return 0
     if not pares:
         return 0
 
     def vuelta():
         for a, b in pares:
-            _sin_reventar(lambda x=a, y=b: bajar_historial(x, y), None)
+            try:
+                bajar_historial(a, b)
+            except Exception as e:
+                # Que reviente uno no puede frenar a los catorce que
+                # siguen, pero tampoco puede desaparecer sin dejar rastro:
+                # así se perdió la primera versión entera.
+                _anotar((a, b), estado="error",
+                        detalle="%s: %s" % (type(e).__name__, e))
             time.sleep(zerozero.PAUSA)
 
     threading.Thread(target=vuelta, daemon=True).start()
@@ -9723,17 +9737,28 @@ def api_cruces(q):
                              else "no se intentó")
 
     # Cuántos pares de la Liga Profesional tienen historial y cuántos no.
-    pares = []
+    #
+    # Sin `_sin_reventar`, y a propósito. La primera versión lo tenía y
+    # contestó "0 de 435" con toda seguridad mientras se tragaba, 435
+    # veces, el AttributeError que era la causa del problema. Un contador
+    # que no sabe distinguir "la tabla está vacía" de "la función no
+    # existe" no es un diagnóstico: es ruido con forma de dato.
+    #
+    # Acá el error se cuenta, no se esconde: es lo único que este
+    # endpoint existe para mostrar.
     clubes = sorted(set(ZONA_A) | set(ZONA_B))
     con = sin = 0
-    for i, x in enumerate(clubes):
-        for y in clubes[i + 1:]:
-            n = _sin_reventar(lambda: tablas.tiene_cruces(x, y), 0)
-            if n:
-                con += 1
-            else:
-                sin += 1
-    return {
+    falla = None
+    try:
+        for i, x in enumerate(clubes):
+            for y in clubes[i + 1:]:
+                if tablas.tiene_cruces(x, y):
+                    con += 1
+                else:
+                    sin += 1
+    except Exception as e:
+        falla = "%s: %s" % (type(e).__name__, e)
+    salida = {
         "diario": list(reversed(_CRUCES_DIARIO)),
         "hecho": hecho,
         "pares": {"con": con, "sin": sin, "total": con + sin},
@@ -9741,6 +9766,11 @@ def api_cruces(q):
                             if historiales.id_de(c) is None),
         "pidiendo": sorted(" - ".join(x) for x in _CRUCES_PEDIDOS),
     }
+    if falla:
+        salida["noSePudoContar"] = falla
+        salida["probable"] = ("Falta subir tablas.py: es donde vive la "
+                              "tabla de cruces y sus funciones.")
+    return salida
 
 
 def _desde_cruces(filas, local):

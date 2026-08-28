@@ -165,6 +165,35 @@ CREATE TABLE IF NOT EXISTS estadisticas (
     PRIMARY KEY (partido, jugador, clave)
 );
 CREATE INDEX IF NOT EXISTS ix_est_jugador ON estadisticas(jugador, clave);
+
+-- Los cruces viejos entre dos clubes, de la fuente de historial.
+--
+-- VAN EN SU PROPIA TABLA Y NO EN `partidos`, y es la decisión más
+-- importante de acá. Los identificadores de las dos fuentes son números
+-- distintos que arrancan en rangos parecidos: meterlos en la misma tabla
+-- es cuestión de tiempo hasta que el partido 4633349 de una sea el
+-- 4633349 de la otra y uno pise al otro. Un choque así no se nota: se
+-- nota el día que alguien lee un resultado que no fue.
+--
+-- Además son datos de otra naturaleza: acá no hay goleadores, ni
+-- formaciones, ni minuto a minuto. Es una lista de resultados.
+--
+-- La clave es el par de equipos más la fecha. Dos clubes no juegan dos
+-- veces el mismo día, así que eso identifica un cruce sin depender de que
+-- la fuente traiga su número, que a veces no viene.
+CREATE TABLE IF NOT EXISTS cruces (
+    a        TEXT    NOT NULL,          -- club, normalizado y ordenado
+    b        TEXT    NOT NULL,
+    dia      TEXT    NOT NULL,
+    local    TEXT,
+    visita   TEXT,
+    gh       INTEGER,
+    ga       INTEGER,
+    torneo   TEXT,
+    fuente   TEXT,
+    PRIMARY KEY (a, b, dia)
+);
+CREATE INDEX IF NOT EXISTS ix_cruces_par ON cruces(a, b, dia DESC);
 """
 
 _CAMPOS = ("id", "liga", "comp", "principal", "temporada", "ronda", "etapa",
@@ -473,6 +502,59 @@ def mejores_de(equipo, liga=None, temporada=None, desde=None, minimo=3,
             " ORDER BY AVG(f.puntaje) DESC, COUNT(*) DESC LIMIT ?")
     par += [minimo, tope]
     return _filas(sql, par)
+
+
+def _par(a, b):
+    """
+    El par de clubes, siempre en el mismo orden.
+
+    Sin esto, "Boca contra River" y "River contra Boca" serían dos filas
+    distintas y el historial se guardaría dos veces, mitad en cada una.
+    """
+    x, y = (a or "").strip(), (b or "").strip()
+    return (x, y) if x <= y else (y, x)
+
+
+def guardar_cruces(a, b, partidos, fuente="zerozero"):
+    """
+    Guarda los cruces entre dos clubes. Devuelve cuántos quedaron.
+
+    Volver a pasar la misma lista no duplica nada: la clave es el par más
+    el día, y dos clubes no juegan dos veces el mismo día.
+    """
+    pa, pb = _par(a, b)
+    filas = [(pa, pb, m["dia"], m.get("local"), m.get("visita"),
+              m.get("gh"), m.get("ga"), m.get("torneo") or "", fuente)
+             for m in partidos if m.get("dia")]
+    if not filas:
+        return 0
+    try:
+        with almacen.conexion() as c:
+            c.executemany(
+                "INSERT INTO cruces (a,b,dia,local,visita,gh,ga,torneo,fuente) "
+                "VALUES (?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(a,b,dia) DO UPDATE SET "
+                "  local=excluded.local, visita=excluded.visita, "
+                "  gh=excluded.gh, ga=excluded.ga, "
+                "  torneo=excluded.torneo, fuente=excluded.fuente", filas)
+            c.commit()
+        return len(filas)
+    except sqlite3.Error:
+        return 0
+
+
+def cruces_de(a, b, tope=200):
+    """Los cruces guardados entre dos clubes, del más nuevo al más viejo."""
+    pa, pb = _par(a, b)
+    return _filas("SELECT * FROM cruces WHERE a=? AND b=? "
+                  " ORDER BY dia DESC LIMIT ?", (pa, pb, tope))
+
+
+def tiene_cruces(a, b):
+    """Cuántos cruces hay guardados de este par. Cero si nunca se bajó."""
+    pa, pb = _par(a, b)
+    f = _filas("SELECT COUNT(*) AS n FROM cruces WHERE a=? AND b=?", (pa, pb))
+    return f[0]["n"] if f else 0
 
 
 def liga_de(gid):

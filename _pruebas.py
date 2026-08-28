@@ -7236,6 +7236,26 @@ try:
              and _d[2]["guardados"] == 1, _d[2])
     chequear("cada renglón lleva la hora, o no sirve para nada",
              all(f.get("cuando") for f in _d))
+    # El contador de pares NO puede taparse el error. La primera versión
+    # lo envolvía en `_sin_reventar` y contestó "0 de 435" con toda
+    # seguridad mientras se tragaba, 435 veces, el AttributeError que era
+    # la causa: faltaba subir tablas.py. Un diagnóstico que confunde
+    # "vacío" con "roto" manda a buscar el problema al lugar equivocado,
+    # que es peor que no tener diagnóstico.
+    def _explota(a, b):
+        raise AttributeError("module 'tablas' has no attribute 'tiene_cruces'")
+
+    _tablas.tiene_cruces = _explota
+    _r = server.api_cruces({})
+    chequear("si no se puede contar los pares, se dice",
+             "noSePudoContar" in _r and "AttributeError" in _r["noSePudoContar"],
+             _r.get("noSePudoContar"))
+    chequear("y no se informa un cero que parece un dato",
+             _r["pares"]["total"] == 0 and "probable" in _r, _r["pares"])
+    _tablas.tiene_cruces = lambda a, b: 0
+    chequear("y cuando sí se puede contar, no sobra el aviso",
+             "noSePudoContar" not in server.api_cruces({}))
+
     # El diario no puede crecer para siempre: vive en memoria.
     for _ in range(80):
         server._anotar(("A", "B"), estado="ok")

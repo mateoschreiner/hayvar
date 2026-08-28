@@ -321,8 +321,8 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
   white-space:nowrap}
 .hist-cuenta span:nth-child(2){text-align:center}
 .hist-cuenta span:last-child{text-align:right}
-.hist-p{display:grid;grid-template-columns:40px 1fr 34px 1fr;align-items:center;
-  gap:6px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
+.hist-p{display:grid;grid-template-columns:54px 1fr 34px 1fr;align-items:center;
+  gap:8px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
   border-top:1px solid var(--line)}
 .hist-p .cuando{color:var(--txt3);font-size:10px;white-space:nowrap;
   font-variant-numeric:tabular-nums}
@@ -528,6 +528,13 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
    es la letra chica que hace que el número grande signifique algo. */
 .pv-hist .pie.chico{justify-content:center;gap:8px;margin-top:3px;
   font-size:10px}
+/* Los cruces, plegados. La barra se mira de reojo; la lista se lee. */
+.pv-cruces{margin-top:8px}
+.pv-cruces summary{cursor:pointer;font-size:11px;color:var(--txt3);
+  list-style:none;text-align:center;padding:3px 0}
+.pv-cruces summary::-webkit-details-marker{display:none}
+.pv-cruces summary:hover{color:var(--acc,#e01e2b)}
+.pv-cruces[open] summary{color:var(--txt2);font-weight:700}
 
 /* El relato, adentro de cada partido. */
 .pv .relato{margin:12px 0 0;padding-top:11px;font-size:13px;line-height:1.6;
@@ -2145,6 +2152,26 @@ const App=(()=>{
       </div>
       ${c?`<div class="pie chico">${esc(c.incluye)} · en los últimos ${
         h.jugados}: ${h.gano}-${h.empates}-${h.perdio}</div>`:''}
+      ${/* Y los cruces, plegados. La barra contesta "cómo viene la mano";
+           la lista contesta "qué pasó", y son dos preguntas distintas:
+           una se mira de reojo y la otra se lee. */''}
+      ${(h.partidos&&h.partidos.length)?`<details class="pv-cruces"
+          onclick="event.stopPropagation()">
+        <summary>Ver los ${h.partidos.length} cruces</summary>
+        ${h.partidos.map(x=>{
+          const r=rutaPartido({liveId:x.id, home:{canon:x.local},
+                               away:{canon:x.visita}});
+          const g=x.gh>x.ga?'l':x.gh<x.ga?'v':'';
+          return `<${r?'a':'div'} class="hist-p"${r
+              ? ` href="${esc(Rutas.url(r))}" data-ir`:''}>
+            <span class="cuando" title="${esc(fechaLarga(x.dia))}">${
+              esc(diaCorto(x.dia))}</span>
+            <span class="eq ${g==='l'?'gano':''}">${esc(x.local)}</span>
+            <b>${x.gh}-${x.ga}</b>
+            <span class="eq der ${g==='v'?'gano':''}">${esc(x.visita)}</span>
+          </${r?'a':'div'}>`;
+        }).join('')}
+      </details>`:''}
     </div>`;
   }
 

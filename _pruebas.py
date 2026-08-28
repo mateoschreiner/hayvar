@@ -6941,6 +6941,30 @@ chequear("el torneo de un cruce viejo sale de la tabla",
          "def liga_de(gid)" in _TBL
          and "SELECT liga FROM partidos WHERE id=?" in _TBL
          and "tablas.liga_de(gid)" in _SRV)
+# Y el NOMBRE del torneo tiene que ser el de ese partido, no el de ahora.
+# La etiqueta de la configuración es fija —"Clausura 2026"— y para un
+# cruce de 2021 decía eso, que es sencillamente falso.
+chequear("el nombre del torneo es el del partido, no el de ahora",
+         "def _torneo_del_partido(liga_id, out)" in _SRV
+         and 'out["torneo"] = _torneo_del_partido(liga_id, out)' in _SRV)
+_lpf = server.LIGAS["lpf"]["torneo"]
+chequear("un partido de este año lleva el nombre del torneo",
+         server._torneo_del_partido("lpf", {"start": "2026-08-30T20:00"})
+         == _lpf, _lpf)
+chequear("y uno viejo lleva su año y no el torneo de ahora",
+         server._torneo_del_partido("lpf", {"start": "2021-05-02T18:40"})
+         == "2021")
+chequear("y sin fecha no inventa nada",
+         server._torneo_del_partido("lpf", {}) == _lpf)
+# La fecha se montaba sobre el nombre del local: la columna era de 40px y
+# "31/03/26" a 10px no entra.
+chequear("la columna de la fecha entra sin pisar el nombre",
+         "grid-template-columns:54px 1fr 34px 1fr" in HTML)
+# Y el historial de la previa se puede abrir.
+chequear("el historial de la previa se despliega",
+         'class="pv-cruces"' in HTML
+         and "Ver los ${h.partidos.length} cruces" in HTML
+         and 'onclick="event.stopPropagation()"' in HTML)
 chequear("y el mismo cruce que viene por dos partidos se junta antes",
          "porId[m[\"id\"]] = m" in _SRV)
 # Se guardan al abrir la previa: así el historial se llena solo, fecha a

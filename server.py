@@ -2158,6 +2158,32 @@ def _num(v):
         return 0.0
 
 
+def _torneo_del_partido(liga_id, out):
+    """
+    Cómo se llama el torneo de ESTE partido.
+
+    Para los de ahora, la etiqueta del torneo en curso: "Clausura 2026".
+    Para los viejos —que aparecen desde que el historial trae cruces de
+    otras temporadas— esa etiqueta es falsa, así que va el año que sale
+    de la fecha del propio partido.
+
+    Se prefiere quedarse corto antes que decir algo que no es: "Liga
+    Profesional 2021" es menos preciso que "Clausura 2021", pero es
+    cierto, y averiguar cómo se llamaba cada torneo de cada año es un
+    problema aparte.
+    """
+    cfg = LIGAS.get(liga_id) or {}
+    etiqueta = cfg.get("torneo") or ""
+    cuando = (out.get("start") or "")[:4]
+    if not cuando.isdigit():
+        return etiqueta
+    # ¿La etiqueta ya habla de este año? Entonces es la del torneo actual
+    # y sirve tal cual.
+    if cuando in etiqueta:
+        return etiqueta
+    return cuando
+
+
 def api_match(q):
     """
     Detalle de un partido: goles con nombre, tarjetas, cambios, estadísticas
@@ -2420,7 +2446,15 @@ def api_match(q):
     # de posiciones poner al costado.
     out["liga"] = liga_id
     out["ligaNombre"] = (LIGAS.get(liga_id) or {}).get("nombre") or ""
-    out["torneo"] = (LIGAS.get(liga_id) or {}).get("torneo") or ""
+    # El torneo, pero el DE ESTE PARTIDO y no el que se está jugando.
+    #
+    # `LIGAS[...]["torneo"]` es una etiqueta fija —"Clausura 2026"— y está
+    # bien para el fixture, donde todo es de ahora. Pero desde que el
+    # historial trae cruces viejos, un partido de 2021 se abría diciendo
+    # "Clausura 2026 · Fecha 12", que es sencillamente falso. Cuando la
+    # temporada del partido no es la actual, se dice el año y nada más:
+    # es menos preciso que el nombre del torneo, pero es verdad.
+    out["torneo"] = _torneo_del_partido(liga_id, out)
     # En una copa la fecha no dice nada: lo que ubica al partido es la
     # instancia. Un Boca–Flamengo es de octavos, no de la "fecha 2".
     out["etapa"] = etapa_de_copa(liga_id, out.get("stage"), out.get("round"),

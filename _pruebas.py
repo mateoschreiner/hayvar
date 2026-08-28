@@ -113,7 +113,7 @@ chequear("y Argentinos también",
 chequear("el escudo va enlazado y sólo en el frente",
          "function camisetaSVG(k0, atras, escudo)" in HTML
          and "${!atras && escudo && !k.sinEscudo ?" in HTML
-         and "caraDe(kits[nom],false,d.escudo)" in HTML)
+         and "camisetaSVG(kits[nom],false,d.escudo)" in HTML)
 # Hoy no la usa ninguna —la tercera de Argentinos terminó llevándolo—
 # pero la puerta queda abierta para la camiseta que lleve un escudo
 # especial que no podamos enlazar.
@@ -2352,42 +2352,13 @@ chequear("y ahí no hay ni código ni configuración",
 # se normalizan a algo que no está en la lista y rebotan igual.
 chequear("y se compara el nombre entero, no el final",
          'path.lstrip("/") in ESTATICOS' in _SRV)
+# Se probó servir camisetas fotografiadas y se volvió al dibujo: la foto
+# quedaba peor en la ficha. Que no quede la puerta abierta sin nadie que
+# la use, que es una superficie de ataque a cambio de nada.
+chequear("y no quedó abierta la puerta de las camisetas fotografiadas",
+         "/img/camisetas/" not in _SRV and "fotokit" not in HTML
+         and "k.foto" not in HTML)
 
-# Una camiseta puede venir fotografiada en vez de dibujada, cuando el club
-# nos dio permiso para usar sus imágenes. El resto se sigue dibujando: es
-# lo que permite tenerlas todas sin depender de que nadie nos autorice.
-chequear("una camiseta puede ir con foto en vez de dibujada",
-         "const caraDe=(k,atras,escudo)=>k.foto" in HTML
-         and 'class="fotokit"' in HTML
-         and "aldosivi-tercera-frente.png" in _SRV)
-# La dibujada queda entera abajo de la foto: sacando el bloque "foto"
-# vuelve sola. La foto no la reemplaza, se le pone encima.
-_ter = server.CLUBES_INFO["Aldosivi"]["camisetas"]["tercera"]
-chequear("y el dibujo de esa camiseta sigue guardado abajo",
-         _ter.get("foto") and _ter.get("agua") and _ter.get("leyenda")
-         and _ter.get("base"), sorted(_ter))
-chequear("y lleva el crédito de quién cedió la imagen",
-         "Imágenes cedidas por el club" in _SRV
-         and "kits[nom].foto.credito" in HTML)
-# Las fotos van por su propia puerta y no por el servidor de archivos, que
-# está cerrado: sólo se llega a un .png de esa carpeta y con el nombre
-# pelado, sin barras ni `..`.
-chequear("las fotos tienen su propia puerta, acotada",
-         'path.startswith("/img/camisetas/")' in _SRV
-         and 're.fullmatch(r"[a-z0-9\\-]+\\.png", nombre)' in _SRV
-         and '".." in nombre' in _SRV)
-# Y va ANTES del proxy de escudos, que también atiende /img/ y parte la
-# dirección en cuatro: /img/camisetas/x.png tiene tres y le daba 404.
-chequear("y va antes del proxy de escudos, que si no se la come",
-         _SRV.index('path.startswith("/img/camisetas/")')
-         < _SRV.index('if path.startswith("/img/"):'))
-# Y que los archivos estén de verdad: sin ellos la camiseta queda rota y
-# nadie se entera hasta que alguien abre la ficha de Aldosivi.
-for _f in ("aldosivi-tercera-frente.png", "aldosivi-tercera-dorso.png"):
-    _p = os.path.join(AQUI, "img", "camisetas", _f)
-    chequear("la foto %s está y no pesa de más" % _f,
-             os.path.isfile(_p) and os.path.getsize(_p) < 200 * 1024,
-             os.path.getsize(_p) if os.path.isfile(_p) else "no está")
 
 chequear("el control va antes de resolver la ruta, no después",
          _SRV.index("if path in PRIVADAS and not con_llave(q, self.headers):")

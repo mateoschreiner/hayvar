@@ -238,6 +238,67 @@ def sin_resumenes(aqui):
     return [f for f in aqui if (f["sub"], f["torneo"]) not in resumen]
 
 
+# ── Las temporadas sueltas ───────────────────────────────────────────────
+# La página de la década está congelada en diciembre de 2021, así que de
+# 2022 en adelante hay que ir a la página de cada temporada. Vienen con
+# otra forma y hay que leerlas aparte.
+#
+# El detalle que importa: cada torneo trae DOS tablas. La de `#.Full name`
+# es el torneo entero, con los playoffs incluidos; las de `#.Short name`
+# son las zonas, o sea la fase de grupos sola. Sumar las dos es contar los
+# mismos partidos dos veces —es el mismo error del Inicial y el Final, con
+# otra ropa—. Se toma la primera y se corta al llegar a la segunda.
+CABECERA_LARGA = re.compile(r"^\s*#\.\s*Full name", re.I)
+CABECERA_CORTA = re.compile(r"^\s*#\.\s*Short name", re.I)
+
+# Qué torneos de esas páginas cuentan. Va escrito a mano y no adivinado:
+# un torneo a mitad de camino sumaría partidos incompletos y la tabla
+# histórica cambiaría cada fin de semana. Se agrega cuando termina.
+# 2022, 2023 y 2024 NO van acá aunque estén bajados: la página de la
+# década los tiene y leerlos de los dos lados los contaría dos veces.
+# Están guardados igual, por si algún día hace falta comprobar uno.
+TEMPORADAS = [
+    ("rsssf-arg2025.txt", ["Torneo Apertura de la LPF",
+                           "Torneo Clausura de la LPF"]),
+    # De 2026 va sólo el Apertura: el Clausura se está jugando y sumar un
+    # torneo a mitad de camino haría que la tabla histórica cambie cada
+    # fin de semana.
+    ("rsssf-arg2026.txt", ["Torneo Apertura de la LPF"]),
+]
+
+
+def leer_temporada(archivo, quiero):
+    """Las tablas de una página de temporada suelta."""
+    texto = open(os.path.join(AQUI, archivo), encoding="utf-8",
+                 errors="replace").read()
+    filas = []
+    for enc, temporada, lineas in bloques(texto):
+        if not any(q.lower() in enc.lower() for q in quiero):
+            continue
+        dentro = False
+        for ln in lineas:
+            if CABECERA_LARGA.match(ln):
+                dentro = True
+                continue
+            if CABECERA_CORTA.match(ln):
+                break                    # empiezan las zonas: hasta acá
+            if not dentro:
+                continue
+            m = FILA.match(ln)
+            if not m:
+                continue
+            pj, g, e, p = (int(m.group(k)) for k in ("pj", "g", "e", "p"))
+            if pj != g + e + p:
+                continue
+            filas.append({
+                "club": limpio(m.group("club")), "pj": pj, "g": g, "e": e,
+                "p": p, "gf": int(m.group("gf")), "gc": int(m.group("gc")),
+                "ciudad": "", "sub": 0,
+                "torneo": enc, "temporada": temporada, "golesDice": None,
+            })
+    return filas
+
+
 ARCHIVOS = ["rsssf-1930s.txt", "rsssf-1940s.txt", "rsssf-1950s.txt",
             "rsssf-1960s.txt", "rsssf-1970s.txt", "rsssf-1980s.txt",
             "rsssf-1990s.txt", "rsssf-2000s.txt", "rsssf-2010s.txt",
@@ -250,6 +311,10 @@ def todo():
         f, s = leer(a)
         filas += f
         saltados += s
+    # Las páginas de la década llegan hasta 2021 —están congeladas—, así
+    # que de ahí en adelante se leen las de cada temporada.
+    for a, quiero in TEMPORADAS:
+        filas += leer_temporada(a, quiero)
     return filas, saltados
 
 

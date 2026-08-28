@@ -220,6 +220,49 @@ POR_NOMBRE = {
     "argentino": "Argentino (Firmat)",
 }
 
+# Y los nombres legales completos, que es como los escriben las páginas de
+# temporada suelta de 2025 en adelante: "Club Atlético River Plate Asoc.
+# Civil". Van escritos uno por uno en vez de recortados con reglas —sacar
+# "Club Atlético" del principio y "Asociación Civil" del final— porque las
+# reglas fallan justo donde importa: "Deportivo Riestra" y "Club Deportivo
+# Godoy Cruz" empiezan igual y sólo uno lleva el "Deportivo" en el nombre.
+LEGALES = {
+    "club atletico river plate asoc civil": "River Plate",
+    "club atletico boca juniors asociacion civil": "Boca Juniors",
+    "club atletico san lorenzo de almagro": "San Lorenzo",
+    "club atletico independiente": "Independiente",
+    "racing club asociacion civil": "Racing",
+    "club atletico velez sarsfield asociacion civil": "Vélez Sarsfield",
+    "club estudiantes de la plata": "Estudiantes (LP)",
+    "club de gimnasia y esgrima la plata": "Gimnasia y Esgrima (LP)",
+    "club de gimnasia y esgrima lp": "Gimnasia y Esgrima (LP)",
+    "club atletico newell s old boys": "Newell's Old Boys",
+    "club atletico rosario central": "Rosario Central",
+    "asociacion atletica argentinos juniors": "Argentinos Juniors",
+    "club atletico lanus": "Lanús",
+    "club atletico huracan": "Huracán",
+    "club atletico banfield sociedad civil": "Banfield",
+    "club atletico platense asociacion civil": "Platense",
+    "club atletico tigre sociedad civil": "Tigre",
+    "club atletico union": "Unión",
+    "club atletico talleres": "Talleres (C)",
+    "club atletico belgrano": "Belgrano",
+    "instituto atletico central cordoba": "Instituto",
+    "club atletico tucuman": "Atlético Tucumán",
+    "club atletico tucuman soc civil": "Atlético Tucumán",
+    "club atletico central cordoba soc civil": "Central Córdoba (SdE)",
+    "club deportivo godoy cruz antonio tomba": "Godoy Cruz",
+    "club sportivo independiente rivadavia": "Independiente Rivadavia",
+    "club social y deportivo defensa y justicia": "Defensa y Justicia",
+    "deportivo riestra asociacion de fomento barrio colon": "Deportivo Riestra",
+    "club atletico barracas central": "Barracas Central",
+    "club atletico aldosivi": "Aldosivi",
+    "club atletico sarmiento": "Sarmiento (J)",
+    "club atletico san martin": "San Martín San Juan",
+    "asociacion atletica estudiantes": "Estudiantes (RC)",
+    "club atletico gimnasia y esgrima": "Gimnasia y Esgrima (M)",
+}
+
 # Los nombres pelados que NO se pueden resolver sin la ciudad. Si uno de
 # éstos llega sin ciudad, se anota como sin resolver en vez de asignarlo
 # al que suene parecido: mezclar dos clubes es peor que dejar un hueco.
@@ -273,6 +316,11 @@ POR_TEMPORADA = {
 
 def resolver(fila):
     """De qué club es esta fila. None si no se puede saber."""
+    # El nombre legal completo va primero: es el más específico y el que
+    # no se puede confundir con nada.
+    v = busca(LEGALES, clave(fila["club"]))
+    if v:
+        return v
     n = clave(leer.sin_siglas(fila["club"]))
     for (t, nn), v in POR_TEMPORADA.items():
         if t == fila["temporada"] and parecido(clave(nn), n):

@@ -642,6 +642,11 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   line-height:1.5}
 
 /* El clásico rival, con su escudo cuando lo tenemos */
+/* La camiseta fotografiada ocupa el mismo lugar que la dibujada. */
+.fotokit{width:100%;height:100%;object-fit:contain;display:block}
+.kit .lb .cred{font-size:9.5px;color:var(--txt3);font-weight:400;
+  margin-top:2px}
+
 .cl-clasico{display:inline-flex;align-items:center;gap:7px;min-width:0}
 .cl-clasico img{width:19px;height:19px;object-fit:contain;flex:none}
 
@@ -4316,12 +4321,25 @@ const App=(()=>{
     });
 
     const kits=i.camisetas||{};
+    /* Las camisetas: dibujadas, salvo la que tenga foto.
+
+       La foto va cuando el club nos dio permiso para usar sus imágenes.
+       El resto se dibuja, que es lo que permite tenerlas todas sin
+       depender de que nadie nos autorice nada. Las dos giran igual: lo
+       único que cambia es qué hay de cada lado. */
+    const caraDe=(k,atras,escudo)=>k.foto
+      ? `<img class="fotokit" src="${esc(atras?k.foto.dorso:k.foto.frente)}"
+           alt="" loading="lazy">`
+      : camisetaSVG(k,atras,escudo);
     let kitHtml=Object.keys(kits).map((nom,idx)=>`
       <div class="kit"><div class="escena" onclick="App.girarKit(${idx})">
         <div class="pivote" id="kit${idx}">
-          <div class="cara">${camisetaSVG(kits[nom],false,d.escudo)}</div>
-          <div class="cara atras">${camisetaSVG(kits[nom],true)}</div>
-        </div></div><div class="lb">${esc(nom)}</div></div>`).join('');
+          <div class="cara">${caraDe(kits[nom],false,d.escudo)}</div>
+          <div class="cara atras">${caraDe(kits[nom],true)}</div>
+        </div></div><div class="lb">${esc(nom)}${
+          kits[nom].foto&&kits[nom].foto.credito
+            ? `<div class="cred">${esc(kits[nom].foto.credito)}</div>`:''
+        }</div></div>`).join('');
     /* La camiseta provisoria, para los clubes que todavía no tienen la
        suya dibujada.
 

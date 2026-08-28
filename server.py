@@ -8526,7 +8526,19 @@ _OTROS_CLUBES = {
         # Estaba en verde petróleo tirando a celeste, y la de verdad es
         # verde: el mismo verde del club, no el del mar. Corregido con las
         # fotos oficiales de la camiseta, adelante y atrás.
+        # Ésta va con la foto oficial y no dibujada. Es la única así, y es
+        # a propósito: el club dio permiso para usar sus imágenes de esta
+        # camiseta. El resto se sigue dibujando, que es lo que permite
+        # tenerlas todas sin depender de que nadie nos autorice nada.
+        #
+        # PARA VOLVER AL DIBUJO: borrá el bloque "foto" de acá abajo y ya
+        # está. Todo lo que sigue —el patrón, los colores, la trama del
+        # agua y la leyenda de la espalda— es el dibujo entero y quedó
+        # intacto: la foto no lo reemplaza, se le pone encima.
         "tercera": {
+            "foto": {"frente": "/img/camisetas/aldosivi-tercera-frente.png",
+                     "dorso": "/img/camisetas/aldosivi-tercera-dorso.png",
+                     "credito": "Imágenes cedidas por el club"},
             "patron": "liso",
             "base": "#cfe9d6", "raya": "#cfe9d6", "detalle": "#136b41",
             "manga": "#cfe9d6", "cuello": "#136b41", "puno": "#136b41",
@@ -8535,7 +8547,6 @@ _OTROS_CLUBES = {
                      "claro": "#d6ecdc", "semilla": 7, "grano": 0.05,
                      "corte": 0.57, "octavas": 2, "punto": 1.2,
                      "franja": "0 .35 1 .35 0"},
-            # Atrás, abajo del cuello, en blanco.
             "leyenda": {"texto": "LOS PRINCIPIOS", "letra": "sistema",
                         "color": "#f4f8f5", "tam": 4, "y": 42,
                         "ancho": 28, "peso": 700, "espacio": 0.35},
@@ -9694,8 +9705,15 @@ def _api_previa(q):
         p["tv"] = d.get("tv") or []
     # El jugador de la fecha: el mejor de los elegidos partido por partido,
     # con la misma regla. Primero los que están en racha.
-    candidatos.sort(key=lambda j: (j["porque"] != "en racha",
-                                   -j["goles"], j["partidos"]))
+    # El de la fecha, con la misma regla que el de cada partido: primero
+    # el mejor puntaje y, donde no hay puntajes, el que más convirtió.
+    #
+    # Acá vivía el `KeyError: 'porque'`: al cambiar el criterio dejé de
+    # escribir ese campo pero el orden lo seguía leyendo. Toda la pantalla
+    # se caía por una clave que ya no existía.
+    candidatos.sort(key=lambda j: (-(j.get("puntaje") or 0),
+                                   -(j.get("goles") or 0),
+                                   j.get("partidos") or 0))
     # Y el equipo de la fecha: el que mejor viene, medido en puntos por
     # partido, y con la racha como desempate.
     equipos.sort(key=lambda e: (-(e["pts"] / (e["pj"] or 1)), -e["racha"]))
@@ -11194,6 +11212,37 @@ class Handler(SimpleHTTPRequestHandler):
         q = parse_qs(parsed.query)
 
         # escudos servidos desde acá: /img/competidor/<version>/<id>
+        # Las camisetas que están fotografiadas y no dibujadas.
+        #
+        # Van por su propia puerta y no por el servidor de archivos, que
+        # está cerrado: la lista de lo que se sirve tal cual es corta y no
+        # se abre para meter imágenes. Acá sólo se llega a un .png de ESA
+        # carpeta, con el nombre pelado.
+        if path.startswith("/img/camisetas/"):
+            nombre = path[len("/img/camisetas/"):]
+            if (not re.fullmatch(r"[a-z0-9\-]+\.png", nombre)
+                    or ".." in nombre):
+                self.send_error(404)
+                return
+            camino = os.path.join(HERE, "img", "camisetas", nombre)
+            if not os.path.isfile(camino):
+                self.send_error(404)
+                return
+            try:
+                datos = open(camino, "rb").read()
+            except OSError:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            # Una camiseta no cambia: se guarda un año.
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.send_header("Content-Length", str(len(datos)))
+            self.end_headers()
+            self._ultimo_tamano = len(datos)
+            self.wfile.write(datos)
+            return
+
         if path.startswith("/img/"):
             partes = path.strip("/").split("/")
             if len(partes) != 4:

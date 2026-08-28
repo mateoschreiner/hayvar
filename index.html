@@ -4463,8 +4463,8 @@ const App=(()=>{
             const gano=m.gh>m.ga?'l':m.gh<m.ga?'v':'';
             return `<${ruta?'a':'div'} class="hist-p"${ruta
                 ? ` href="${esc(Rutas.url(ruta))}" data-ir`:''}>
-              <span class="cuando">${esc((m.dia||'').split('-').reverse()
-                                          .slice(0,2).join('/'))}</span>
+              <span class="cuando" title="${esc(fechaLarga(m.dia))}">${
+                esc(diaCorto(m.dia))}</span>
               <span class="eq ${gano==='l'?'gano':''}">${esc(m.local)}</span>
               <b>${m.gh}-${m.ga}</b>
               <span class="eq der ${gano==='v'?'gano':''}">${esc(m.visita)}</span>

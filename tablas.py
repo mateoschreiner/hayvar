@@ -475,6 +475,22 @@ def mejores_de(equipo, liga=None, temporada=None, desde=None, minimo=3,
     return _filas(sql, par)
 
 
+def liga_de(gid):
+    """
+    De qué torneo es un partido, leyéndolo de la tabla.
+
+    Es la respuesta directa: la fila del partido dice su torneo. Existe
+    porque la otra forma de averiguarlo —buscar las claves que deja el
+    recolector— sólo funciona para los partidos que el recolector tocó, y
+    los cruces viejos que trae el historial no pasaron por ahí. En la
+    ficha de uno de esos, el torneo salía en blanco.
+    """
+    if not gid:
+        return ""
+    f = _filas("SELECT liga FROM partidos WHERE id=? LIMIT 1", (gid,))
+    return f[0]["liga"] if f else ""
+
+
 def temporadas(liga):
     """Qué temporadas hay guardadas de un torneo, y cuántos partidos de cada."""
     return _filas(

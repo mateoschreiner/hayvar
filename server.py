@@ -10924,7 +10924,13 @@ def liga_de_partido(gid):
             return lid
         if almacen.leer("tv:%s:%s" % (lid, gid))[0] is not None:
             return lid
-    return ""
+    # Y si no pasó por el recolector, la fila del partido lo dice.
+    #
+    # Ésa es la respuesta directa y va última sólo porque las claves de
+    # arriba están en memoria. Hace falta para los cruces viejos que trae
+    # el historial: no pasaron por el recolector, así que no tienen
+    # ninguna de esas claves y el torneo salía en blanco.
+    return _sin_reventar(lambda: tablas.liga_de(gid), "") or ""
 
 
 def que_venia_a_ver(ruta):

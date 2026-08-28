@@ -6928,6 +6928,19 @@ chequear("el historial muestra el año",
 chequear("y la fecha entera queda en el title",
          "const fechaLarga=iso=>{" in HTML
          and 'title="${esc(fechaLarga(p.dia))}"' in HTML)
+# El mismo recorte estaba en DOS pintores: el historial de la ficha del
+# partido y el del club. Ahora los dos usan la misma función, así que no
+# queda un tercer lugar donde repetirlo.
+chequear("y el historial del club también muestra el año",
+         "esc(diaCorto(m.dia))" in HTML
+         and HTML.count(".split('-').reverse()") == 0)
+# El torneo de un cruce viejo salía en blanco: `liga_de_partido` busca las
+# claves que deja el recolector, y un partido que trajo el historial no
+# pasó por ahí. La fila del partido sí lo sabe.
+chequear("el torneo de un cruce viejo sale de la tabla",
+         "def liga_de(gid)" in _TBL
+         and "SELECT liga FROM partidos WHERE id=?" in _TBL
+         and "tablas.liga_de(gid)" in _SRV)
 chequear("y el mismo cruce que viene por dos partidos se junta antes",
          "porId[m[\"id\"]] = m" in _SRV)
 # Se guardan al abrir la previa: así el historial se llena solo, fecha a

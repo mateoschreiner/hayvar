@@ -479,8 +479,8 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .pv-radar polygon.a,.pv-radar polygon.b{fill-opacity:.22;stroke-width:1.6;
   stroke-linejoin:round}
 .pv-radar .ejes{display:none}
-.pv-radar .ejes text{font-size:7px;font-weight:700;fill:var(--txt2)}
-.pv-radar .ejes .v{font-size:6px;font-weight:400;fill:var(--txt3)}
+.pv-radar .ejes text{font-size:7.5px;font-weight:800;fill:var(--txt2)}
+.pv-radar .ejes .v{font-size:7px;font-weight:600;fill:var(--txt3)}
 .pv-radar.grande{width:230px}
 .pv-radar.grande .ejes{display:block}
 @media(max-width:560px){
@@ -541,6 +541,10 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   align-items:start;gap:10px}
 .pv-lado{display:flex;flex-direction:column;align-items:center;
   text-align:center;gap:5px;min-width:0}
+/* La fila se estira a lo más alto y el "a seguir" se pega abajo, así los
+   dos quedan a la misma altura aunque uno tenga más texto que el otro. */
+.pv-top{align-items:stretch}
+.pv-lado .pv-jug{margin-top:auto}
 .pv-lado img{width:34px;height:34px;object-fit:contain}
 .pv-lado .nm{font-weight:700;font-size:13px;line-height:1.2}
 .pv-lado .viene{font-size:10.5px;color:var(--txt3);line-height:1.3}
@@ -548,7 +552,7 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   white-space:nowrap}
 .bolas{display:flex;gap:3px}
 .bo{width:8px;height:8px;border-radius:50%;display:block}
-.bo.G{background:#12b76a}.bo.E{background:#c9ccd4}.bo.P{background:#e5484d}
+.bo.G{background:#12b76a}.bo.E{background:#eab308}.bo.P{background:#e5484d}
 /* La frase que hace que una previa valga. Sin dato, no se dibuja. */
 .pv-dato{margin-top:10px;padding:8px 10px;background:var(--bg);
   border-radius:8px;font-size:12.5px;line-height:1.45;font-weight:600}
@@ -574,7 +578,17 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .pv-jug .dd{font-size:10px;color:var(--txt3);text-align:center}
 .pv-pie{margin-top:8px;font-size:11px;color:var(--txt3)}
 .pv-elegido{padding:12px 16px 16px}
-.pv-elegido .nm{font-size:16px;font-weight:800}
+.pv-elegido .nm{font-size:16px;font-weight:800;display:flex;
+  align-items:center;gap:7px}
+.pv-elegido .nm .dor{font-size:11px;background:var(--nav);color:#fff;
+  border-radius:5px;padding:1px 6px;flex:none}
+.pv-elegido .pst{font-size:11.5px;color:var(--txt3);margin-top:2px}
+/* La zona, una sola vez y en el medio. El interzonal se marca distinto:
+   en un torneo de dos zonas es el partido que rompe la rutina. */
+.pv-cuando .zona{margin-left:7px;font-size:9.5px;font-weight:800;
+  letter-spacing:.05em;background:var(--bg);color:var(--txt3);
+  border-radius:5px;padding:1px 6px}
+.pv-cuando .zona.inter{background:rgba(224,30,43,.10);color:#b3121d}
 .pv-elegido .club{display:flex;align-items:center;gap:6px;margin-top:5px;
   font-size:12.5px;color:var(--txt2)}
 .pv-elegido .dd{margin-top:6px;font-size:13px;font-weight:700}
@@ -1934,16 +1948,28 @@ const App=(()=>{
     };
     const forma=o=>ejes.map((k,i)=>punto(o[k],i).map(x=>x.toFixed(1)).join(','))
       .join(' ');
+    /* Los rótulos, uno por punta.
+
+       El anclaje NO es siempre al medio: con cinco puntas, "Contundencia"
+       y "Efectividad" caen abajo a los costados y centrados se pisaban
+       una a la otra. Cada rótulo se ancla según de qué lado del gráfico
+       está —a la izquierda termina, a la derecha empieza— y el nombre y
+       los números van en dos renglones para que ninguno sea tan ancho. */
     const rotulo=(k,i)=>{
-      const [x,y]=punto(118,i);
-      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}"
-        text-anchor="middle" dominant-baseline="middle">${esc(k)}
-        <tspan class="v">${a[k]}-${b[k]}</tspan></text>`;
+      const [x,y]=punto(126,i);
+      const dx=x-cx;
+      const anc=Math.abs(dx)<6?'middle':(dx<0?'end':'start');
+      const dy=(y-cy)<-6?-4:((y-cy)>6?4:0);
+      return `<text x="${x.toFixed(1)}" y="${(y+dy).toFixed(1)}"
+        text-anchor="${anc}">
+        <tspan x="${x.toFixed(1)}" dy="0">${esc(k)}</tspan>
+        <tspan class="v" x="${x.toFixed(1)}" dy="8">${a[k]} · ${b[k]}</tspan>
+      </text>`;
     };
     return `<div class="pv-radar${grande?' grande':''}" id="rad${id}"
         onclick="event.stopPropagation();App.verRadar('${id}')"
         title="Tocá para agrandar">
-      <svg viewBox="-30 -30 160 160" aria-hidden="true">
+      <svg viewBox="-46 -34 192 168" aria-hidden="true">
         ${[100,66,33].map(r=>`<polygon class="red" points="${
           ejes.map((k,i)=>punto(r,i).map(x=>x.toFixed(1)).join(',')).join(' ')
         }"/>`).join('')}
@@ -1954,6 +1980,16 @@ const App=(()=>{
         <g class="ejes">${ejes.map(rotulo).join('')}</g>
       </svg>
     </div>`;
+  }
+
+  /* De qué zona es el partido. Si los dos equipos son de la misma, la
+     zona; si no, es un interzonal, que en un torneo de dos zonas es el
+     partido que rompe la rutina y merece decirse. */
+  function zonaDelPartido(p){
+    const a=((p.seJuega||{}).home||{}).zona, b=((p.seJuega||{}).away||{}).zona;
+    if(!a&&!b) return '';
+    if(a&&b&&a!==b) return '<span class="zona inter">Interzonal</span>';
+    return `<span class="zona">${esc(a||b)}</span>`;
   }
 
   const bolita=r=>`<i class="bo ${r.como}" title="${esc(r.rival)} ${r.gf}-${r.gc}"></i>`;
@@ -2063,8 +2099,9 @@ const App=(()=>{
       ${extra.length?`<div class="pv-extra">${extra.join('')}</div>`
                     :'<div class="pv-extra"><span class="vacio2">Todavía no '
                      +'se sabe quién dirige ni por dónde se ve.</span></div>'}
-      <a class="pv-ir" href="${esc(Rutas.url({t:'partido', id}))}" data-ir
-         onclick="event.stopPropagation()">Ir al partido ›</a>`;
+      ${(()=>{const r=p&&rutaPartido({liveId:p.id,home:p.home,away:p.away});
+        return r?`<a class="pv-ir" href="${esc(Rutas.url(r))}" data-ir
+          onclick="event.stopPropagation()">Ir al partido ›</a>`:'';})()}`;
   }
 
   // Lo último que contestó la previa, para poder armar la ficha de un
@@ -2078,6 +2115,11 @@ const App=(()=>{
     catch(e){ return status('err','No se pudo cargar: '+esc(e.message)); }
     if(d.error) return status('err',esc(d.error));
     previaDatos=d;
+    /* La caja de la pantalla tiene `overflow:hidden`, y eso anula el
+       `position:sticky` de todo lo que tenga adentro. Es el mismo motivo
+       por el que la ficha del club se saca la caja. */
+    const cajaP=main.parentElement;
+    if(cajaP) cajaP.classList.add('sin-caja');
     const ps=d.partidos||[];
     if(!ps.length){
       main.innerHTML=`<div class="globo"><div class="vacio">
@@ -2087,7 +2129,6 @@ const App=(()=>{
     const lado=(e,r,vd,sj,j)=>`<div class="pv-lado">
       ${e&&e.logo?`<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
       <span class="nm">${esc(enMayusculas(e&&e.name||''))}</span>
-      ${sj&&sj.zona?`<span class="zona">${esc(sj.zona)}</span>`:''}
       ${r&&r.length?`<span class="bolas">${r.slice().reverse().map(bolita).join('')}</span>`:''}
       ${vd?`<span class="viene">${esc(vd)}</span>`:''}
       ${(sj&&sj.dice&&sj.dice.length)?`<span class="juega">${sj.dice.map(x=>
@@ -2103,7 +2144,12 @@ const App=(()=>{
       ${ps.map(p=>`<div class="pv${p.clasico?' clasico':''}" id="pv${p.id}"
           onclick="App.abrirPrevia('${p.id}')">
         ${p.clasico?`<div class="pv-et">${esc(p.clasico)}</div>`:''}
-        <div class="pv-cuando">${esc(cuandoJuega(p.start))}</div>
+        <div class="pv-cuando">${esc(cuandoJuega(p.start))}
+          ${/* La zona va una sola vez y en el medio: los dos equipos son
+               de la misma salvo en el interzonal, y repetirla dos veces
+               es ruido. Cuando NO coinciden, eso es justamente el dato. */''}
+          ${zonaDelPartido(p)}
+        </div>
         <div class="pv-top">
           ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
                  (p.seJuega||{}).home,(p.aSeguir||{}).home)}
@@ -2129,7 +2175,10 @@ const App=(()=>{
       ${d.delaFecha?`<div class="cl-sec">El jugador de la fecha</div>
       <div class="pv-elegido">
         <a href="${esc(Rutas.url(rutaJugador(d.delaFecha.nombre)))}" data-ir>
-          <span class="nm">${esc(d.delaFecha.nombre)}</span></a>
+          <span class="nm">${d.delaFecha.n!=null
+            ? `<b class="dor">${d.delaFecha.n}</b>`:''}${
+            esc(d.delaFecha.nombre)}</span></a>
+        ${d.delaFecha.puesto?`<div class="pst">${esc(d.delaFecha.puesto)}</div>`:''}
         <div class="club">${escudoHist(d.delaFecha.club)}
           ${esc(enMayusculas(d.delaFecha.club||''))}</div>
         <div class="dd">${d.delaFecha.goles}

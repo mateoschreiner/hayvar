@@ -6694,33 +6694,100 @@ chequear("y van con su dibujito cada uno",
 # Si el partido se cierra mientras el detalle viajaba, no se pinta encima.
 chequear("y si lo cerraste mientras cargaba, no se pinta",
          "if(!previaAbierta[id]) return;" in HTML)
-# El párrafo: se arma con números, no se inventa.
+# El párrafo. No es un resumen de los datos leído en voz alta —eso fue la
+# primera versión y se leía como un informe— sino lo que se espera del
+# partido: qué partido es, cómo llega cada uno, qué tiene en juego y a
+# quién mirar. Cada frase sigue saliendo de un número, pero elige UNA idea
+# por equipo en vez de enumerar todas.
 _rel = server._relato({
     "home": {"name": "racing"}, "away": {"name": "independiente"},
-    "rendimiento": {"home": {"pj": 10, "g": 6, "e": 2, "p": 2,
-                             "gf": 18, "gc": 8}, "away": None},
-    "vieneDe": {"home": "Viene de 3 triunfos seguidos", "away": ""},
-    "seJuega": {"home": {"dice": ["1º de 15 con 30 puntos"]},
-                "away": {"dice": []}},
+    "rendimiento": {"home": {"pj": 10, "g": 7, "e": 2, "p": 1,
+                             "gf": 20, "gc": 6}, "away": None},
+    "racha": {"home": [{"como": "G"}] * 3, "away": [{"como": "P"}] * 3},
+    "seJuega": {"home": {"dice": ["1º de 15 con 30 puntos", "Puntero"]},
+                "away": {"dice": ["Necesita 7 puntos para estar salvo"]}},
     "dato": "Independiente no le gana a Racing hace 7 partidos",
     "historial": {"pj": 10, "gano_a": 4, "gano_b": 3, "empates": 3},
-    "clasico": "Clásico de Avellaneda"})
-chequear("el relato arranca por el clásico y usa los números",
-         _rel.startswith("Es el Clásico de Avellaneda.")
-         and "20 en 10 partidos" in _rel
-         and "no le gana" in _rel and "cruces anteriores" in _rel, _rel)
-# Del equipo del que no sabemos nada, no se dice nada: sin esto salía un
-# elogio genérico, que es exactamente lo que una previa no tiene que ser.
-chequear("y del equipo sin datos no dice nada",
-         "Independiente lleva" not in _rel, _rel)
-chequear("sin nada que contar, el párrafo queda vacío",
-         server._relato({"home": {"name": "a"}, "away": {"name": "b"},
-                         "rendimiento": {}, "vieneDe": {}, "seJuega": {},
-                         "dato": "", "historial": None,
-                         "clasico": ""}) == "")
+    "clasico": "Clásico de Avellaneda",
+    "aSeguir": {"home": {"nombre": "Maravilla Martínez", "goles": 4,
+                         "porque": "en racha"}, "away": None}})
+chequear("el relato anuncia el clásico como clásico",
+         _rel.startswith("Racing y Independiente juegan el Clásico "
+                         "de Avellaneda."), _rel)
+chequear("y dice cómo llega cada uno y qué se juega",
+         "El local llega lanzado, con 3 triunfos al hilo, como puntero."
+         in _rel
+         and "El visitante viene golpeado: 3 derrotas seguidas, peleando "
+             "por la permanencia." in _rel, _rel)
+chequear("y cierra con el antecedente y con a quién mirar",
+         "no le gana a Racing hace 7 partidos." in _rel
+         and "Ojo con Maravilla Martínez, con 4 goles en el último mes."
+             in _rel, _rel)
+# Elige una idea por equipo, no las enumera todas: la posición y el
+# promedio de goles están en la tarjeta, no hacen falta en el párrafo.
+chequear("y no repite los números que ya están arriba",
+         "promedio de" not in _rel and "1º de 15" not in _rel, _rel)
+# Un partido del que no sabemos nada igual se anuncia: quién juega contra
+# quién es un dato, y sin eso el párrafo quedaría en blanco.
+_pelado = server._relato({"home": {"name": "acassuso"},
+                          "away": {"name": "claypole"},
+                          "rendimiento": {}, "racha": {}, "seJuega": {},
+                          "dato": "", "historial": None, "clasico": "",
+                          "aSeguir": {}})
+chequear("sin datos igual dice quién juega contra quién",
+         _pelado == "Acassuso recibe a Claypole.", _pelado)
 # El historial también en la pantalla principal, y en barra.
 chequear("el historial va en barra en la lista, no sólo en la ficha",
          "function histBarra(p)" in HTML and "${histBarra(p)}" in HTML)
+
+# ── Lo que se rompió mirándolo en la pantalla ────────────────────────────
+# El encabezado no quedaba fijo: la caja de la pantalla tiene
+# `overflow:hidden`, y eso anula el `position:sticky` de todo lo que tenga
+# adentro. Es el mismo motivo por el que la ficha del club se saca la caja.
+chequear("la previa se saca la caja, que le anulaba el sticky",
+         "if(cajaP) cajaP.classList.add('sin-caja');" in HTML
+         and ".card.sin-caja{" in HTML
+         and "overflow:visible" in HTML.split(".card.sin-caja{")[1][:120])
+# "Ir al partido" daba 404: la dirección de un partido no es sólo el id,
+# lleva el slug de los dos equipos.
+chequear("el enlace al partido se arma con la ruta de verdad",
+         "rutaPartido({liveId:p.id,home:p.home,away:p.away})" in HTML
+         and "{t:'partido', id})" not in HTML)
+# El radar salía siempre azul y rojo porque la previa no mandaba los
+# colores de cada club. En un gráfico comparativo eso es justo lo inútil.
+chequear("la previa manda los colores de cada club",
+         'lado["colores"] = list(c) if c else None' in _SRV.split(
+             "def api_previa")[1])
+# El empate, amarillo: gris no se lee como resultado, se lee como "no hay
+# dato".
+chequear("el empate es amarillo y no gris",
+         ".bo.E{background:#eab308}" in HTML)
+# Los dos "a seguir" a la misma altura aunque uno tenga más texto.
+chequear("los dos a seguir quedan a la misma altura",
+         ".pv-top{align-items:stretch}" in HTML
+         and ".pv-lado .pv-jug{margin-top:auto}" in HTML)
+# La zona, una sola vez y en el medio. Y el interzonal, dicho como tal.
+chequear("la zona va una sola vez, abajo de la fecha",
+         "function zonaDelPartido(p)" in HTML
+         and "${zonaDelPartido(p)}" in HTML
+         and 'class="zona inter">Interzonal' in HTML)
+# Y el dorsal también en el panel de la derecha, que se había quedado sin.
+chequear("el jugador de la fecha también lleva su dorsal",
+         'd.delaFecha.n!=null' in HTML and '.pv-elegido .nm .dor{' in HTML)
+# "A 0 puntos de los playoffs" parecía un error de cuenta y escondía el
+# dato que de verdad decide: la diferencia de gol.
+_zon2 = {server.norm("Unión"): {"pos": 10, "de": 15, "pts": 7, "dif": -1,
+                                "lider": 13, "octavo": 7, "octavoDif": 3,
+                                "zona": "Zona A"}}
+chequear("igualado en puntos con el octavo se dice por diferencia de gol",
+         "Igualado en puntos con el octavo, a 4 de gol"
+         in server._que_se_juega("Unión", _zon2, {})["dice"],
+         server._que_se_juega("Unión", _zon2, {})["dice"])
+# Los rótulos del radar no se pisan: cada uno se ancla según de qué lado
+# está, y el nombre y los números van en renglones distintos.
+chequear("los rótulos del radar no se pisan entre sí",
+         "const anc=Math.abs(dx)<6?'middle':(dx<0?'end':'start');" in HTML
+         and 'class="v" x="${x.toFixed(1)}" dy="8"' in HTML)
 
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)

@@ -9079,16 +9079,28 @@ def _que_se_juega(canon, zonas, promedios):
         # diferencia entre informar y rellenar.
         octavo = fila.get("octavo")
         if pos <= 8:
-            if octavo is not None and pos > 1:
+            if octavo is not None and pos > 1 and pts > octavo:
                 dice.append("Entra a los playoffs por %d punto%s"
-                            % (pts - octavo, "" if pts - octavo == 1 else "s")
-                            if pts > octavo else "Entra a los playoffs")
+                            % (pts - octavo, "" if pts - octavo == 1 else "s"))
             else:
                 dice.append("Entra a los playoffs")
         elif octavo is not None:
             falta = octavo - pts
-            dice.append("A %d punto%s de los playoffs"
-                        % (falta, "" if falta == 1 else "s"))
+            if falta > 0:
+                dice.append("A %d punto%s de los playoffs"
+                            % (falta, "" if falta == 1 else "s"))
+            else:
+                # Mismos puntos que el octavo: lo que los separa es la
+                # diferencia de gol. Decir "a 0 puntos" no informa nada
+                # —parece un error de cuenta— y encima esconde el dato
+                # que de verdad decide.
+                dg = fila.get("dif")
+                od = fila.get("octavoDif")
+                if dg is not None and od is not None and od > dg:
+                    dice.append("Igualado en puntos con el octavo, a %d "
+                                "de gol" % (od - dg))
+                else:
+                    dice.append("Igualado en puntos con el octavo")
     p = promedios.get(norm(canon or ""))
     if p:
         if p.get("desciende"):
@@ -9122,11 +9134,14 @@ def _contexto_de_liga(lid):
             # Los puntos del octavo, que es la línea de los playoffs. Con
             # eso se puede decir "a 3 de entrar" en vez de "por poco".
             octavo = filas[7]["pts"] if len(filas) > 7 else None
+            octavoDif = filas[7].get("dif") if len(filas) > 7 else None
             for r in filas:
                 zonas[norm(r["team"]["name"])] = {
                     "pos": r["pos"], "de": len(filas),
-                    "pts": r["pts"], "zona": z.get("name"),
-                    "lider": lider, "octavo": octavo}
+                    "pts": r["pts"], "dif": r.get("dif"),
+                    "zona": z.get("name"),
+                    "lider": lider, "octavo": octavo,
+                    "octavoDif": octavoDif}
     except Exception:
         pass
     if lid == "lpf":
@@ -9201,37 +9216,97 @@ def _relato(p):
     nadie y encima suena a relleno, que es justo lo que una previa no
     tiene que ser.
     """
-    fr = []
     hn = enmayus(p["home"].get("name") or "")
     an = enmayus(p["away"].get("name") or "")
     ren = p.get("rendimiento") or {}
+    zon = {k: ((p.get("seJuega") or {}).get(k) or {}) for k in ("home", "away")}
+
+    def como_viene(lado):
+        """Una sola idea por equipo: la que más lo describe hoy."""
+        r = ren.get(lado) or {}
+        racha = (p.get("racha") or {}).get(lado) or []
+        seguidas, como = 0, (racha[0]["como"] if racha else None)
+        for x in racha:
+            if x["como"] != como:
+                break
+            seguidas += 1
+        if como == "G" and seguidas >= 3:
+            return "llega lanzado, con %d triunfos al hilo" % seguidas
+        if como == "P" and seguidas >= 3:
+            return "viene golpeado: %d derrotas seguidas" % seguidas
+        if como == "G" and seguidas == 2:
+            return "encadenó dos triunfos"
+        if r.get("pj"):
+            media = (3 * r["g"] + r["e"]) / float(r["pj"])
+            if media >= 2.0:
+                return "es de lo mejor del torneo"
+            if media <= 0.9:
+                return "no encuentra el rumbo"
+        if como == "G":
+            return "viene de ganar"
+        if como == "P":
+            return "viene de perder"
+        if como == "E":
+            return "viene de empatar"
+        return ""
+
+    def apuro(lado):
+        """Qué tiene en juego, dicho como se dice."""
+        dice = zon[lado].get("dice") or []
+        for x in dice:
+            if "descenso" in x:
+                return "con el descenso encima"
+            if x.startswith("Necesita"):
+                return "peleando por la permanencia"
+            if x == "Puntero":
+                return "como puntero"
+            if "de los playoffs" in x and x.startswith("A "):
+                return "obligado a sumar para meterse en los playoffs"
+            if "Entra a los playoffs" in x:
+                return "adentro de los playoffs"
+        return ""
+
+    fr = []
+    # La entrada: qué partido es. Un clásico se anuncia como clásico.
+    if p.get("clasico"):
+        fr.append("%s y %s juegan el %s." % (hn, an, p["clasico"]))
+    else:
+        fr.append("%s recibe a %s." % (hn, an))
+    # Cómo llega cada uno, en una frase por equipo y con lo que se juega.
     for lado, nombre in (("home", hn), ("away", an)):
-        r = ren.get(lado)
-        viene = (p.get("vieneDe") or {}).get(lado)
-        sj = ((p.get("seJuega") or {}).get(lado) or {}).get("dice") or []
-        partes = []
-        if r and r.get("pj"):
-            partes.append("lleva %d en %d partidos y un promedio de %.2f "
-                          "goles por partido"
-                          % (3 * r["g"] + r["e"], r["pj"],
-                             r["gf"] / float(r["pj"])))
-        if viene:
-            partes.append(viene[0].lower() + viene[1:])
-        if not partes:
-            continue
-        frase = "%s %s" % (nombre, " y ".join(partes))
-        if sj:
-            frase += ". %s" % sj[0]
-        fr.append(frase + ".")
+        cv, ap = como_viene(lado), apuro(lado)
+        if cv and ap:
+            fr.append(("El local %s, %s." if lado == "home"
+                       else "El visitante %s, %s.") % (cv, ap))
+        elif cv:
+            fr.append("%s %s." % (nombre, cv))
+        elif ap:
+            fr.append("%s llega %s." % (nombre, ap))
+    # El antecedente, que es lo que le da peso al partido.
     if p.get("dato"):
         fr.append(p["dato"] + ".")
-    h = p.get("historial")
-    if h and h.get("pj"):
-        fr.append("En los %d cruces anteriores %s ganó %d, %s %d y "
-                  "empataron %d."
-                  % (h["pj"], hn, h["gano_a"], an, h["gano_b"], h["empates"]))
-    if p.get("clasico"):
-        fr.insert(0, "Es el %s." % p["clasico"])
+    else:
+        h = p.get("historial")
+        if h and h.get("pj") and h["pj"] >= 3:
+            if h["gano_a"] > h["gano_b"]:
+                fr.append("El historial favorece a %s, que ganó %d de los "
+                          "%d cruces." % (hn, h["gano_a"], h["pj"]))
+            elif h["gano_b"] > h["gano_a"]:
+                fr.append("El historial favorece a %s, que ganó %d de los "
+                          "%d cruces." % (an, h["gano_b"], h["pj"]))
+            else:
+                fr.append("El historial está parejo: %d y %d en %d cruces."
+                          % (h["gano_a"], h["gano_b"], h["pj"]))
+    # Y a quién mirar, que es con lo que uno se queda.
+    ver = []
+    for lado in ("home", "away"):
+        j = (p.get("aSeguir") or {}).get(lado)
+        if j and j.get("porque") == "en racha":
+            ver.append("%s, con %d %s en el último mes"
+                       % (j["nombre"], j["goles"],
+                          "gol" if j["goles"] == 1 else "goles"))
+    if ver:
+        fr.append("Ojo con %s." % " y ".join(ver))
     return " ".join(fr)
 
 
@@ -9315,8 +9390,16 @@ def api_previa(q):
 
     salida, candidatos, equipos = [], [], []
     for g in dela:
-        h, a = g.get("home") or {}, g.get("away") or {}
+        h, a = dict(g.get("home") or {}), dict(g.get("away") or {})
         ch, ca = h.get("canon"), a.get("canon")
+        # Los colores de cada club, para que el radar se dibuje con ellos.
+        # Sin esto los dos equipos salían azul y rojo siempre, que en un
+        # gráfico comparativo es justo lo que no sirve.
+        for lado in (h, a):
+            c = _sin_reventar(
+                lambda n=(lado.get("canon") or lado.get("name") or ""),
+                e=lado.get("logo"): colores_de_club(n, escudo=e))
+            lado["colores"] = list(c) if c else None
         ih = tablas.equipo_id(ch, lid) if ch else None
         ia = tablas.equipo_id(ca, lid) if ca else None
         hist = historial_entre(ih, ia, excluir=g.get("id"),

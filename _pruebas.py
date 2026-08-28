@@ -7189,6 +7189,39 @@ chequear("y una respuesta vacía se distingue de una que falló",
          zerozero.bajar(lambda u: "", 1, 2, 2020, 2026, pausa=0)[2][0]
          == "respuesta vacía")
 
+# ── El reloj de "lo que viene" ──────────────────────────────────────────
+#
+# Se calculaba una sola vez, al dibujar. Con la página abierta veinte
+# minutos seguía diciendo "en 9 min" con el partido ya empezado. Un número
+# que se presenta como cuenta regresiva y no baja es peor que una hora
+# fija: la hora fija por lo menos nunca miente.
+chequear("los partidos que vienen quedan marcados para el reloj",
+         'data-falta="${esc(m.start)}"' in HTML)
+chequear("hay un solo reloj para toda la página",
+         "if(relojCuenta) return;" in HTML
+         and HTML.count("relojCuenta = setInterval") == 1)
+chequear("y se enciende al dibujar la portada",
+         "arrancarLosRelojes();" in HTML)
+# Cada diez segundos y no cada uno: lo que se muestra son minutos.
+chequear("late cada diez segundos, no cada uno", "}, 10000);" in HTML)
+# Con la pestaña de fondo no corre —no hay nadie mirando— pero al volver
+# se pone al día sin esperar la próxima vuelta.
+chequear("no corre con la pestaña de fondo",
+         "if(!document.hidden) moverLosRelojes();" in HTML)
+chequear("y al volver a la pestaña se pone al día",
+         "visibilitychange" in HTML
+         and HTML.count("if(!document.hidden) moverLosRelojes();") == 2)
+# Sólo escribe el que cambió: si no, son cinco escrituras cada diez
+# segundos para dejar todo igual.
+chequear("y sólo reescribe el que cambió",
+         "if(el.textContent !== dice) el.textContent = dice;" in HTML)
+# El reloj busca en el documento en vez de guardarse los elementos, y por
+# eso no hace falta apagarlo al cambiar de pantalla: si no hay ninguno, no
+# hace nada. Es lo que evita el temporizador colgado apuntando a algo que
+# ya no existe.
+chequear("busca en el documento, así que no queda colgado de nada",
+         "document.querySelectorAll('[data-falta]')" in HTML)
+
 # ── El tope acorta la lista, no la cuenta ───────────────────────────────
 #
 # La barra resume todos los cruces y abajo se muestran cinco: una lista de

@@ -4860,6 +4860,49 @@ const App=(()=>{
     return hhmm(start);
   }
 
+  /* ── Que el "en 9 min" se mueva solo ─────────────────────────────────
+
+     Antes se calculaba una sola vez, al dibujar. Si dejabas la página
+     abierta veinte minutos, seguía diciendo "en 9 min" cuando el partido
+     ya había empezado. Un número que se presenta como una cuenta regresiva
+     y no baja es peor que una hora fija: la hora fija por lo menos nunca
+     miente.
+
+     Un solo reloj para toda la página y no uno por partido. Cada tanto
+     busca los que están marcados y les reescribe el texto; si no hay
+     ninguno —porque estás en otra pantalla— no hace nada y no cuesta.
+     Por eso tampoco hay que apagarlo al cambiar de sección: no queda
+     ningún temporizador colgado apuntando a algo que ya no existe, que es
+     de donde salen las pérdidas de memoria en este tipo de cosas.
+
+     Cada diez segundos, no cada uno: lo que se muestra son minutos, así
+     que un segundo sería noventa y nueve vueltas de más por cada cambio
+     visible. Y con la pestaña de fondo no corre, que ahí no hay nadie
+     mirando. */
+  let relojCuenta = null;
+
+  function moverLosRelojes(){
+    const ahora = Date.now();
+    document.querySelectorAll('[data-falta]').forEach(el => {
+      const dice = faltaPara(el.dataset.falta, ahora);
+      /* Sólo se escribe si cambió: sin esto son cinco escrituras al DOM
+         cada diez segundos para dejar todo igual. */
+      if(el.textContent !== dice) el.textContent = dice;
+    });
+  }
+
+  function arrancarLosRelojes(){
+    if(relojCuenta) return;              // uno solo, aunque se llame mil veces
+    relojCuenta = setInterval(() => {
+      if(!document.hidden) moverLosRelojes();
+    }, 10000);
+    /* Al volver a la pestaña, sin esperar los diez segundos: si estuviste
+       media hora en otra solapa, lo primero que ves tiene que estar bien. */
+    document.addEventListener('visibilitychange', () => {
+      if(!document.hidden) moverLosRelojes();
+    });
+  }
+
   /* De qué torneo es un partido, para los paneles de la derecha.
 
      En la lista del medio no hace falta —cada bloque tiene su título
@@ -4917,13 +4960,15 @@ const App=(()=>{
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:5px">Lo que viene</div></div>
         ${proximos.map(m=>`<a class="match" style="grid-template-columns:56px 1fr"
             href="${esc(Rutas.url(rutaPartido(m)||{t:'home'}))}" data-ir>
-          <div class="m-time" title="${esc(hhmm(m.start))}">${esc(faltaPara(m.start,ahora))}</div>
+          <div class="m-time" data-falta="${esc(m.start)}"
+            title="${esc(hhmm(m.start))}">${esc(faltaPara(m.start,ahora))}</div>
           <div style="min-width:0">
             <div class="tcell" style="gap:6px">${crest(m.home,17)}<span class="tn" style="font-size:12.5px">${esc(m.home.canon||m.home.name)}</span></div>
             <div class="tcell" style="gap:6px;margin-top:3px">${crest(m.away,17)}<span class="tn" style="font-size:12.5px">${esc(m.away.canon||m.away.name)}</span></div>
             ${m.ligaNombre?`<div style="font-size:10px;color:var(--txt3);margin-top:4px">${esc(m.ligaNombre)}</div>`:''}
           </div></a>`).join('')}</div>`:''}
       <div class="note" style="padding:0 2px">Elegí un torneo en el menú de la izquierda para ver sus tablas.</div>`;
+    arrancarLosRelojes();
   }
 
   /* ── modo club ── */

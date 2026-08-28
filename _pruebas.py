@@ -6574,6 +6574,21 @@ chequear("con el torneo terminado lo dice, no muestra la última fecha",
          _PVfin.get("nota"))
 chequear("y una liga que no existe no revienta",
          "error" in server.ROUTES["/api/previa"]({"liga": ["nada"]}))
+# Adentro se juntan datos de seis lugares y cualquiera puede venir con una
+# forma que no esperábamos. Si algo revienta, la previa devuelve el error
+# como dato en vez de un 500 pelado: con un 500 hay que adivinar.
+_romper = server._api_previa
+try:
+    server._api_previa = lambda q: (_ for _ in ()).throw(
+        ValueError("se rompió algo"))
+    _err = server.ROUTES["/api/previa"]({"liga": ["lpf"]})
+finally:
+    server._api_previa = _romper
+chequear("y si algo revienta lo dice en vez de tirar un 500",
+         "ValueError: se rompió algo" in _err.get("error", "")
+         and _err.get("partidos") == [] and _err.get("donde"), _err)
+chequear("y la pantalla lo muestra entero",
+         "No se pudo armar la previa." in HTML and "(d.donde||[])" in HTML)
 
 # ── El contexto: por qué juega cada uno ──────────────────────────────────
 # Es lo que la tabla sola no contesta. La tabla dice que va décimo; no dice

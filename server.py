@@ -8518,21 +8518,26 @@ _OTROS_CLUBES = {
                         "degrade": ["#3fd06d", "#e6e838"], "tam": 4,
                         "y": 42, "ancho": 17, "claro": 7, "trazo": 9},
         },
-        # La tercera: la trama sublimada que imita el mar, verde petróleo
-        # arriba y aguamarina abajo. No son manchas dibujadas a mano sino
+        # La tercera: la trama sublimada que imita el mar, verde oscuro
+        # arriba y verde agua abajo. No son manchas dibujadas a mano sino
         # ruido fractal cortado con un escalón, con el borde punteado,
         # que es como está hecha la de verdad.
+        #
+        # Estaba en verde petróleo tirando a celeste, y la de verdad es
+        # verde: el mismo verde del club, no el del mar. Corregido con las
+        # fotos oficiales de la camiseta, adelante y atrás.
         "tercera": {
             "patron": "liso",
-            "base": "#cfeae4", "raya": "#cfeae4", "detalle": "#0f7b8a",
-            "manga": "#cfeae4", "cuello": "#0f7b8a", "puno": "#0f7b8a",
+            "base": "#cfe9d6", "raya": "#cfe9d6", "detalle": "#136b41",
+            "manga": "#cfe9d6", "cuello": "#136b41", "puno": "#136b41",
             "sinBrillo": True,
-            "agua": {"oscuro": "#0a6274", "medio": "#2e959e",
-                     "claro": "#d2eae5", "semilla": 7, "grano": 0.05,
+            "agua": {"oscuro": "#10603a", "medio": "#3f9a68",
+                     "claro": "#d6ecdc", "semilla": 7, "grano": 0.05,
                      "corte": 0.57, "octavas": 2, "punto": 1.2,
                      "franja": "0 .35 1 .35 0"},
+            # Atrás, abajo del cuello, en blanco.
             "leyenda": {"texto": "LOS PRINCIPIOS", "letra": "sistema",
-                        "color": "#ecdfba", "tam": 4, "y": 42,
+                        "color": "#f4f8f5", "tam": 4, "y": 42,
                         "ancho": 28, "peso": 700, "espacio": 0.35},
         },
     },
@@ -9539,6 +9544,28 @@ def _quien_dirige(ids):
 
 
 def api_previa(q):
+    """
+    La previa, con red de contención.
+
+    Adentro se juntan datos de seis lugares distintos —el calendario, la
+    tabla, los promedios, el historial, las formaciones y el detalle de
+    cada partido— y cualquiera de los seis puede venir con una forma que
+    no esperábamos. Si algo revienta, la pantalla mostraba un 500 pelado,
+    que no dice nada y obliga a adivinar.
+
+    Ahora devuelve el error como dato: la pantalla lo muestra y se sabe
+    qué falló sin tener que entrar al servidor.
+    """
+    try:
+        return _api_previa(q)
+    except Exception as e:
+        import traceback
+        return {"error": "%s: %s" % (type(e).__name__, e),
+                "donde": traceback.format_exc().strip().splitlines()[-3:],
+                "partidos": []}
+
+
+def _api_previa(q):
     """
     La previa de la fecha que viene. /api/previa?liga=lpf
 

@@ -2266,7 +2266,20 @@ const App=(()=>{
     main.innerHTML='<div class="skel"></div><div class="skel"></div>';
     let d; try{ d=await get('/api/previa?liga='+encodeURIComponent(S.liga)); }
     catch(e){ return status('err','No se pudo cargar: '+esc(e.message)); }
-    if(d.error) return status('err',esc(d.error));
+    if(d.error){
+      /* El servidor manda el error como dato en vez de tirar un 500
+         pelado. Se muestra entero: adivinar qué falló mirando una
+         pantalla en blanco es lo que nos costó la última media hora. */
+      main.innerHTML=`<div class="globo"><div class="vacio">
+        No se pudo armar la previa.
+        <div style="margin-top:8px;font-size:11.5px;color:var(--txt3)">${
+          esc(d.error)}</div>
+        ${(d.donde||[]).length?`<div style="margin-top:6px;font-size:10.5px;
+          color:var(--txt3);text-align:left;white-space:pre-wrap">${
+          esc((d.donde||[]).join('\n'))}</div>`:''}
+      </div></div>`;
+      return status('err',esc(d.error));
+    }
     previaDatos=d;
     /* La caja de la pantalla tiene `overflow:hidden`, y eso anula el
        `position:sticky` de todo lo que tenga adentro. Es el mismo motivo

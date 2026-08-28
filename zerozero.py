@@ -186,30 +186,66 @@ def paginas(ida, idb, desde=1950, hasta=2030, tramo=6):
     return us
 
 
+# Cuántas filas muestra la tabla como máximo. Está medido contra el sitio,
+# no supuesto: Boca-River, Independiente-Racing y el rosarino devuelven
+# exactamente veinte sin parámetros, y Argentinos-Aldosivi devuelve
+# dieciséis, que son todos los que hay. Veinte es el tope.
+TOPE = 20
+
+
 def bajar(traer, ida, idb, desde=1950, hasta=2030, pausa=PAUSA):
     """
     Todos los cruces entre dos clubes.
 
+    Devuelve `(partidos, páginas_pedidas, fallos)`. Los dos últimos son
+    para el diario: sin ellos, "no vinieron partidos" no distingue entre
+    una red que no responde y un lector que no entiende la página, que se
+    arreglan en lugares opuestos.
+
     `traer` es la función que hace el pedido y devuelve el HTML. Se pasa
     de afuera para que este módulo no sepa nada de red: así se puede
     probar entero sin tocar internet, que es lo que hacen las pruebas.
+
+    Primero se pide la página sin acotar, que trae el historial entero si
+    entra en veinte filas. La mayoría de los cruces entran, y ahí es UN
+    pedido en vez de catorce. Recién si vuelve llena se recorre por
+    tramos, porque una tabla en el tope está diciendo que hay más y no
+    que hay veinte.
 
     Los partidos se juntan por su identificador; los que no lo traen, por
     día y marcador. Sin eso, los tramos que se superponen guardarían el
     mismo partido dos veces.
     """
     vistos = {}
-    for i, u in enumerate(paginas(ida, idb, desde, hasta)):
-        if i and pausa:
-            time.sleep(pausa)
+    fallos = []
+    pedidas = 0
+
+    def pedir(u):
+        nonlocal pedidas
+        pedidas += 1
         try:
             html = traer(u)
-        except Exception:
-            continue
+        except Exception as e:
+            fallos.append("%s: %s" % (type(e).__name__, e))
+            return 0
         if not html:
-            continue
+            fallos.append("respuesta vacía")
+            return 0
+        cuantos = 0
         for m in leer_html(html):
             clave = m["id"] or "%s|%s-%s|%s" % (m["dia"], m["gh"], m["ga"],
                                                 m["local"])
             vistos.setdefault(clave, m)
-    return sorted(vistos.values(), key=lambda m: m["dia"], reverse=True)
+            cuantos += 1
+        return cuantos
+
+    if pedir(url_historial(ida, idb)) < TOPE and vistos:
+        return (sorted(vistos.values(), key=lambda m: m["dia"], reverse=True),
+                pedidas, fallos)
+
+    for i, u in enumerate(paginas(ida, idb, desde, hasta)):
+        if pausa:
+            time.sleep(pausa)
+        pedir(u)
+    return (sorted(vistos.values(), key=lambda m: m["dia"], reverse=True),
+            pedidas, fallos)

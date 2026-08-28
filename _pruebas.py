@@ -2329,7 +2329,7 @@ chequear("lo que borra o gasta está en la lista de privadas",
                              "/api/diagnostico", "/api/tiempos",
                              "/api/base", "/api/visitas", "/api/colores",
                              "/api/nombres", "/api/corregir", "/api/copia",
-                             "/admin"},
+                             "/api/cruces", "/admin"},
          sorted(server.PRIVADAS))
 # Y la puerta que no era una puerta: cualquier dirección desconocida caía
 # en `super().do_GET()`, que es el servidor de archivos de la biblioteca.
@@ -7075,6 +7075,60 @@ chequear("y el torneo con su temporada, que es lo que ubica el partido",
 # Una fila rota no puede tirar la tabla entera.
 chequear("una página rota no revienta", zerozero.leer_html("<table><tr>") == []
          and zerozero.leer_html("") == [])
+
+# ── La fila tal como la manda el sitio ──────────────────────────────────
+#
+# Ésta es la prueba que faltaba y por la que el historial no cargaba: todo
+# lo demás se probaba contra un HTML inventado por mí, que obviamente
+# coincidía con lo que mi propio lector esperaba. Un lector probado sólo
+# contra su propia idea de la página no está probado.
+#
+# Esto es una fila real, copiada del sitio sin tocar: diez celdas, el
+# escudo en su propia celda vacía, el nombre adentro de un <a> y a veces
+# de un <b>, la fecha con clase "double" —igual que el número de fecha, que
+# está tres celdas más allá— y el marcador adentro de un enlace.
+_FILA_REAL = """<table class="zztable stats"><tbody>
+<tr data-lj="h1" id="11939047" class="parent">
+<td class="form"><div class="sign win">V</div></td>
+<td class="double">2026-03-31</td>
+<td class="text home"><a href="/equipo/aldosivi?epoca_id=155">Aldosivi</a></td>
+<td><a href="/equipo/aldosivi"><img alt="Aldosivi" src="/img_icon/50x50/logos/equipas/9198_x.png"></a></td>
+<td class="result"><a href="/partido/2026-03-31-aldosivi-argentinos-juniors/11939047">0-2</a></td>
+<td><a href="/equipo/argentinos-juniors"><img alt="Argentinos Juniors" src="/img_icon/50x50/logos/equipas/2224_x.png"></a></td>
+<td class="text away"><a href="/equipo/argentinos-juniors?epoca_id=155"><b>Argentinos Juniors</b></a></td>
+<td class="double">2</td>
+<td class="text"><div class="micrologo_and_text"><div class="image"><span class="flag:AR"></span></div><div class="text"><a href="/edicion/torneo-apertura-2026/211170">Apertura 2026</a></div></div></td>
+<td headers="th_multimedia" class="multimedia right"><span class="fa fa-camera"></span></td>
+</tr></tbody></table>"""
+
+_real = zerozero.leer_html(_FILA_REAL)
+chequear("la fila real del sitio se lee", len(_real) == 1, len(_real))
+if _real:
+    _r = _real[0]
+    # El local es el de la izquierda del marcador aunque el partido esté
+    # escrito al revés que el par que pedimos: acá pedimos Argentinos
+    # contra Aldosivi y el local es Aldosivi.
+    chequear("y el local sale de la izquierda del marcador",
+             _r["local"] == "Aldosivi", _r["local"])
+    chequear("y el visitante de la derecha, aunque venga dentro de un <b>",
+             _r["visita"] == "Argentinos Juniors", _r["visita"])
+    chequear("con el marcador en el orden en que está escrito",
+             (_r["gh"], _r["ga"]) == (0, 2), (_r["gh"], _r["ga"]))
+    chequear("el día, y no el número de fecha que lleva la misma clase",
+             _r["dia"] == "2026-03-31", _r["dia"])
+    # El identificador es lo que evita guardar dos veces el mismo partido
+    # cuando dos tramos se superponen. Sale del enlace al partido.
+    chequear("y el identificador del partido, que es lo que junta los tramos",
+             _r["id"] == "11939047", _r["id"])
+    chequear("y el torneo, que es la última celda con texto",
+             _r["torneo"] == "Apertura 2026", _r["torneo"])
+
+# La fecha de la fila —"2026-03-31"— también responde al patrón del
+# marcador: 2026 guión 03. Si el marcador no se buscara SÓLO en la celda
+# con clase "result", cada partido se leería 2026 a 3.
+chequear("la fecha no se confunde con un marcador",
+         zerozero.MARCADOR.match("2026-03-31") is not None
+         and _real and (_real[0]["gh"], _real[0]["ga"]) == (0, 2))
 # Los tramos se superponen a propósito: sin juntar por identificador, el
 # mismo partido se guardaría dos veces.
 _veces = [0]
@@ -7085,11 +7139,113 @@ def _traer_falso(u):
     return _HTML_ZZ
 
 
-_bajados = zerozero.bajar(_traer_falso, 1179, 2218, 2020, 2026, pausa=0)
-chequear("los tramos que se superponen no duplican partidos",
-         len(_bajados) == 2 and _veces[0] == 2, (len(_bajados), _veces[0]))
+_bajados, _pags, _fallos = zerozero.bajar(_traer_falso, 1179, 2218,
+                                          2020, 2026, pausa=0)
+# Un pedido, no dos: la página sin acotar trajo menos de veinte filas, o
+# sea el historial entero, y ahí recorrer por tramos es gastar de más.
+# La mayoría de los cruces entran en veinte.
+chequear("si entra en una página, se pide una sola vez",
+         len(_bajados) == 2 and _veces[0] == 1, (len(_bajados), _veces[0]))
 chequear("y vienen del más nuevo al más viejo",
          [m["dia"] for m in _bajados] == ["2021-05-16", "1959-08-30"])
+chequear("sin fallos no hay nada que contar", _fallos == [] and _pags == 1,
+         (_fallos, _pags))
+
+# Pero si la página vuelve LLENA hay más de veinte y hay que recorrer por
+# tramos: veinte filas no quieren decir veinte partidos, quieren decir
+# "hasta acá te muestro". Confundir las dos cosas es perder el historial
+# de los clásicos, que son justo los que más partidos tienen.
+_lleno = "<table>" + "".join(
+    '<tr><td class="double">%d-05-16</td><td class="text">Boca Juniors</td>'
+    '<td class="result"><a href="/partido/x/%d">2-1</a></td>'
+    '<td class="text">River Plate</td><td class="text">Liga</td></tr>'
+    % (1960 + i, 900 + i) for i in range(zerozero.TOPE))
+_veces2 = [0]
+
+
+def _traer_lleno(u):
+    _veces2[0] += 1
+    return _lleno
+
+
+_b2, _p2, _f2 = zerozero.bajar(_traer_lleno, 1, 2, 2020, 2026, pausa=0)
+chequear("si la página vuelve llena, se recorre por tramos",
+         _veces2[0] > 1 and _p2 == _veces2[0], (_veces2[0], _p2))
+chequear("y los partidos repetidos entre tramos se juntan una sola vez",
+         len(_b2) == zerozero.TOPE, len(_b2))
+
+# Y lo que importa para poder arreglarlo cuando falle: una página que no
+# se pudo pedir tiene que quedar anotada. "No vinieron partidos" no
+# distingue entre una red que no contesta y un lector que no entiende la
+# página, y las dos se arreglan en lugares opuestos.
+def _traer_roto(u):
+    raise OSError("no se pudo conectar")
+
+
+_b3, _p3, _f3 = zerozero.bajar(_traer_roto, 1, 2, 2020, 2026, pausa=0)
+chequear("una página que no se pudo pedir queda anotada",
+         _b3 == [] and _f3 and "no se pudo conectar" in _f3[0], _f3[:1])
+chequear("y una respuesta vacía se distingue de una que falló",
+         zerozero.bajar(lambda u: "", 1, 2, 2020, 2026, pausa=0)[2][0]
+         == "respuesta vacía")
+
+# ── El diario: lo único que va a haber para mirar cuando esto falle ─────
+#
+# La bajada corre en segundo plano y con un `_sin_reventar` alrededor. Sin
+# diario, cuando no funciona no hay nada: ni error ni renglón. Sólo se ve
+# que el historial sigue mostrando quince, que es exactamente lo mismo que
+# se ve cuando todavía no corrió. Distinguir esas dos cosas es la
+# diferencia entre arreglarlo en diez minutos y perder una tarde.
+import tablas as _tablas
+_diarioAntes = list(server._CRUCES_DIARIO)
+_tcAntes, _gcAntes = _tablas.tiene_cruces, _tablas.guardar_cruces
+_thAntes = server._traer_html
+try:
+    server._CRUCES_DIARIO.clear()
+    server._CRUCES_PEDIDOS.clear()
+    _tablas.tiene_cruces = lambda a, b: 0
+    _tablas.guardar_cruces = lambda a, b, ms: len(ms)
+
+    # 1) Un club sin número: no es un error de red, es un renglón que
+    #    falta cargar. Y tiene que decir CUÁL de los dos falta.
+    server.bajar_historial("Boca Juniors", "Club Inventado")
+    # 2) La red no contesta.
+    server._traer_html = lambda u: (_ for _ in ()).throw(OSError("sin salida"))
+    server._CRUCES_PEDIDOS.clear()
+    server.bajar_historial("Boca Juniors", "River Plate")
+    # 3) Sale bien.
+    server._traer_html = lambda u: (
+        '<table><tr><td class="double">2024-05-05</td>'
+        '<td class="text">Boca Juniors</td>'
+        '<td class="result"><a href="/partido/x/77">1-0</a></td>'
+        '<td class="text">River Plate</td>'
+        '<td class="text">Liga</td></tr></table>')
+    server._CRUCES_PEDIDOS.clear()
+    server.bajar_historial("Boca Juniors", "River Plate")
+
+    _d = server._CRUCES_DIARIO
+    chequear("los tres desenlaces quedan anotados", len(_d) == 3, len(_d))
+    chequear("un club sin número dice cuál falta",
+             _d[0]["estado"] == "sin número"
+             and _d[0]["detalle"] == "Club Inventado", _d[0])
+    chequear("la red que no contesta no se confunde con una página vacía",
+             _d[1]["estado"] == "vacío" and "OSError" in _d[1]["detalle"],
+             _d[1])
+    chequear("y una bajada buena dice cuántos y de cuándo a cuándo",
+             _d[2]["estado"] == "ok" and _d[2]["partidos"] == 1
+             and _d[2]["guardados"] == 1, _d[2])
+    chequear("cada renglón lleva la hora, o no sirve para nada",
+             all(f.get("cuando") for f in _d))
+    # El diario no puede crecer para siempre: vive en memoria.
+    for _ in range(80):
+        server._anotar(("A", "B"), estado="ok")
+    chequear("y el diario no crece sin freno",
+             len(server._CRUCES_DIARIO) == 50, len(server._CRUCES_DIARIO))
+finally:
+    _tablas.tiene_cruces, _tablas.guardar_cruces = _tcAntes, _gcAntes
+    server._traer_html = _thAntes
+    server._CRUCES_DIARIO[:] = _diarioAntes
+    server._CRUCES_PEDIDOS.clear()
 
 # ── Dónde se guardan, que es la decisión importante ──────────────────────
 # En su propia tabla y NO en `partidos`: los identificadores de las dos

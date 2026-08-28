@@ -159,6 +159,7 @@ PRIVADAS = {
     "/api/nombres",       # recorre el calendario de las trece competencias
     "/api/corregir",      # reescribe el club de partidos ya guardados
     "/api/copia",         # revisa, baja y borra las copias de la base
+    "/api/cruces",        # el diario de las bajadas de historial
     "/admin",             # la página que junta todo lo de arriba
 }
 # Ojo: /api/visita —sin la ese— NO va acá. Es la que usa la página para
@@ -9574,6 +9575,34 @@ def _traer_html(url):
 _CRUCES_PEDIDOS = set()
 _CRUCES_LOCK = threading.Lock()
 
+# El diario de las bajadas: qué se intentó, qué salió y qué falló.
+#
+# Existe porque la primera versión no lo tenía y eso costó una tarde. La
+# bajada corre en segundo plano y con `_sin_reventar` alrededor, así que
+# cuando no funcionaba no había NADA para mirar: ni un error, ni un
+# renglón, nada. Sólo se veía que el historial seguía mostrando quince, y
+# de ahí no se puede deducir si falló la red, el lector, el nombre del
+# club o si simplemente todavía no había corrido.
+#
+# Un trabajo en segundo plano sin registro no es un trabajo: es una
+# apuesta. Se guardan las últimas cincuenta vueltas y se leen desde el
+# administrador.
+_CRUCES_DIARIO = []
+
+
+def _anotar(par, **datos):
+    """Deja constancia de un intento de bajada."""
+    fila = {"par": " - ".join(par), "cuando": _ahora_iso()}
+    fila.update(datos)
+    with _CRUCES_LOCK:
+        _CRUCES_DIARIO.append(fila)
+        del _CRUCES_DIARIO[:-50]
+    return fila
+
+
+def _ahora_iso():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
 
 def bajar_historial(a, b):
     """
@@ -9588,21 +9617,40 @@ def bajar_historial(a, b):
     torneo por otro lado.
     """
     ia, ib = historiales.id_de(a), historiales.id_de(b)
+    clave = tuple(sorted((a, b)))
     if not ia or not ib:
+        # Ni siquiera se intenta, y conviene que se sepa cuál de los dos
+        # es: un club sin número es un renglón que alguien tiene que
+        # cargar, no un error de red.
+        _anotar(clave, estado="sin número",
+                detalle=a if not ia else b)
         return None
     if tablas.tiene_cruces(a, b):
         return None
-    clave = tuple(sorted((a, b)))
     with _CRUCES_LOCK:
         if clave in _CRUCES_PEDIDOS:
             return None
         _CRUCES_PEDIDOS.add(clave)
     try:
-        ms = zerozero.bajar(_traer_html, ia, ib)
+        ms, paginas, fallos = zerozero.bajar(_traer_html, ia, ib)
         if not ms:
+            # Sin partidos hay dos causas muy distintas: no pudimos pedir
+            # las páginas, o las pedimos y no había nada que leer. La
+            # primera se arregla mirando la red y la segunda mirando el
+            # lector, así que no pueden decir lo mismo.
+            _anotar(clave, estado="vacío", paginas=paginas,
+                    detalle=(fallos[0] if fallos else "se leyeron las "
+                             "páginas y no había partidos"))
             return 0
-        return tablas.guardar_cruces(a, b, ms)
-    except Exception:
+        guardados = tablas.guardar_cruces(a, b, ms)
+        _anotar(clave, estado="ok", paginas=paginas, partidos=len(ms),
+                guardados=guardados,
+                detalle=("%s a %s" % (ms[-1]["dia"][:4], ms[0]["dia"][:4]))
+                + (" · %d páginas fallaron" % len(fallos) if fallos else ""))
+        return guardados
+    except Exception as e:
+        _anotar(clave, estado="error",
+                detalle="%s: %s" % (type(e).__name__, e))
         return None
     finally:
         # Si falló, que se pueda reintentar en la próxima vuelta.
@@ -9641,6 +9689,58 @@ def bajar_historiales_de_fondo(partidos):
 
     threading.Thread(target=vuelta, daemon=True).start()
     return len(pares)
+
+
+def api_cruces(q):
+    """
+    Qué pasó con las bajadas de historial, y un botón para forzarlas.
+
+    Sin esto la única señal de que algo anda mal es que la pantalla sigue
+    mostrando quince cruces, que es exactamente lo que se ve también
+    cuando todavía no corrió. Acá se ve la diferencia.
+
+    Con `?bajar=Club A|Club B` se pide un par a mano y se espera la
+    respuesta, que es lo que hace falta para probar si el servidor llega
+    al sitio. Sin eso hay que abrir la previa y adivinar.
+    """
+    pedido = (q.get("bajar") or [""])[0]
+    hecho = None
+    if pedido:
+        partes = [x.strip() for x in pedido.split("|")]
+        if len(partes) != 2 or not all(partes):
+            return {"error": "se pide así: ?bajar=Club A|Club B"}
+        a, b = partes
+        if (q.get("otravez") or [""])[0]:
+            # Para volver a probar un par que ya se bajó: se olvida que
+            # se pidió, no se borra lo guardado.
+            with _CRUCES_LOCK:
+                _CRUCES_PEDIDOS.discard(tuple(sorted((a, b))))
+        antes = len(_CRUCES_DIARIO)
+        hecho = {"par": "%s - %s" % (a, b), "guardados": bajar_historial(a, b)}
+        # Si no dejó renglón es porque ni lo intentó, y eso también se dice.
+        if len(_CRUCES_DIARIO) == antes:
+            hecho["nota"] = ("ya estaba bajado" if tablas.tiene_cruces(a, b)
+                             else "no se intentó")
+
+    # Cuántos pares de la Liga Profesional tienen historial y cuántos no.
+    pares = []
+    clubes = sorted(set(ZONA_A) | set(ZONA_B))
+    con = sin = 0
+    for i, x in enumerate(clubes):
+        for y in clubes[i + 1:]:
+            n = _sin_reventar(lambda: tablas.tiene_cruces(x, y), 0)
+            if n:
+                con += 1
+            else:
+                sin += 1
+    return {
+        "diario": list(reversed(_CRUCES_DIARIO)),
+        "hecho": hecho,
+        "pares": {"con": con, "sin": sin, "total": con + sin},
+        "sinNumero": sorted(c for c in clubes
+                            if historiales.id_de(c) is None),
+        "pidiendo": sorted(" - ".join(x) for x in _CRUCES_PEDIDOS),
+    }
 
 
 def _desde_cruces(filas, local):
@@ -10568,6 +10668,7 @@ ROUTES = {
     # para los treinta de Primera. Es la prueba de si el método sirve antes
     # de aplicarlo a los cientos de clubes de las otras competencias: acá
     # sabemos cuál es la respuesta correcta, porque la cargamos nosotros.
+    "/api/cruces": lambda q: api_cruces(q),
     "/api/colores": lambda q: api_colores(q),
     # Qué clubes se estaban confundiendo con otro por el parecido de
     # nombres. Cuenta, no corrige.

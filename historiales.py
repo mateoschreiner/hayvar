@@ -172,3 +172,38 @@ def entre(a, b):
 def pares():
     """Los pares cargados, para las pruebas y para el administrador."""
     return sorted(CLASICOS)
+
+
+# El número que cada club tiene en la fuente del historial.
+#
+# Se cargan a mano porque son treinta y no cambian nunca. La alternativa
+# —buscar el club por nombre en cada pedido— sería un pedido más por cruce
+# y una forma nueva de equivocarse: hay tres San Martín y dos Estudiantes,
+# y un buscador por nombre elige mal justo en esos.
+#
+# Se sacan de la página del club: el número está en la imagen del escudo,
+# en `logos/equipas/<numero>_...`.
+IDS = {
+    "Boca Juniors": 1179,
+    "River Plate": 2218,
+    "Independiente": 2211,
+    "Racing": 2217,
+    "San Lorenzo": 2220,
+    "Vélez Sarsfield": 2223,
+    "Estudiantes (LP)": 2208,
+    "Huracán": 2210,
+    "Newell's Old Boys": 2213,
+    "Rosario Central": 2219,
+    "Argentinos Juniors": 2224,
+    "Aldosivi": 9198,
+}
+
+
+def id_de(club):
+    """El número del club en la fuente, o None si todavía no está cargado."""
+    if club in IDS:
+        return IDS[club]
+    for n, i in IDS.items():
+        if _plano(n) == _plano(club):
+            return i
+    return None

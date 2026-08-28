@@ -6981,6 +6981,132 @@ chequear("con total verificado la barra muestra el total, no los últimos",
          and "Se enfrentaron ${c.jugados} veces desde ${c.desde}" in HTML
          and "Los últimos ${h.jugados}" in HTML)
 
+print("\n── el historial completo, de la otra fuente ──")
+import zerozero                                                   # noqa: E402
+# La dirección se arma con dos números. El índice de temporada NO es el
+# año: es el año menos 1871, y equivocarse ahí devuelve la ventana
+# equivocada sin ningún error.
+chequear("el índice de temporada es el año menos 1871",
+         zerozero.indice_de_ano(1872) == 1
+         and zerozero.indice_de_ano(1955) == 84
+         and zerozero.indice_de_ano(2026) == 155)
+chequear("la dirección lleva los dos números y el segmento del medio",
+         zerozero.url_historial(1179, 2218)
+         == "https://www.zerozero.com.ar/estadisticas/h2h/t1179-t2218")
+chequear("y con ventana de años, los índices",
+         "epoca_ini=84&epoca_fim=89"
+         in zerozero.url_historial(1179, 2218, 1955, 1960))
+# La tabla muestra veinte filas por pedido, así que hay que recorrer por
+# tramos. Con tramos largos se perderían partidos sin que nadie se entere.
+chequear("se recorre por tramos cortos, que si no se pierden partidos",
+         len(zerozero.paginas(1179, 2218)) >= 12
+         and len(zerozero.paginas(1179, 2218, 2020, 2026)) == 2)
+
+# El lector: HTML de verdad, con la forma que sirve el sitio.
+_HTML_ZZ = """<table class="zztable stats"><tbody>
+<tr><td class="form">V</td><td class="double">1959-08-30</td>
+    <td class="text home"><a href="/equipo/river-plate">River Plate</a></td>
+    <td class="result"><a href="/partido/x/12345">2-3</a></td>
+    <td class="text away"><a href="/equipo/boca-juniors">Boca Juniors</a></td>
+    <td class="double">F18</td><td class="text">Primera División 1959</td></tr>
+<tr><td class="form">E</td><td class="double">2021-05-16</td>
+    <td class="text home"><a href="/equipo/boca-juniors">Boca Juniors</a></td>
+    <td class="result"><a href="/partido/y/99887">1-1</a></td>
+    <td class="text away"><a href="/equipo/river-plate">River Plate</a></td>
+    <td class="double">1/4</td><td class="text">Copa de la Liga 2021</td></tr>
+<tr><td>Cabecera</td><td>que no es un partido</td></tr>
+</tbody></table>"""
+_zz = zerozero.leer_html(_HTML_ZZ)
+chequear("lee los partidos y saltea lo que no lo es",
+         len(_zz) == 2, [m["dia"] for m in _zz])
+chequear("con la fecha completa, el marcador y quién fue local",
+         _zz[0] == {"id": "12345", "dia": "1959-08-30", "local": "River Plate",
+                    "visita": "Boca Juniors", "gh": 2, "ga": 3,
+                    "torneo": "Primera División 1959"}, _zz[0])
+chequear("y el torneo con su temporada, que es lo que ubica el partido",
+         _zz[1]["torneo"] == "Copa de la Liga 2021")
+# Una fila rota no puede tirar la tabla entera.
+chequear("una página rota no revienta", zerozero.leer_html("<table><tr>") == []
+         and zerozero.leer_html("") == [])
+# Los tramos se superponen a propósito: sin juntar por identificador, el
+# mismo partido se guardaría dos veces.
+_veces = [0]
+
+
+def _traer_falso(u):
+    _veces[0] += 1
+    return _HTML_ZZ
+
+
+_bajados = zerozero.bajar(_traer_falso, 1179, 2218, 2020, 2026, pausa=0)
+chequear("los tramos que se superponen no duplican partidos",
+         len(_bajados) == 2 and _veces[0] == 2, (len(_bajados), _veces[0]))
+chequear("y vienen del más nuevo al más viejo",
+         [m["dia"] for m in _bajados] == ["2021-05-16", "1959-08-30"])
+
+# ── Dónde se guardan, que es la decisión importante ──────────────────────
+# En su propia tabla y NO en `partidos`: los identificadores de las dos
+# fuentes son números distintos en rangos parecidos, y mezclarlos es
+# cuestión de tiempo hasta que uno pise al otro. Un choque así no se nota
+# hasta que alguien lee un resultado que no fue.
+chequear("los cruces viejos van en su propia tabla",
+         "CREATE TABLE IF NOT EXISTS cruces" in _TBL
+         and "PRIMARY KEY (a, b, dia)" in _TBL)
+chequear("y el par se ordena siempre igual, que si no se guarda dos veces",
+         "def _par(a, b)" in _TBL and "if x <= y else (y, x)" in _TBL)
+# Con la base de verdad: guardar dos veces lo mismo no duplica.
+import almacen as _almzz                                          # noqa: E402
+import tablas as _tabzz                                           # noqa: E402
+_dz = _tmp.mkdtemp()
+_ruta_zz = _almzz.RUTA
+try:
+    _almzz.RUTA = os.path.join(_dz, "zz.db")
+    _almzz._local = _th.local()
+    _almzz.iniciar()
+    _tabzz.iniciar()
+    _n1 = _tabzz.guardar_cruces("Boca Juniors", "River Plate", _zz)
+    _n2 = _tabzz.guardar_cruces("River Plate", "Boca Juniors", _zz)
+    chequear("guardar el mismo par al revés no lo duplica",
+             _tabzz.tiene_cruces("Boca Juniors", "River Plate") == 2
+             and _n1 == _n2 == 2, (_n1, _n2))
+    _h = server._desde_cruces(_tabzz.cruces_de("Boca Juniors",
+                                                  "River Plate"),
+                              "Boca Juniors")
+    chequear("y se cuentan desde el lado del que hoy es local",
+             _h["jugados"] == 2 and _h["gano"] == 1 and _h["empates"] == 1
+             and _h["perdio"] == 0, _h)
+    _h2 = server._desde_cruces(_tabzz.cruces_de("Boca Juniors",
+                                                   "River Plate"),
+                               "River Plate")
+    chequear("y al revés se dan vuelta",
+             _h2["gano"] == 0 and _h2["perdio"] == 1, _h2)
+finally:
+    _almzz.RUTA = _ruta_zz
+    _almzz._local = _th.local()
+    _sh.rmtree(_dz, ignore_errors=True)
+
+# ── Cómo se piden ────────────────────────────────────────────────────────
+# Un cruce de 1978 no cambia: el par que ya está bajado no se vuelve a
+# pedir. Es lo que hace que esto cueste una vez y no todas.
+chequear("un par ya bajado no se vuelve a pedir",
+         "if tablas.tiene_cruces(a, b):" in _SRV
+         and "return None" in _SRV.split("if tablas.tiene_cruces(a, b):")[1][:40])
+# Doscientos pedidos por fecha no pueden colgar una pantalla.
+chequear("los historiales se bajan en segundo plano",
+         "def bajar_historiales_de_fondo(partidos)" in _SRV
+         and "threading.Thread(target=vuelta, daemon=True).start()" in _SRV)
+chequear("y con pausa entre pedidos, que es un sitio chico",
+         "time.sleep(zerozero.PAUSA)" in _SRV and zerozero.PAUSA >= 1)
+# Y si dos personas abren la previa a la vez, el par se pide una sola vez.
+chequear("dos pedidos a la vez no bajan el mismo par dos veces",
+         "_CRUCES_PEDIDOS = set()" in _SRV and "_CRUCES_LOCK" in _SRV)
+# Los números de cada club van cargados: buscar por nombre elegiría mal
+# justo en los que hay tres iguales.
+chequear("los números de los clubes están cargados a mano",
+         historiales.id_de("Boca Juniors") == 1179
+         and historiales.id_de("River Plate") == 2218
+         and historiales.id_de("Un Club Cualquiera") is None)
+
 # El historial también en la pantalla principal, y en barra.
 chequear("el historial va en barra en la lista, no sólo en la ficha",
          "function histBarra(p)" in HTML and "${histBarra(p)}" in HTML)

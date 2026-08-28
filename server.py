@@ -55,6 +55,7 @@ import escudos
 import fichas
 import historia
 import historiales
+import zerozero
 import tablas
 import visitas
 import apifootball
@@ -9550,6 +9551,117 @@ def _radar_equipo(rend, racha):
     }
 
 
+def _traer_html(url):
+    """Una página, tal cual. Sin caché: cada una se lee una vez en la vida."""
+    req = Request(url, headers={"User-Agent": UA,
+                                "Accept": "text/html,application/xhtml+xml"})
+    with urlopen(req, timeout=25) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+# Los pares que ya se pidieron en esta vuelta del servidor, para no pedir
+# dos veces lo mismo si dos personas abren la previa a la vez.
+_CRUCES_PEDIDOS = set()
+_CRUCES_LOCK = threading.Lock()
+
+
+def bajar_historial(a, b):
+    """
+    Baja el historial completo entre dos clubes y lo guarda.
+
+    Devuelve cuántos cruces quedaron, o None si el par no se puede pedir
+    —algún club sin número cargado— o si ya estaba bajado.
+
+    Un cruce de 1978 no cambia nunca, así que un par que ya tiene historial
+    guardado no se vuelve a pedir. Lo único que se pierde con eso es el
+    partido nuevo cuando lo juegan, y ése ya lo trae el recolector del
+    torneo por otro lado.
+    """
+    ia, ib = historiales.id_de(a), historiales.id_de(b)
+    if not ia or not ib:
+        return None
+    if tablas.tiene_cruces(a, b):
+        return None
+    clave = tuple(sorted((a, b)))
+    with _CRUCES_LOCK:
+        if clave in _CRUCES_PEDIDOS:
+            return None
+        _CRUCES_PEDIDOS.add(clave)
+    try:
+        ms = zerozero.bajar(_traer_html, ia, ib)
+        if not ms:
+            return 0
+        return tablas.guardar_cruces(a, b, ms)
+    except Exception:
+        return None
+    finally:
+        # Si falló, que se pueda reintentar en la próxima vuelta.
+        with _CRUCES_LOCK:
+            if not tablas.tiene_cruces(a, b):
+                _CRUCES_PEDIDOS.discard(clave)
+
+
+def bajar_historiales_de_fondo(partidos):
+    """
+    Deja bajando los historiales de esta fecha, sin hacer esperar a nadie.
+
+    Son trece pedidos por cruce y quince cruces por fecha: doscientos
+    pedidos que no pueden colgar una pantalla. Van en un hilo aparte, de a
+    uno y con pausa, que es como corresponde pedirle doscientas páginas a
+    un sitio chico.
+
+    Lo que se baja ahora se ve la próxima vez que alguien entre. Es lento a
+    propósito: en cuatro o cinco fechas quedan cubiertos casi todos los
+    cruces que se juegan, y de ahí en más no hay nada más que pedir.
+    """
+    pares = []
+    for p in partidos:
+        a = (p.get("home") or {}).get("canon")
+        b = (p.get("away") or {}).get("canon")
+        if a and b and historiales.id_de(a) and historiales.id_de(b) \
+                and not tablas.tiene_cruces(a, b):
+            pares.append((a, b))
+    if not pares:
+        return 0
+
+    def vuelta():
+        for a, b in pares:
+            _sin_reventar(lambda x=a, y=b: bajar_historial(x, y), None)
+            time.sleep(zerozero.PAUSA)
+
+    threading.Thread(target=vuelta, daemon=True).start()
+    return len(pares)
+
+
+def _desde_cruces(filas, local):
+    """
+    Los cruces guardados, con la forma que ya usa la pantalla.
+
+    Cuenta desde el lado del que hoy es local, que es como uno lo lee
+    parado en esta página: "ganó 12, empataron 8, ganó 9". Da igual quién
+    fue local en cada uno de esos partidos.
+    """
+    gano = empates = perdio = 0
+    partidos = []
+    for f in filas:
+        gh, ga = f.get("gh"), f.get("ga")
+        if gh is None or ga is None:
+            continue
+        mio = f.get("local") == local
+        mios, suyos = (gh, ga) if mio else (ga, gh)
+        if mios > suyos:
+            gano += 1
+        elif mios == suyos:
+            empates += 1
+        else:
+            perdio += 1
+        partidos.append({"id": None, "dia": f["dia"], "local": f["local"],
+                         "visita": f["visita"], "gh": gh, "ga": ga,
+                         "torneo": f.get("torneo") or ""})
+    return {"partidos": partidos, "gano": gano, "empates": empates,
+            "perdio": perdio, "jugados": gano + empates + perdio}
+
+
 def cruces_anteriores(gid):
     """
     Los cruces anteriores entre los dos equipos de un partido.
@@ -9793,6 +9905,13 @@ def _api_previa(q):
         # nada más. Esto es lo que permite decir "se enfrentaron 266
         # veces" en vez de "quince".
         completo = historiales.entre(ch, ca)
+        # Los cruces guardados, que son muchos más que los quince de la
+        # fuente en vivo. Si todavía no se bajaron, queda el historial
+        # corto, que es mejor que nada.
+        guardados = _sin_reventar(lambda: tablas.cruces_de(ch, ca), []) if ch \
+            and ca else []
+        if guardados:
+            hist = _desde_cruces(guardados, ch)
         rh = tablas.racha_de(ih, lid) if ih else []
         ra = tablas.racha_de(ia, lid) if ia else []
         jh = _jugador_a_seguir(ih, ch, lid, temporada, desde)
@@ -9857,6 +9976,10 @@ def _api_previa(q):
     # se ve recién la próxima vez, y hacer esperar a la gente por un dato
     # que todavía no puede usar no tiene sentido.
     _sin_reventar(lambda: guardar_cruces(salida, lid), None)
+    # Y los historiales completos de esta fecha, en segundo plano. Son
+    # doscientos pedidos: no pueden hacer esperar a nadie.
+    if lid == "lpf":
+        _sin_reventar(lambda: bajar_historiales_de_fondo(salida), 0)
 
     # El árbitro y la TV de todos, pedidos juntos: la previa se abre
     # entera y no hay nada que esperar a que alguien toque.

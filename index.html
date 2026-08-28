@@ -569,10 +569,12 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 
 /* Quién es quién en el gráfico. Sin esto, dos formas superpuestas de dos
    clubes celestes no se pueden distinguir. */
-.pv-radar .quien{display:flex;justify-content:center;gap:12px;margin-top:2px;
-  font-size:10px;font-weight:700;color:var(--txt2)}
-.pv-radar .quien span{display:flex;align-items:center;gap:4px}
-.pv-radar .quien i{width:8px;height:8px;border-radius:2px;display:block}
+/* El cuadradito del color, pegado al nombre. Con dos clubes celestes el
+   gráfico es ilegible sin esto, y una leyenda abajo obligaba a mirar en
+   dos lados a la vez. */
+.pv-lado .nm{display:flex;align-items:center;justify-content:center;gap:6px}
+.pv-lado .nm .cua{width:9px;height:9px;border-radius:2px;display:block;
+  flex:none}
 
 /* Cada partido es su propia caja, con la misma forma que el resto de la
    página: así se lee como una tarjeta y no como un renglón de una lista. */
@@ -2044,12 +2046,6 @@ const App=(()=>{
           stroke:${esc(cb||'#e5484d')}"/>
         <g class="ejes">${ejes.map(rotulo).join('')}</g>
       </svg>
-      <div class="quien">
-        <span><i style="background:${esc(ca)}"></i>${
-          esc(cortito((p.home||{}).name))}</span>
-        <span><i style="background:${esc(cb)}"></i>${
-          esc(cortito((p.away||{}).name))}</span>
-      </div>
     </div>`;
   }
 
@@ -2074,9 +2070,9 @@ const App=(()=>{
         data-ir onclick="event.stopPropagation()">
       <span class="lb">A seguir</span>
       <span class="nm">${j.n!=null?`<b>${j.n}</b>`:''}${esc(j.nombre)}</span>
-      <span class="dd">${j.goles} ${j.goles===1?'gol':'goles'}${
-        j.puesto?' · '+esc(j.puesto):''}${
-        j.porque==='en racha'?' · en racha':''}</span></a>`;
+      <span class="dd">${j.puntaje!=null?`<b>${j.puntaje}</b> de promedio`
+        :`${j.goles} ${j.goles===1?'gol':'goles'}`}${
+        j.puesto?' · '+esc(j.puesto):''}</span></a>`;
   }
 
   /* El día y la hora juntos: "Sáb 30 · 17:00". En una previa el día
@@ -2194,9 +2190,16 @@ const App=(()=>{
      pregunta —qué se espera de esto— y conviene que se vea igual en los
      dos lados. */
   function tarjetaPrevia(p, suelta){
-    const lado=(e,r,vd,sj,j)=>`<div class="pv-lado">
+    /* El color que usa cada equipo en el gráfico, al lado de su nombre.
+       Con dos clubes del mismo color —Atlético Tucumán y Belgrano, los dos
+       celestes— el gráfico no se puede leer sin esto, y una leyenda abajo
+       obligaba a mirar en dos lados. */
+    const col=coloresDelHistorial(p)||{};
+    const cH=col.local||'#2f6fed', cA=col.visita||'#e5484d';
+    const lado=(e,r,vd,sj,j,color)=>`<div class="pv-lado">
       ${e&&e.logo?`<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
-      <span class="nm">${esc(enMayusculas(e&&e.name||''))}</span>
+      <span class="nm"><i class="cua" style="background:${esc(color)}"></i>${
+        esc(enMayusculas(e&&e.name||''))}</span>
       ${r&&r.length?`<span class="bolas">${r.slice().reverse().map(bolita).join('')}</span>`:''}
       ${vd?`<span class="viene">${esc(vd)}</span>`:''}
       ${(sj&&sj.dice&&sj.dice.length)?`<span class="juega">${sj.dice.map(x=>
@@ -2211,13 +2214,13 @@ const App=(()=>{
       </div>
       <div class="pv-top">
         ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
-               (p.seJuega||{}).home,(p.aSeguir||{}).home)}
+               (p.seJuega||{}).home,(p.aSeguir||{}).home,cH)}
         <div class="pv-medio">
           ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,p,true)
             || '<span class="pv-vs">vs</span>'}
         </div>
         ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away,
-               (p.seJuega||{}).away,(p.aSeguir||{}).away)}
+               (p.seJuega||{}).away,(p.aSeguir||{}).away,cA)}
       </div>
       ${p.dato?`<div class="pv-dato">${esc(p.dato)}</div>`:''}
       ${histBarra(p)}
@@ -2306,9 +2309,12 @@ const App=(()=>{
         ${d.delaFecha.puesto?`<div class="pst">${esc(d.delaFecha.puesto)}</div>`:''}
         <div class="club">${escudoHist(d.delaFecha.club)}
           ${esc(enMayusculas(d.delaFecha.club||''))}</div>
-        <div class="dd">${d.delaFecha.goles}
-          ${d.delaFecha.goles===1?'gol':'goles'} en
-          ${d.delaFecha.partidos} ${d.delaFecha.partidos===1?'partido':'partidos'}</div>
+        <div class="dd">${d.delaFecha.puntaje!=null
+          ? `${d.delaFecha.puntaje} de promedio en ${d.delaFecha.partidos} ${
+              d.delaFecha.partidos===1?'partido':'partidos'}`
+          : `${d.delaFecha.goles} ${d.delaFecha.goles===1?'gol':'goles'} en ${
+              d.delaFecha.partidos} ${
+              d.delaFecha.partidos===1?'partido':'partidos'}`}</div>
 
       </div>`:''}
       ${eq?`<div class="cl-sec">El equipo de la fecha</div>
@@ -2320,9 +2326,6 @@ const App=(()=>{
 
       </div>`:''}
       </div>`:'';
-    // Las tablas van después, sin frenar el dibujo: son dos pedidos más
-    // y la previa ya se ve.
-    if(S.liga==='lpf') tablasDeLaPrevia(ps);
     status('ok',`<b>${ps.length}</b> partidos · previa de la fecha`);
   }
 
@@ -5578,6 +5581,13 @@ const App=(()=>{
     const cg=S.clubGames||{};
     const igual=m=>m&&(String(m.liveId)===String(id)||String(m.id)===String(id));
     mBase=S.games.find(igual)||[cg.envivo,cg.ultimo,cg.proximo].find(igual)||null;
+    /* Con qué solapa se abre. Si el partido no empezó, la previa: el
+       minuto a minuto está vacío y no contesta nada. Si ya empezó o
+       terminó, el resumen, que es lo que se vino a ver.
+
+       Va acá y no arriba porque arriba `mBase` todavía es el partido
+       ANTERIOR: se asigna en la línea de acá arriba. */
+    if(mBase&&mBase.status!=='FIN'&&mBase.status!=='LIVE') mTab='pre';
 
     /* Pop-up o página. La pregunta no es si tenemos el partido a mano sino
        si hay algo atrás: el que llegó por el link no tiene a dónde volver,
@@ -6188,11 +6198,7 @@ const App=(()=>{
       body=`<div class="empty">365scores sólo guarda el minuto a minuto de las fechas recientes,
         y esta ya salió de esa ventana.<br><br>
         <span style="color:var(--txt3);font-size:12px">El resultado y el árbitro salen de AFA y sí están, en Resumen.</span></div>`;
-    else if(mTab==='res'&&m.status!=='FIN'&&m.status!=='LIVE'
-            && !((mData&&mData.events)||[]).length){
-      /* Un partido que todavía no empezó no tiene minuto a minuto, y
-         mostrar "no hay eventos" es no contestar nada. Lo que la persona
-         vino a buscar es la previa, así que va la previa. */
+    else if(mTab==='pre'){
       body='<div id="previaPartido"><div class="skel"></div>'
         +'<div class="skel"></div></div>';
       setTimeout(()=>previaEnLaFicha(m),0);
@@ -6407,6 +6413,7 @@ const App=(()=>{
         </div>
       </div>
       <div class="tabs" style="padding:0 8px">
+        <button class="${mTab==='pre'?'on':''}" onclick="App.mtab('pre')">Previa</button>
         <button class="${mTab==='res'?'on':''}" onclick="App.mtab('res')">Resumen</button>
         <button class="${mTab==='sta'?'on':''}" onclick="App.mtab('sta')">Estadísticas</button>
         <button class="${mTab==='xi'?'on':''}" onclick="App.mtab('xi')">Formaciones</button>

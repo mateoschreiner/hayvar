@@ -430,6 +430,51 @@ def goleadores_de(equipo, liga=None, temporada=None, desde=None, tope=6):
     return _filas(sql, p)
 
 
+def mejores_de(equipo, liga=None, temporada=None, desde=None, minimo=3,
+               tope=5):
+    """
+    Los mejores jugadores de un equipo, por puntaje.
+
+    Antes esto se contestaba con los goles, y los goles contestan otra
+    cosa: quién convierte. Un arquero, un cinco o un lateral pueden ser
+    los mejores del equipo y no aparecer nunca en esa lista.
+
+    El puntaje sale de las formaciones, que es lo que guarda la fuente
+    partido por partido. Se pide un mínimo de partidos para que no gane
+    el que jugó uno solo y le fue bien: con dos partidos cualquiera puede
+    tener el mejor promedio del plantel.
+    """
+    # El dorsal y el puesto salen de la MISMA tabla, así que no hace falta
+    # ir a buscarlos a otro lado. Se toma el del partido más reciente:
+    # `MAX(p.cuando)` ordena y las otras dos columnas lo acompañan.
+    sql = ("SELECT f.jugador, "
+           "       COUNT(*) AS partidos, "
+           "       AVG(f.puntaje) AS puntaje, "
+           "       MAX(p.cuando) AS ultimo, "
+           "       f.dorsal AS n, f.puesto AS puesto, "
+           "       (SELECT COUNT(*) FROM goles g JOIN partidos q "
+           "                ON q.id=g.partido "
+           "         WHERE g.jugador=f.jugador AND q.liga=p.liga) AS goles "
+           "  FROM formaciones f JOIN partidos p ON p.id=f.partido "
+           " WHERE f.equipo=? AND f.puntaje IS NOT NULL "
+           # El técnico no compite con los jugadores.
+           "   AND (f.rol IS NULL OR f.rol<>'dt')")
+    par = [equipo]
+    if liga:
+        sql += " AND p.liga=?"
+        par.append(liga)
+    if temporada is not None:
+        sql += " AND p.temporada=?"
+        par.append(temporada)
+    if desde:
+        sql += " AND p.cuando>=?"
+        par.append(desde)
+    sql += (" GROUP BY f.jugador HAVING COUNT(*)>=? "
+            " ORDER BY AVG(f.puntaje) DESC, COUNT(*) DESC LIMIT ?")
+    par += [minimo, tope]
+    return _filas(sql, par)
+
+
 def temporadas(liga):
     """Qué temporadas hay guardadas de un torneo, y cuántos partidos de cada."""
     return _filas(

@@ -9188,18 +9188,39 @@ def _jugador_a_seguir(equipo_id, canon, liga, temporada, desde):
     for j in (plantel_de(canon) if canon else []):
         porNombre[norm(j.get("nombre") or "")] = j
 
-    def armar(g, porque):
-        f = porNombre.get(norm(g["jugador"])) or {}
-        return {"nombre": g["jugador"], "goles": g["goles"],
-                "partidos": g["partidos"], "porque": porque,
-                "n": f.get("n"), "puesto": f.get("puesto")}
+    def armar(nombre, **extra):
+        f = porNombre.get(norm(nombre)) or {}
+        j = {"nombre": nombre, "n": f.get("n"), "puesto": f.get("puesto"),
+             "goles": 0, "partidos": 0, "puntaje": None}
+        j.update({k: v for k, v in extra.items() if v is not None})
+        if j.get("n") is None:
+            j["n"] = extra.get("n")
+        if not j.get("puesto"):
+            j["puesto"] = extra.get("puesto")
+        return j
 
-    recientes = tablas.goleadores_de(equipo_id, liga, temporada, desde, 3)
-    if recientes and recientes[0]["goles"]:
-        return armar(recientes[0], "en racha")
-    todos = tablas.goleadores_de(equipo_id, liga, temporada, None, 3)
-    if todos and todos[0]["goles"]:
-        return armar(todos[0], "goleador del equipo")
+    # El mejor por puntaje, que es lo que contesta "quién es el mejor".
+    # Los goles contestan otra cosa: quién convierte. Un arquero o un
+    # cinco pueden ser los mejores del equipo y no aparecer nunca en la
+    # lista de goleadores.
+    if canon:
+        for dias, minimo in ((desde, 2), (None, 3)):
+            mejores = _sin_reventar(
+                lambda d=dias, m=minimo: tablas.mejores_de(
+                    canon, liga, temporada, d, m, 1), [])
+            if mejores and mejores[0].get("puntaje"):
+                g = mejores[0]
+                return armar(g["jugador"], goles=g.get("goles") or 0,
+                             partidos=g["partidos"],
+                             puntaje=round(g["puntaje"], 1),
+                             n=g.get("n"), puesto=g.get("puesto"))
+    # Sin puntajes guardados —que es lo que pasa en el ascenso— se cae al
+    # goleador, que es el dato que sí tenemos siempre.
+    for dias in (desde, None):
+        gol = tablas.goleadores_de(equipo_id, liga, temporada, dias, 1)
+        if gol and gol[0]["goles"]:
+            return armar(gol[0]["jugador"], goles=gol[0]["goles"],
+                         partidos=gol[0]["partidos"])
     return None
 
 
@@ -9248,48 +9269,49 @@ def _relato(p):
         gf = (r["gf"] / float(r["pj"])) if r.get("pj") else 0
         gc = (r["gc"] / float(r["pj"])) if r.get("pj") else 0
         if como == "G" and seguidas >= 3:
-            return elegir(["llega lanzado, con %d triunfos al hilo" % seguidas,
+            return 4, elegir(["llega lanzado, con %d triunfos al hilo" % seguidas,
                            "viene de ganar %d seguidos" % seguidas,
                            "atraviesa su mejor momento: %d triunfos en fila"
                            % seguidas], salto)
         if como == "P" and seguidas >= 3:
-            return elegir(["viene golpeado: %d derrotas seguidas" % seguidas,
+            return 4, elegir(["viene golpeado: %d derrotas seguidas" % seguidas,
                            "no gana hace %d partidos y necesita cortar la "
                            "racha" % seguidas,
                            "está en crisis, con %d caídas al hilo" % seguidas],
                           salto)
         if como == "E" and seguidas >= 3:
-            return elegir(["empató los últimos %d y no arranca" % seguidas,
+            return 2, elegir(["empató los últimos %d y no arranca" % seguidas,
                            "acumula %d empates seguidos" % seguidas], salto)
         if como == "G" and seguidas == 2:
-            return elegir(["encadenó dos triunfos",
+            return 2, elegir(["encadenó dos triunfos",
                            "ganó los dos últimos"], salto)
         if r.get("pj") and gf >= 1.8:
-            return elegir(["es de los que más convierten: %.1f goles por "
+            return 3, elegir(["es de los que más convierten: %.1f goles por "
                            "partido" % gf,
                            "tiene el ataque más suelto del torneo"], salto)
         if r.get("pj") and gc <= 0.7 and r["pj"] >= 4:
-            return elegir(["se hizo fuerte atrás: apenas %.1f goles en "
+            return 3, elegir(["se hizo fuerte atrás: apenas %.1f goles en "
                            "contra por partido" % gc,
                            "casi no recibe goles"], salto)
         if r.get("pj"):
             media = (3 * r["g"] + r["e"]) / float(r["pj"])
             if media >= 2.0:
-                return elegir(["es de lo mejor del torneo",
+                return 3, elegir(["es de lo mejor del torneo",
                                "viene siendo de los más regulares"], salto)
             if media <= 0.9:
-                return elegir(["no encuentra el rumbo",
+                return 3, elegir(["no encuentra el rumbo",
                                "está lejos de lo que esperaba",
                                "no levanta"], salto)
         if como == "G":
-            return elegir(["viene de ganar", "llega con un triunfo fresco"],
-                          salto)
+            return 1, elegir(["viene de ganar", "llega con un triunfo fresco"],
+                             salto)
         if como == "P":
-            return elegir(["viene de perder", "arrastra la última derrota"],
-                          salto)
+            return 1, elegir(["viene de perder", "arrastra la última derrota"],
+                             salto)
         if como == "E":
-            return elegir(["viene de empatar", "no pudo con el último"], salto)
-        return ""
+            return 1, elegir(["viene de empatar", "no pudo con el último"],
+                             salto)
+        return 0, ""
 
     def apuro(lado):
         """Qué tiene en juego, dicho como se dice."""
@@ -9312,9 +9334,11 @@ def _relato(p):
     # una racha, un equipo que se está yendo— se arranca por ahí, que es
     # como arranca cualquier nota. El "A recibe a B" queda para cuando no
     # hay nada mejor.
-    cvh, cva = como_viene("home", 0), como_viene("away", 1)
+    fzh, cvh = como_viene("home", 0)
+    fza, cva = como_viene("away", 1)
     aph, apa = apuro("home"), apuro("away")
     fr = []
+    yaDicho = None          # de qué equipo ya habló la entrada
     if p.get("clasico"):
         fr.append(elegir(["Hay clásico. %s recibe a %s en el %s."
                           % (hn, an, p["clasico"]),
@@ -9330,9 +9354,9 @@ def _relato(p):
                           % (quien, otro),
                           "Partido caliente abajo: %s contra %s."
                           % (hn, an)]))
-    elif "lanzado" in cvh or "lanzado" in cva or "mejor momento" in cvh \
-            or "mejor momento" in cva:
-        quien = hn if ("lanzado" in cvh or "mejor momento" in cvh) else an
+    elif max(fzh, fza) >= 4 and (fzh != fza):
+        yaDicho = "home" if fzh > fza else "away"
+        quien = hn if fzh > fza else an
         fr.append(elegir(["%s quiere estirar la racha ante %s."
                           % (quien, an if quien == hn else hn),
                           "%s llega en su mejor momento y se cruza con %s."
@@ -9346,13 +9370,12 @@ def _relato(p):
     # Lo que ya dijo la entrada no se repite. Si el título fue "River llega
     # en su mejor momento", el cuerpo no vuelve a contar los cuatro
     # triunfos: eso es lo que hace que un texto suene a máquina.
+    # Si la entrada ya habló de un equipo, el cuerpo no lo repite.
+    if yaDicho == "home":
+        fzh, cvh = 0, ""
+    elif yaDicho == "away":
+        fza, cva = 0, ""
     entrada = fr[0]
-    if "mejor momento" in entrada or "estirar la racha" in entrada:
-        if hn in entrada.split(" quiere")[0] or "mejor momento" in entrada:
-            if ("lanzado" in cvh or "mejor momento" in cvh) and hn in entrada:
-                cvh = ""
-            if ("lanzado" in cva or "mejor momento" in cva) and an in entrada:
-                cva = ""
     if "categoría" in entrada or "descenso encima" in entrada:
         if "descenso" in (aph or ""):
             aph = ""
@@ -9364,28 +9387,28 @@ def _relato(p):
         juntos = aph
         aph = apa = ""
 
-    dichos = set()
-    for i, (lado, nombre, cv, ap) in enumerate(
-            (("home", hn, cvh, aph), ("away", an, cva, apa))):
-        if not cv and not ap:
-            continue
-        # No repetir la misma idea con otras palabras.
-        if cv and cv in dichos:
-            cv = ""
-        if cv:
-            dichos.add(cv)
-        quien = elegir(["El local", "El dueño de casa"], i) if lado == "home" \
+    # Del cuerpo se dice UNA cosa, no cuatro.
+    #
+    # Toda la información de la tarjeta ya está arriba, en números y con
+    # más precisión que en una frase. Repetirla acá no agrega nada y es
+    # exactamente lo que hace que el texto suene a máquina: una máquina
+    # cuenta todo lo que sabe, una persona elige.
+    #
+    # Se dice lo del equipo que MÁS se destaca —el que viene mejor o el
+    # que viene peor— y del otro nada.
+    cands = [(fzh, 0, hn, cvh, aph), (fza, 1, an, cva, apa)]
+    cands.sort(key=lambda x: -x[0])
+    _f, i, nombre, cv, ap = cands[0]
+    if cv:
+        quien = elegir(["El local", "El dueño de casa"], i) if i == 0 \
             else elegir(["El visitante", "El equipo visitante"], i)
-        if cv and ap:
-            fr.append(elegir(["%s %s y llega %s." % (quien, cv, ap),
-                              "%s %s. Llega %s." % (nombre, cv, ap)], i))
-        elif cv:
-            fr.append("%s %s." % (nombre, cv))
-        elif ap:
-            fr.append("%s llega %s." % (nombre, ap))
+        fr.append(elegir(["%s %s." % (quien, cv),
+                          "%s %s." % (nombre, cv)], i))
     if juntos:
         fr.append(elegir(["Los dos llegan %s." % juntos,
                           "Están los dos en la misma: %s." % juntos]))
+    elif ap and not cv:
+        fr.append("%s llega %s." % (nombre, ap))
 
     # ── El antecedente ──────────────────────────────────────────────────
     if p.get("dato"):
@@ -9412,23 +9435,20 @@ def _relato(p):
                                   % (h["gano_a"], h["gano_b"], h["pj"])]))
 
     # ── El cierre: a quién mirar ────────────────────────────────────────
+    # El cierre va sólo si hay UNO que sobresalga. Nombrar a los dos es
+    # no decir nada: si los dos son "el que hay que mirar", ninguno lo es.
     ver = []
     for lado in ("home", "away"):
         j = (p.get("aSeguir") or {}).get(lado)
-        if j and j.get("porque") == "en racha":
-            ver.append((j["nombre"], j["goles"]))
-    if len(ver) == 2:
-        fr.append(elegir(["Los dos llegan con el arco entre ojos: %s lleva "
-                          "%d y %s, %d." % (ver[0][0], ver[0][1],
-                                            ver[1][0], ver[1][1]),
-                          "%s y %s vienen de convertir y son los que más "
-                          "pueden desnivelar." % (ver[0][0], ver[1][0])]))
+        if j and j.get("puntaje"):
+            ver.append((j["nombre"], j["puntaje"]))
+    if len(ver) == 2 and abs(ver[0][1] - ver[1][1]) >= 0.4:
+        n, _ = max(ver, key=lambda x: x[1])
+        fr.append(elegir(["El que más puede desnivelar es %s." % n,
+                          "Ojo con %s." % n]))
     elif len(ver) == 1:
-        n, g = ver[0]
-        fr.append(elegir(["Ojo con %s, que lleva %d %s en el último mes."
-                          % (n, g, "gol" if g == 1 else "goles"),
-                          "%s es el que está fino: %d %s en el último mes."
-                          % (n, g, "gol" if g == 1 else "goles")]))
+        fr.append(elegir(["El que más puede desnivelar es %s." % ver[0][0],
+                          "Ojo con %s." % ver[0][0]]))
     return " ".join(fr)
 
 

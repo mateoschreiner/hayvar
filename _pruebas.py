@@ -6478,9 +6478,20 @@ chequear("pero una racha larga sin ganar sí se cuenta",
 chequear("los goles del rival no cuentan como propios",
          "AND (g.equipo IS NULL OR g.equipo=(" in _TBL)
 # El jugador a seguir se elige por lo que viene haciendo, no a dedo.
-chequear("el jugador a seguir se elige por la racha, no a dedo",
-         'armar(recientes[0], "en racha")' in _SRV
-         and 'armar(todos[0], "goleador del equipo")' in _SRV)
+# El jugador a seguir es el MEJOR de cada equipo, no el que más goles
+# hizo: los goles contestan otra cosa. Un arquero o un cinco pueden ser
+# los mejores del equipo y no aparecer nunca en la tabla de goleadores.
+chequear("el jugador a seguir es el mejor por puntaje, no el goleador",
+         "def mejores_de(equipo" in _TBL
+         and "ORDER BY AVG(f.puntaje) DESC" in _TBL
+         and "tablas.mejores_de(" in _SRV)
+chequear("y con un mínimo de partidos, para que no gane el que jugó uno",
+         "HAVING COUNT(*)>=?" in _TBL)
+chequear("y el técnico no compite con los jugadores",
+         "AND (f.rol IS NULL OR f.rol<>'dt')" in _TBL)
+chequear("sin puntajes se cae al goleador, que es lo que hay",
+         "tablas.goleadores_de(equipo_id, liga, temporada, dias, 1)" in _SRV)
+chequear("y ya no dice 'en racha'", "en racha" not in HTML)
 # Y con el dorsal, que es lo que se ve desde la tribuna: el nombre solo no
 # alcanza cuando el que lee no sigue a ese club.
 chequear("y va con su dorsal y su puesto",
@@ -6665,7 +6676,16 @@ chequear("y a la derecha van el jugador y el equipo de la fecha",
 # se sabe de cuál de los dos es sin leer.
 chequear("y cada jugador va abajo del escudo de su equipo",
          "${aSeguirHtml(j)}\n    </div>`;" in HTML
-         and '(p.aSeguir||{}).home)}' in HTML)
+         and '(p.aSeguir||{}).home,cH)}' in HTML)
+# El color del gráfico va pegado al nombre. Con dos clubes celestes
+# —Atlético Tucumán y Belgrano— el gráfico es ilegible sin esto, y una
+# leyenda abajo obligaba a mirar en dos lados a la vez.
+chequear("el color de cada club va al lado de su nombre",
+         'class="cua" style="background:${esc(color)}"' in HTML
+         and ".pv-lado .nm .cua{" in HTML
+         # Y la leyenda de abajo del gráfico ya no está: obligaba a mirar
+         # el nombre arriba y el color abajo para atar cabos.
+         and ".pv-radar .quien{" not in HTML)
 # El equipo de la fecha se elige por rendimiento, con la racha de desempate.
 chequear("el equipo de la fecha se elige por puntos por partido",
          'equipos.sort(key=lambda e: (-(e["pts"] / (e["pj"] or 1)), -e["racha"]))'
@@ -6734,13 +6754,14 @@ chequear("el relato anuncia el clásico en la primera frase",
 # de decirse para que dos previas seguidas no se lean igual. Lo que sí
 # tiene que estar es la idea —racha del local, mal momento de la visita y
 # qué se juega cada uno— y que hable de los dos.
-chequear("y dice cómo llega cada uno y qué se juega",
-         "3 triunfos" in _rel and "como puntero" in _rel
-         and "3 derrotas" in _rel and "permanencia" in _rel, _rel)
-chequear("y usa los roles y no sólo los nombres",
-         any(x in _rel for x in ("El local", "El dueño de casa",
-                                 "El visitante", "El equipo visitante")),
+# Del cuerpo se dice UNA cosa, no cuatro: toda la información ya está
+# arriba en números y con más precisión. Una máquina cuenta todo lo que
+# sabe; una persona elige.
+chequear("y el cuerpo dice una sola cosa, la que más se destaca",
+         "3 triunfos" in _rel and len([x for x in _rel.split(". ") if x]) <= 5,
          _rel)
+chequear("y no repite en el cuerpo lo que dijo la entrada",
+         _rel.count("Racing") <= 3, _rel)
 # La variación es fija por partido, no al azar: si cambiara en cada
 # recarga, el mismo partido diría cosas distintas cada vez que alguien
 # entra, y eso se nota enseguida.
@@ -6758,9 +6779,8 @@ chequear("y dos partidos distintos no arrancan con la misma frase",
          server._relato(_uno).split(".")[0].replace("Racing", "")
          != server._relato(_otro).split(".")[0].replace("Boca Juniors", "")
          or True)  # puede coincidir: son pocas variantes, no es un error
-chequear("y cierra con el antecedente y con a quién mirar",
-         "no le gana a Racing hace 7 partidos." in _rel
-         and "Maravilla Martínez" in _rel and "4 goles" in _rel, _rel)
+chequear("y cierra con el antecedente",
+         "no le gana a Racing hace 7 partidos." in _rel, _rel)
 # Lo que ya dijo la entrada no se repite en el cuerpo: si el título fue
 # "llega en su mejor momento", abajo no se vuelven a contar los triunfos.
 _repe = server._relato({
@@ -6879,26 +6899,21 @@ chequear("y se muestra a la derecha, con los escudos acotados",
          "El partido de la fecha" in HTML
          and ".pv-elegido.pf .eq img{width:24px;height:24px" in HTML)
 
-# ── Las tablas al costado ────────────────────────────────────────────────
-chequear("las tablas van al costado de la previa",
-         "async function tablasDeLaPrevia(ps)" in HTML
-         and "function tablitaPrevia(nombre, filas, marcar)" in HTML
-         and "if(S.liga==='lpf') tablasDeLaPrevia(ps);" in HTML)
-# Marcados los que juegan: es el motivo por el que la tabla está en ESTA
-# pantalla y no en la de tablas.
-# Ojo con la función que compara nombres: en la página se llama
-# `slugTexto`, no `norm`. Con `norm` la función reventaba entera y las
-# tablas no aparecían nunca, sin ningún error a la vista.
-chequear("y marcan a los que juegan esta fecha",
-         "marcar&&marcar.has(slugTexto(r.team.name))?' juega':''" in HTML
-         and ".tp-fila.juega{" in HTML)
-chequear("y usan slugTexto, que es la que existe en la página",
-         "norm(r.team.name)" not in HTML
-         and "juegan.add(norm(" not in HTML)
-# Y no frenan el dibujo de la previa: son dos pedidos más y la previa ya
-# se ve sin ellas.
-chequear("y no frenan el dibujo de la previa",
-         "if(S.liga==='lpf') tablasDeLaPrevia(ps);\n    status('ok'" in HTML)
+# ── La previa en la página del partido ───────────────────────────────────
+# Es su propia solapa, al lado de Resumen, Estadísticas y Formaciones.
+chequear("la previa es una solapa más en la página del partido",
+         "App.mtab('pre')" in HTML and ">Previa</button>" in HTML
+         and "else if(mTab==='pre'){" in HTML)
+# Y decide sola con cuál abrir: si el partido no empezó, la previa; si ya
+# empezó o terminó, el resumen.
+chequear("y un partido que no empezó abre en la previa",
+         "if(mBase&&mBase.status!=='FIN'&&mBase.status!=='LIVE') mTab='pre';"
+         in HTML)
+# Ojo con dónde va esa línea: arriba de la asignación, `mBase` todavía es
+# el partido ANTERIOR y la solapa salía la del que estabas mirando antes.
+chequear("y se decide después de saber qué partido es",
+         HTML.index("mBase=S.games.find(igual)")
+         < HTML.index("if(mBase&&mBase.status!=='FIN'"))
 
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)

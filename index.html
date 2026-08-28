@@ -432,6 +432,45 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   color:var(--txt2);cursor:pointer}
 .tit-sol:hover{background:var(--bg)}
 .tit-sol.on{background:var(--nav);color:#fff;border-color:var(--nav)}
+
+/* ── La tabla de títulos de LaLiga ─────────────────────────────────────
+   Una tabla y no una lista de años: de España tenemos cuántos ganó cada
+   club, no quién ganó cada una de las 124 Copas del Rey. */
+.tit-tabla{padding:4px 6px 10px}
+.tit-fila,.tit-cab{display:grid;
+  grid-template-columns:26px 22px 1fr repeat(var(--cols,3),42px) 40px;
+  align-items:center;gap:8px;padding:6px 10px;font-size:13px}
+.tit-cab{font-size:10px;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--txt3);border-bottom:1px solid var(--line);padding-bottom:7px}
+.tit-fila{border-top:1px solid var(--line)}
+.tit-fila .pos{color:var(--txt3);font-size:11px;text-align:right;
+  font-variant-numeric:tabular-nums}
+.tit-fila .esc{width:20px;height:20px;object-fit:contain}
+/* El hueco de los clubes desaparecidos: se deja vacío a propósito. Un
+   escudo genérico sería inventarles una identidad que no tienen. */
+.tit-fila .esc.vacio{display:inline-block}
+.tit-fila .nm{min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-weight:600}
+.tit-fila>span:not(.pos):not(.esc):not(.nm){text-align:center;
+  color:var(--txt2);font-variant-numeric:tabular-nums}
+.tit-cab>span:not(.pos):not(.esc):not(.nm){text-align:center}
+.tit-fila>b,.tit-cab>b{text-align:right;font-variant-numeric:tabular-nums}
+.tit-ido{margin-left:5px;color:var(--txt3);font-size:11px}
+/* Los internacionales se despliegan: ahí sí tenemos el año de cada uno. */
+.tit-det{border-top:1px solid var(--line)}
+.tit-det summary{cursor:pointer;list-style:none}
+.tit-det summary::-webkit-details-marker{display:none}
+.tit-det summary .tit-fila{border-top:0;--cols:0}
+.tit-det[open] summary .tit-fila .nm{color:var(--acc,#e01e2b)}
+.tit-copa{display:grid;grid-template-columns:1fr auto;gap:10px;
+  padding:4px 10px 4px 56px;font-size:11.5px;color:var(--txt2)}
+.tit-copa .anos{color:var(--txt3);font-size:10.5px;text-align:right}
+/* La Copa de Ferias, que no suma: apagada, para que se vea que está
+   afuera de la cuenta sin tener que leer la aclaración. */
+.tit-copa.aparte{opacity:.72;font-style:italic}
+.tit-ed{display:flex;justify-content:space-between;gap:10px;
+  font-size:12px;padding:4px 0;border-top:1px solid var(--line)}
+.tit-ed b{font-variant-numeric:tabular-nums}
 /* Los dos números del costado: nacionales primero, internacionales al
    lado y en otro color. Nunca sumados. */
 .hist-club .cuentas{display:flex;align-items:center;gap:5px;flex:none}
@@ -1752,6 +1791,10 @@ const App=(()=>{
     lpf:['previa','calculadora','equipos','historia','tabla'],
     ca:['equipos','historia'],
     nacional:['equipos','historia'],
+    /* LaLiga tiene las mismas dos, pero Títulos se dibuja distinto: de
+       España tenemos cuántos ganó cada club, no el campeón de cada una de
+       las 124 Copas del Rey. Ver `tablaTitulos`. */
+    laliga:['equipos','historia'],
   };
 
   const Rutas={
@@ -2424,6 +2467,29 @@ const App=(()=>{
     main.innerHTML='<div class="skel"></div><div class="skel"></div>';
     $('#right').innerHTML='';
     const liga=S.liga;
+    /* LaLiga va por otro camino entero: otra dirección, otra forma de
+       dato y otra pantalla. Se corta acá arriba en vez de llenar de
+       `if` la función de abajo, que es de la liga argentina. */
+    if(liga==='laliga'){
+      if(!titDe[liga]){
+        /* Los dos juntos: los escudos de los veinte salen de la lista de
+           equipos y los títulos de la otra dirección. En serie serían dos
+           esperas por una sola pantalla. */
+        const [t]=await Promise.all([
+          get('/api/titulos?liga=laliga').catch(()=>null),
+          equipos('laliga'),
+        ]);
+        titDe[liga]=t;
+      }
+      if(S.sec!=='historia'||S.liga!==liga) return;
+      if(!titDe[liga]){
+        main.innerHTML='<div class="empty" style="padding:30px">No se pudo '
+          +'cargar los títulos.</div>';
+        return;
+      }
+      pintarTitulos();
+      return;
+    }
     if(!histDe[liga]){
       // Los escudos salen de la lista de equipos, y se piden en paralelo:
       // no vale la pena que una lista de campeones espere por los escudos,
@@ -2457,6 +2523,7 @@ const App=(()=>{
      internacionales. Es la misma pregunta —qué ganó cada club— así que va
      en una sola pantalla; lo que cambia es de qué lado del mundo. */
   let titSolapa='nacionales';
+  const titDe={};
 
   function pintarHistoria(){
     const main=$('#matches'); if(!main||!hist) return;
@@ -2481,8 +2548,117 @@ const App=(()=>{
 
   function verTitulos(cual){
     titSolapa=cual;
-    pintarHistoria();
+    if(S.liga==='laliga') pintarTitulos(); else pintarHistoria();
     const m=$('#matches'); if(m) m.scrollIntoView({block:'start'});
+  }
+
+  /* ── Títulos de LaLiga ───────────────────────────────────────────────
+
+     Una tabla y no una lista de años, porque es lo que los datos
+     sostienen: de España tenemos cuántas ganó cada club, verificado, y no
+     quién ganó cada una de las 124 Copas del Rey. Mostrar una lista de
+     años implicaría inventar los años.
+
+     La ventaja es que así se lee mejor de todos modos: la pregunta que
+     alguien se hace en esta pantalla es "quién ganó más", y una tabla la
+     contesta de un ojo. */
+  function pintarTitulos(){
+    const main=$('#matches'); const d=titDe['laliga']; if(!main||!d) return;
+    const inter=titSolapa==='internacionales';
+    main.innerHTML=`<div class="tit-solapas">
+        ${['nacionales','internacionales'].map(k=>`<button
+          class="tit-sol${titSolapa===k?' on':''}"
+          onclick="App.verTitulos('${k}')">${k==='nacionales'
+            ?'Nacionales':'Internacionales'}</button>`).join('')}
+      </div>`
+      + (inter?tablaTitulosInter(d):tablaTitulosNac(d))
+      + `<div class="note" style="padding:14px 16px 18px">${
+          esc(d.nota||'')} Fuente: ${esc(d.fuente||'')}.</div>`;
+    const der=$('#right'); if(der) der.innerHTML=titDerecha(d);
+  }
+
+  /* El escudo de un club de esta pantalla.
+
+     Los veinte de Primera lo tienen en la lista de equipos; a los cuatro
+     que hoy no juegan Primera se lo manda el servidor. Los dos clubes
+     desaparecidos no tienen ninguno, y ahí va el hueco: dibujar un
+     escudo genérico sería inventar una identidad. */
+  function escudoTitulo(f){
+    const e=(equiposDe['laliga']||[]).find(x=>mismoNombre(x.name,f.club));
+    const url=f.escudo||(e&&e.logo);
+    return url?`<img class="esc" src="${esc(url)}" alt="" loading="lazy">`
+              :'<span class="esc vacio"></span>';
+  }
+
+  function filaTitulo(f, celdas){
+    return `<div class="tit-fila">
+      <span class="pos">${f.pos}</span>
+      ${escudoTitulo(f)}
+      <span class="nm">${esc(f.club)}${f.desaparecido
+        ?'<span class="tit-ido" title="Club desaparecido">†</span>':''}${
+        f.nota?'<span class="hist-nota" title="'+esc(f.nota)+'">ⓘ</span>':''
+      }</span>
+      ${celdas}
+      <b>${f.total}</b>
+    </div>`;
+  }
+
+  function tablaTitulosNac(d){
+    return `<div class="tit-tabla">
+      <div class="tit-cab">
+        <span class="pos"></span><span class="esc"></span>
+        <span class="nm">Club</span>
+        ${(d.columnas||[]).map(c=>`<span title="${esc(c)}">${
+          esc(c.replace('Supercopa de España','Supercopa')
+               .replace('Copa del Rey','Copa'))}</span>`).join('')}
+        <b>Total</b>
+      </div>
+      ${(d.nacionales||[]).map(f=>filaTitulo(f,
+        [f.liga,f.copa,f.supercopa].map(n=>`<span>${n||'·'}</span>`).join('')
+      )).join('')}
+    </div>`;
+  }
+
+  /* Los internacionales van con el año de cada uno, plegado: acá sí los
+     tenemos. La Copa de Ferias aparece aparte y no suma, con su
+     aclaración: los clubes la exhiben y alguien que ve "Barcelona 17" y
+     en el museo cuenta 20 tiene derecho a saber de dónde sale. */
+  function tablaTitulosInter(d){
+    return `<div class="tit-tabla">
+      ${(d.internacionales||[]).map(f=>`<details class="tit-det">
+        <summary>${filaTitulo(f,'')}</summary>
+        ${(f.detalle||[]).map(c=>`<div class="tit-copa">
+          <span class="nm">${esc(c.copa)}${c.discutida
+            ?'<span class="hist-nota" title="'+esc(c.discutida)+'">ⓘ</span>'
+            :''}</span>
+          <span class="anos">${c.temporadas.map(esc).join(' · ')}</span>
+        </div>`).join('')}
+        ${f.ferias?`<div class="tit-copa aparte">
+          <span class="nm">Copa de Ferias<span class="hist-nota"
+            title="${esc((d.discutidas||{})['Copa de Ferias']||'')}"
+            >ⓘ</span></span>
+          <span class="anos">${f.ferias} — no suma</span>
+        </div>`:''}
+      </details>`).join('')}
+    </div>`;
+  }
+
+  /* A la derecha, la cuenta que verifica todo lo de la izquierda.
+
+     No es decoración: si un club tuviera una Liga de más, la suma se
+     pasaría de 95 y se vería acá. Es el mismo control que corre en las
+     pruebas, puesto donde alguien lo puede mirar. */
+  function titDerecha(d){
+    const malos=(d.controles||[]);
+    return `<div class="globo" style="padding:12px 14px">
+      <div class="lb">Cuántas veces se jugó</div>
+      ${(d.ediciones||[]).map(e=>`<div class="tit-ed">
+        <span>${esc(e.copa)}</span><b>${e.cuantas}</b></div>`).join('')}
+      <div class="note" style="padding:8px 0 0">${malos.length
+        ? '⚠ '+malos.map(m=>esc(m.copa)+': suman '+m.suma+' y deberían ser '
+            +m.esperado).join('. ')
+        : 'Los títulos de cada torneo suman exactamente sus ediciones.'}</div>
+    </div>`;
   }
 
   /* Los internacionales, año por año, con la misma fila que todo lo

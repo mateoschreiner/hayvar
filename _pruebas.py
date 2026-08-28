@@ -5310,6 +5310,7 @@ chequear("entrar en frío a una sección no cae en el fixture",
          "d.id==='lpf'&&!SECCIONES[d.sec]" in HTML)
 
 if _sh.which("node"):
+    import fichas_es                                             # noqa: E402
     import historia as _hist                                     # noqa: E402
     # Con colores, que es lo que el modo club necesita para pintar.
     _clubes = [{"name": n, "logo": ("/img/x/%d" % i) if i else None,
@@ -5397,6 +5398,14 @@ if _sh.which("node"):
             "radar": None, "partidos": {}, "sitio": None, "tienda": None},
         "/api/rounds": {"rounds": [1], "current": 1},
         "/api/games": {"games": []}, "/api/ligas": {"ligas": []},
+        # Los títulos de España salen del servidor de verdad y no de un
+        # ejemplo escrito a mano: así la prueba recorre el camino entero,
+        # de los datos a la tabla en pantalla. Un ejemplo inventado sólo
+        # probaría que el HTML se arma, no que muestra lo que corresponde.
+        "/api/titulos?liga=laliga": server.api_titulos({}),
+        "/api/equipos?liga=laliga": {"liga": "laliga", "clubes": [
+            {"name": n, "logo": "/img/x/%d" % i}
+            for i, n in enumerate(sorted(fichas_es.CLUBES), 1)]},
         "/api/visita": {"v": "x"}}, ensure_ascii=False)
 
     def _entrar(ruta):
@@ -5466,6 +5475,19 @@ App.init();
     caras: (main.match(/class="cara/g) || []).length,
     proxima: main.indexOf('pivote proxima') >= 0,
     cartelito: (main.match(/class="cartelito">([^<]+)</) || [])[1] || '',
+    /* La pantalla de Títulos de LaLiga. Es una tabla y no una lista de
+       años, así que se mira distinto que la argentina. */
+    titFilas: (main.match(/class="tit-fila"/g) || []).length,
+    titClubes: [...main.matchAll(/class="nm">([^<]+?)(?:<|$)/g)]
+      .map(m=>m[1]).filter(x=>x!=='Club'),
+    titTotales: [...main.matchAll(/<\/span>\s*<b>(\d+)<\/b>/g)].map(m=>m[1]),
+    titSolapas: (main.match(/class="tit-sol[ "]/g) || []).length,
+    titSinEscudo: (main.match(/class="esc vacio"/g) || []).length,
+    titDesaparecidos: (main.match(/class="tit-ido"/g) || []).length,
+    titConEscudo: (main.match(/class="esc" src="/g) || []).length,
+    titEdiciones: [...der.matchAll(/class="tit-ed">\s*<span>([^<]+)<\/span><b>(\d+)</g)]
+      .map(m=>[m[1], m[2]]),
+    titAviso: (der.match(/class="note"[^>]*>([^<]*)</) || [])[1] || '',
     tagClub: (htmlDe('#app').match(/class="tag"[^>]*>([^<]*)</) || [])[1] || '',
     /* Lo que reemplaza al "cómo juega" y la trayectoria del club. */
     /* Acotado al bloque del rendimiento: `pie` y `barra` son clases que
@@ -5727,7 +5749,46 @@ App.init();
                  (_s4["numeros"], _s4["dorsales"]))
 
 
-print("\n── los promedios: el año que viene y lo que necesita cada uno ──")
+    # ── Títulos de LaLiga, de punta a punta ────────────────────────────
+    print("\n── los títulos de LaLiga ──")
+    _es = _entrar("/laliga/historia")
+    chequear("la pantalla de títulos de LaLiga se abre", _es is not None)
+    if _es:
+        import espana as _esp
+        chequear("están los dieciséis clubes con título",
+                 _es["titFilas"] == 16, _es["titFilas"])
+        chequear("el primero es el que más tiene",
+                 _es["titClubes"][:2] == ["FC Barcelona", "Real Madrid"],
+                 _es["titClubes"][:3])
+        # 77 y no 94: en la solapa de nacionales van los nacionales. El
+        # total de los dos juntos no se muestra en ningún lado, porque
+        # una Liga y una Champions no son la misma unidad.
+        chequear("con su total de nacionales, sin mezclar",
+                 _es["titTotales"][:2] == ["77", "69"], _es["titTotales"][:3])
+        chequear("y las dos solapas", _es["titSolapas"] == 2)
+        # Los dos clubes desaparecidos van sin escudo y con su daga. No
+        # existe un escudo que enlazar y dibujar uno genérico sería
+        # inventarles una identidad.
+        # Exactamente dos: los otros catorce tienen escudo, trece de la
+        # lista de equipos y cuatro que manda el servidor. Si algún día
+        # este número sube, hay un club que perdió el suyo.
+        chequear("los dos clubes desaparecidos, y sólo ésos, van sin escudo",
+                 _es["titSinEscudo"] == 2 == _es["titDesaparecidos"],
+                 (_es["titSinEscudo"], _es["titDesaparecidos"]))
+        # El Zaragoza no juega Primera: su escudo lo manda el servidor y
+        # no la lista de equipos. Si eso se rompe, se ve acá.
+        chequear("y el escudo de los que no juegan Primera igual aparece",
+                 _es["titConEscudo"] >= 4, _es["titConEscudo"])
+        # La cuenta que verifica todo lo de la izquierda, en pantalla.
+        chequear("a la derecha están las ediciones de cada torneo",
+                 _es["titEdiciones"] == [["LaLiga", "95"],
+                                         ["Copa del Rey", "124"],
+                                         ["Supercopa de España", "42"]],
+                 _es["titEdiciones"])
+        chequear("y el aviso dice que las sumas cierran",
+                 "suman exactamente" in _es["titAviso"], _es["titAviso"])
+
+    print("\n── los promedios: el año que viene y lo que necesita cada uno ──")
 # AFA publica los puntos de cada temporada por separado pero los partidos
 # jugados todos juntos. Para la tabla del año que viene hay que poder
 # restarle los partidos de 2024, no sólo los puntos: se deducen por
@@ -6459,6 +6520,119 @@ chequear("Boca tiene 18 y Talleres 1",
          and historia.internacionales_de("Talleres (C)")["total"] == 1)
 chequear("y un club sin ninguno no muestra la tarjeta",
          historia.internacionales_de("Platense") is None)
+
+print("\n── los títulos de España ──")
+import espana                                                    # noqa: E402
+import fichas_es as _fes                                         # noqa: E402
+
+# LA prueba. Los títulos de cada torneo tienen que sumar sus ediciones.
+#
+# Es la misma que salvó la tabla histórica argentina y es la única que
+# sirve de verdad: un número inventado que no rompe ninguna suma es casi
+# imposible de ver leyendo, y uno que la rompe se cae solo. Si mañana
+# alguien le suma una Liga al Barcelona, el total pasa de 95 y falla acá
+# en vez de fallar en pantalla.
+chequear("los títulos de cada torneo suman sus ediciones",
+         espana.controles() == [], espana.controles())
+chequear("y son 95 ligas, 124 copas y 42 supercopas",
+         espana.EDICIONES == {"liga": 95, "copa": 124, "supercopa": 42})
+# La misma cuenta del otro lado: cuántas ganó España en cada
+# internacional. Sin esto, un año de más en la Champions no lo ve nadie.
+for _c, _f in espana.COPAS:
+    chequear("%s: %d, las que ganó España" % (_c, espana.GANADAS[_c]),
+             len(_f) == espana.GANADAS[_c], len(_f))
+# Y que no haya un año repetido dentro de una misma copa: dos campeones
+# el mismo año sería un error de tipeo que las sumas de arriba no ven,
+# porque el total seguiría cerrando.
+for _c, _f in espana.COPAS:
+    _anos = [a for a, _ in _f]
+    chequear("y ningún año repetido en %s" % _c,
+             len(_anos) == len(set(_anos)),
+             [a for a in _anos if _anos.count(a) > 1])
+
+# El total por club tiene que ser la suma de su desglose. Parece obvio
+# pero es justo lo que se rompe cuando alguien edita una fila a mano.
+for _x in espana.nacionales():
+    chequear("%s: %d = %d+%d+%d" % (_x["club"], _x["total"], _x["liga"],
+                                    _x["copa"], _x["supercopa"]),
+             _x["total"] == _x["liga"] + _x["copa"] + _x["supercopa"])
+
+# Los empates comparten posición. Atlético y Sevilla tienen 8
+# internacionales cada uno: numerarlos 3 y 4 diría que uno tiene más.
+_i = espana.internacionales()
+chequear("dos clubes con lo mismo comparten el puesto",
+         [(x["club"], x["pos"]) for x in _i if x["total"] == 8]
+         == [("Atlético de Madrid", 3), ("Sevilla FC", 3)],
+         [(x["club"], x["pos"]) for x in _i if x["total"] == 8])
+
+# La Copa de Ferias no suma. Es la decisión que más cambia los números:
+# con ella el Barcelona pasa de 17 a 20.
+_barsa = next(x for x in _i if x["club"] == "FC Barcelona")
+chequear("la Copa de Ferias no entra en el total",
+         _barsa["total"] == 17 and _barsa["ferias"] == 3,
+         (_barsa["total"], _barsa["ferias"]))
+chequear("pero se muestra, con su aclaración",
+         "Copa de Ferias" in espana.DISCUTIDAS
+         and len(espana.ferias()) == 3)
+# La Intercontinental de la FIFA sí cuenta, en su propia columna.
+_madrid = next(x for x in _i if x["club"] == "Real Madrid")
+chequear("la Intercontinental de la FIFA cuenta y va aparte",
+         _madrid["total"] == 32
+         and any(c["copa"] == "Copa Intercontinental de la FIFA"
+                 and c["discutida"] for c in _madrid["detalle"]),
+         _madrid["total"])
+
+# Los nombres tienen que ser los del sitio o no se van a poder cruzar con
+# nada: ni con el escudo, ni con la ficha, ni con el calendario.
+_deLaLiga = set(_fes.CLUBES)
+_conTitulo = set(espana.NACIONALES) | {c for _, f in espana.COPAS
+                                       for _, c in f}
+_afuera = sorted(_conTitulo - _deLaLiga)
+chequear("los clubes con título son de LaLiga o están declarados afuera",
+         _afuera == ["Arenas Club de Getxo", "Club Ciclista de San Sebastián",
+                     "RCD Mallorca", "Racing Club de Irún", "Real Unión",
+                     "Real Zaragoza"], _afuera)
+# Y los que están afuera tienen escudo, salvo los dos que ya no existen.
+for _c in _afuera:
+    _hay = espana.escudo_de(_c) is not None
+    _vive = _c not in espana.DESAPARECIDOS
+    chequear("%s: escudo %s" % (_c, "sí" if _vive else "no, desapareció"),
+             _hay == _vive, (_c, _hay))
+
+# Las fichas: veinte, y sin inventar lo que no se pudo verificar.
+chequear("son los veinte de LaLiga", len(_fes.CLUBES) == 20, len(_fes.CLUBES))
+chequear("todas tienen nombre, fundación, estadio y ciudad",
+         all(f.get("nombre") and f.get("fundado") and f.get("estadio")
+             and f.get("ciudad") for f in _fes.CLUBES.values()))
+# Tres clubes no tienen un clásico que las fuentes reconozcan. El campo va
+# vacío, no inventado: poner "Athletic Club" en el Alavés porque los dos
+# son vascos sería escribir un dato que nadie sostiene.
+chequear("los que no tienen clásico lo tienen vacío, no inventado",
+         sorted(n for n, f in _fes.CLUBES.items() if not f.get("clasico"))
+         == ["Alavés", "Racing de Santander", "Rayo Vallecano"],
+         sorted(n for n, f in _fes.CLUBES.items() if not f.get("clasico")))
+# El clásico de cinco clubes es contra un rival que no juega Primera. Va
+# igual: esconderlo no lo haría menos cierto.
+_rivales = {f["clasico"] for f in _fes.CLUBES.values() if f.get("clasico")}
+chequear("y los clásicos contra clubes de otra categoría van igual",
+         {"Hércules CF", "CD Leganés", "Real Zaragoza"} <= _rivales,
+         sorted(_rivales - _deLaLiga))
+# Sin marcas. Es la regla del sitio y acá es fácil de romper, porque la
+# mitad de los estadios españoles tiene patrocinador en el nombre.
+_marcas = ("Spotify", "Riyadh", "Abanca", "Cívitas", "Reale", "Wanda",
+           "Power8", "Stage Front")
+_conMarca = [n for n, f in _fes.CLUBES.items()
+             if any(m in f["estadio"] for m in _marcas)]
+chequear("ningún estadio se muestra con el nombre del patrocinador",
+         _conMarca == [], _conMarca)
+chequear("pero el comercial queda guardado para el que lo quiera",
+         _fes.CLUBES["FC Barcelona"]["estadioOficial"] == "Spotify Camp Nou")
+# El Camp Nou está en obra y ninguna cifra publicada describe el estadio
+# de hoy. Queda vacío con su explicación, que es mejor que un número que
+# parece sólido.
+chequear("una capacidad que no se pudo verificar queda vacía y explicada",
+         _fes.CLUBES["FC Barcelona"]["capacidad"] is None
+         and _fes.CLUBES["FC Barcelona"]["notaCapacidad"])
 
 print("\n── la previa de la fecha ──")
 chequear("la previa tiene su dirección", "/api/previa" in server.ROUTES)

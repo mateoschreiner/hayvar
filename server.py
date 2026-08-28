@@ -53,6 +53,8 @@ from urllib.error import URLError, HTTPError
 import almacen
 import escudos
 import fichas
+import fichas_es
+import espana
 import historia
 import historiales
 import zerozero
@@ -8220,6 +8222,12 @@ CLUBES_INFO = {
 for _n, _f in fichas.CLUBES.items():
     CLUBES_INFO.setdefault(_n, _f)
 
+# Y los veinte de LaLiga. No chocan con ninguno de arriba —son nombres de
+# otro país— pero van con `setdefault` igual, por la misma regla: lo que
+# ya estaba cargado manda.
+for _n, _f in fichas_es.CLUBES.items():
+    CLUBES_INFO.setdefault(_n, _f)
+
 
 # El resto de Primera. Acá va lo que no cambia de un año al otro: nombre,
 # apodo, fundación, cancha y —sobre todo— el diseño de la camiseta.
@@ -10291,6 +10299,56 @@ def api_historia(q):
     return historia.todo()
 
 
+def api_titulos(q):
+    """
+    Los títulos de los clubes de una liga. /api/titulos?liga=laliga
+
+    Va aparte de `/api/historia` y no pegado a ella porque los datos no
+    tienen la misma forma, y forzarlos a tenerla sería mentir. De la liga
+    argentina tenemos el campeón de cada temporada desde 1931 y por eso
+    ahí se puede mostrar año por año. De España tenemos los totales por
+    club verificados contra tres fuentes, pero no las 124 finales de Copa
+    una por una. Inventar esas filas para que las dos pantallas se vean
+    iguales sería el peor negocio posible.
+
+    Así que ésta muestra lo que hay: la tabla de quién ganó cuánto.
+    """
+    if (q.get("liga") or ["laliga"])[0] != "laliga":
+        return {"error": "Por ahora sólo LaLiga."}
+
+    def conEscudo(filas):
+        for f in filas:
+            # Los veinte de Primera traen su escudo del calendario y los
+            # resuelve la pantalla; a los otros cuatro hay que decirles
+            # dónde está. Los dos desaparecidos no tienen y no van a
+            # tener: se muestran sin escudo, que es lo honesto.
+            e = espana.escudo_de(f["club"])
+            if e:
+                f["escudo"] = e
+        return filas
+
+    return {
+        "liga": "laliga",
+        "nacionales": conEscudo(espana.nacionales()),
+        "internacionales": conEscudo(espana.internacionales()),
+        "ferias": espana.ferias(),
+        "columnas": [espana.NOMBRES[k]
+                     for k in ("liga", "copa", "supercopa")],
+        "ediciones": [{"copa": espana.NOMBRES[k], "cuantas": v}
+                      for k, v in espana.EDICIONES.items()],
+        "discutidas": espana.DISCUTIDAS,
+        # Lo que se muestra tiene que poder decir de dónde salió y con qué
+        # se verificó. Si algún día una suma no cierra, esto aparece en
+        # pantalla en vez de quedar en un comentario que nadie lee.
+        "controles": [{"copa": c, "suma": a, "esperado": b}
+                      for c, a, b in espana.controles()],
+        "fuente": "Wikipedia (ES e EN), RSSSF, laliga.com y las webs de "
+                  "los clubes",
+        "nota": "Los títulos de cada torneo suman sus ediciones: 95 ligas, "
+                "124 copas y 42 supercopas.",
+    }
+
+
 def api_equipos(q):
     """
     Los equipos de una competencia, con su escudo y sus colores.
@@ -10746,6 +10804,7 @@ ROUTES = {
     "/api/clubes": api_clubes,
     # Los equipos de cualquier competencia, para la sección Equipos y para
     # el modo club. Sale del calendario, así que anda en las catorce.
+    "/api/titulos": api_titulos,
     "/api/equipos": api_equipos,
     "/api/buscar": api_buscar,
     "/api/ranking": api_ranking,

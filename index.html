@@ -321,11 +321,11 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
   white-space:nowrap}
 .hist-cuenta span:nth-child(2){text-align:center}
 .hist-cuenta span:last-child{text-align:right}
-.hist-p{display:grid;grid-template-columns:54px 1fr 34px 1fr;align-items:center;
-  gap:8px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
+.hist-p{display:grid;grid-template-columns:58px 1fr 34px 1fr;align-items:center;
+  gap:10px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
   border-top:1px solid var(--line)}
 .hist-p .cuando{color:var(--txt3);font-size:10px;white-space:nowrap;
-  font-variant-numeric:tabular-nums}
+  font-variant-numeric:tabular-nums;padding-right:4px}
 /* El que se está mirando: cuenta en el resumen y se marca acá, para que se
    vea de dónde sale la cuenta. No se enlaza a sí mismo. */
 .hist-p.este{background:rgba(47,111,237,.07);border-radius:6px;
@@ -851,10 +851,10 @@ span.hist-esc{border-radius:50%;background:var(--line)}
 .cl-jug:hover{color:var(--acc)}
 .cl-jug .num{width:22px;text-align:center;font-weight:800;color:var(--txt3);font-size:11.5px;flex:none}
 .cl-jug .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* El dorsal de verdad, cuando el club tiene: al lado del nombre, chiquito,
-   porque el número grande de la izquierda ahora es el orden en la lista. */
-.cl-jug .nm .dorsal{margin-left:7px;font-size:10px;font-weight:700;
-  color:var(--txt3);font-variant-numeric:tabular-nums}
+/* Cuando el dorsal es fijo va a la izquierda y con más peso: es el número
+   que la gente asocia con el jugador. Cuando no lo hay, ese lugar lo ocupa
+   el orden en la lista y va más apagado, porque no identifica a nadie. */
+.cl-jug .num.fijo{color:var(--txt);font-size:12.5px}
 .cl-jug .pj{font-size:10.5px;color:var(--txt3)}
 /* la bandera del jugador. Ancho fijo aunque no haya bandera, así los
    nombres no bailan entre los que la tienen y los que no */
@@ -1731,19 +1731,22 @@ const App=(()=>{
      está verificada: es preferible que no haya pestaña a que haya una
      vacía. Y la calculadora de promedios es un invento argentino que sólo
      tiene sentido en Primera. */
-  /* La Previa va en cualquier torneo: se arma con lo que tenemos guardado
-     de ese torneo y con nada más. La tabla histórica y los internacionales,
-     sólo en Primera, que es de donde son los datos. */
+  /* La Previa, por ahora, sólo en la Liga Profesional.
+
+     Técnicamente anda en cualquier torneo —se arma con lo que tenemos
+     guardado de cada uno— pero en los demás sale a medias: sin promedios,
+     sin historial largo y con el jugador a seguir casi siempre vacío,
+     porque esos datos se van llenando recién. Una pantalla incompleta se
+     lee como una pantalla rota, así que no se muestra hasta que tenga con
+     qué llenarse.
+
+     La tabla histórica y los internacionales, lo mismo: son datos de
+     Primera. */
   const CON_SECCIONES={
     lpf:['previa','calculadora','equipos','historia','tabla'],
-    ca:['previa','equipos','historia'],
-    nacional:['previa','equipos','historia'],
+    ca:['equipos','historia'],
+    nacional:['equipos','historia'],
   };
-  // Y en las demás, la Previa sola.
-  ['laliga','premier','seriea','bundesliga','ligue1','lib','sud','champions',
-   'europa','femenino','mundial'].forEach(l=>{
-     if(!CON_SECCIONES[l]) CON_SECCIONES[l]=['previa'];
-   });
 
   const Rutas={
     /* de una pantalla a su dirección */
@@ -2139,6 +2142,10 @@ const App=(()=>{
     const c=p.historialCompleto;
     const usa=c||h;
     return `<div class="pv-hist">
+      ${/* El rótulo dice lo que hay en la lista. Antes decía "los
+           últimos 11" con seis abajo: la barra contaba sobre todos los
+           cruces y la lista venía cortada, y dos números distintos para
+           lo mismo en la misma tarjeta se lee como un error. */''}
       <div class="lb">${c
         ? `Se enfrentaron ${c.jugados} veces desde ${c.desde}`
         : `Los últimos ${h.jugados} ${h.jugados===1?'cruce':'cruces'}`}
@@ -2157,7 +2164,8 @@ const App=(()=>{
            una se mira de reojo y la otra se lee. */''}
       ${(h.partidos&&h.partidos.length)?`<details class="pv-cruces"
           onclick="event.stopPropagation()">
-        <summary>Ver los ${h.partidos.length} cruces</summary>
+        <summary>Ver ${h.partidos.length===h.jugados?'los':'los últimos'} ${
+          h.partidos.length} cruces</summary>
         ${h.partidos.map(x=>{
           const r=rutaPartido({liveId:x.id, home:{canon:x.local},
                                away:{canon:x.visita}});
@@ -4355,6 +4363,15 @@ const App=(()=>{
 
        Los que tienen dorsal de verdad —los de Primera— lo siguen viendo,
        al lado del nombre. */
+    /* ¿El club usa dorsal fijo? En Primera sí; en el ascenso se numera
+       del 1 al 11 por partido y el número no identifica a nadie.
+
+       Donde el dorsal es fijo, va él a la izquierda: es el que se ve
+       desde la tribuna y el que la gente asocia con el jugador. Donde no
+       lo hay, va el orden en la lista, que al menos dice cuántos son.
+
+       Se decide mirando el plantel y no la competencia: si el día de
+       mañana un club del ascenso empieza a usar dorsales, funciona solo. */
     const conDorsal=(d.plantel||[]).some(j=>!j.dt&&j.n!=null);
     let plantel='', ultimo='', orden=0;
     (d.plantel||[]).forEach(j=>{
@@ -4365,9 +4382,9 @@ const App=(()=>{
       if(!j.dt) orden++;
       plantel+=`<a class="cl-jug"
         href="${esc(Rutas.url(rutaJugador(j.nombre,j.id)))}" data-ir>
-        <span class="num">${j.dt?'DT':orden}</span><span class="nm">${esc(j.nombre)}${
-          conDorsal&&!j.dt&&j.n!=null
-            ? `<span class="dorsal">${j.n}</span>`:''}</span>
+        <span class="num${conDorsal?' fijo':''}">${j.dt?'DT'
+          :(conDorsal ? (j.n!=null?j.n:'–') : orden)}</span><span class="nm">${
+          esc(j.nombre)}</span>
         <span class="pais">${j.bandera
           ? `<img src="${esc(j.bandera)}" alt="${esc(j.pais||'')}"
                title="${esc(j.pais||'')}" loading="lazy">` : ''}</span></a>`;
@@ -5658,7 +5675,8 @@ const App=(()=>{
 
        Va acá y no arriba porque arriba `mBase` todavía es el partido
        ANTERIOR: se asigna en la línea de acá arriba. */
-    if(mBase&&mBase.status!=='FIN'&&mBase.status!=='LIVE') mTab='pre';
+    if(mBase&&hayPrevia(mBase)&&mBase.status!=='FIN'
+       && mBase.status!=='LIVE') mTab='pre';
 
     /* Pop-up o página. La pregunta no es si tenemos el partido a mano sino
        si hay algo atrás: el que llegó por el link no tiene a dónde volver,
@@ -6267,6 +6285,11 @@ const App=(()=>{
     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px">
     <circle cx="9" cy="13" r="5.5"/><path d="M14.5 13H22M14.5 10.5h5M9 7.5V4h6"/></svg>`;
 
+  /* ¿Este partido tiene previa? Hoy, sólo los de la Liga Profesional.
+     Está en un solo lugar para que el día que se abra a otro torneo haya
+     una línea que cambiar y no cuatro. */
+  const hayPrevia=m=>((m&&m.liga)||S.liga)==='lpf';
+
   function drawModal(m,loading){
     if(!m) return;
     const lv=m.status==='LIVE';
@@ -6287,7 +6310,7 @@ const App=(()=>{
       body=`<div class="empty">365scores sólo guarda el minuto a minuto de las fechas recientes,
         y esta ya salió de esa ventana.<br><br>
         <span style="color:var(--txt3);font-size:12px">El resultado y el árbitro salen de AFA y sí están, en Resumen.</span></div>`;
-    else if(mTab==='pre'){
+    else if(mTab==='pre'&&hayPrevia(m)){
       body='<div id="previaPartido"><div class="skel"></div>'
         +'<div class="skel"></div></div>';
       setTimeout(()=>previaEnLaFicha(m),0);
@@ -6501,8 +6524,12 @@ const App=(()=>{
           <div class="t">${crest(m.away,46,true)}<span>${paisDelClub(m.away)}${esc(m.away.canon||m.away.name)}</span></div>
         </div>
       </div>
+      ${/* La solapa de Previa sólo donde la previa tiene con qué
+           llenarse. En los otros torneos el partido abre en Resumen y ni
+           se entera de que existe. */''}
       <div class="tabs" style="padding:0 8px">
-        <button class="${mTab==='pre'?'on':''}" onclick="App.mtab('pre')">Previa</button>
+        ${hayPrevia(m)?`<button class="${mTab==='pre'?'on':''}"
+          onclick="App.mtab('pre')">Previa</button>`:''}
         <button class="${mTab==='res'?'on':''}" onclick="App.mtab('res')">Resumen</button>
         <button class="${mTab==='sta'?'on':''}" onclick="App.mtab('sta')">Estadísticas</button>
         <button class="${mTab==='xi'?'on':''}" onclick="App.mtab('xi')">Formaciones</button>

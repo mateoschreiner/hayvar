@@ -5303,7 +5303,7 @@ chequear("y la página conoce las mismas",
 # La Copa Argentina tiene Equipos e Historia pero no calculadora: los
 # promedios son de la liga, ahí no significan nada.
 chequear("la Copa Argentina tiene sus secciones y no la calculadora",
-         "ca:['previa','equipos','historia']," in HTML)
+         "ca:['equipos','historia']," in HTML)
 # Entrar en frío a una sección tomaba el atajo de la portada de la LPF y
 # cargaba el fixture en vez de la sección.
 chequear("entrar en frío a una sección no cae en el fixture",
@@ -6323,7 +6323,7 @@ chequear("y no se la come la de Primera ni la de la copa",
          and server.ROUTES["/api/historia"]({"liga": ["ca"]})["copa"]
              == "Copa Argentina")
 chequear("y tiene su pestaña en el submenú",
-         "nacional:['previa','equipos','historia']" in HTML)
+         "nacional:['equipos','historia']" in HTML)
 # La pantalla: los ascendidos y la nota de formato son lo nuevo.
 chequear("la pantalla dibuja los ascendidos y el formato",
          'class="subieron"' in HTML and 'class="hist-formato"' in HTML
@@ -6525,9 +6525,18 @@ chequear("y el jugador a seguir de cada partido y de la fecha",
          "function aSeguirHtml(j)" in HTML
          and 'class="pv-elegido"' in HTML
          and "El jugador de la fecha" in HTML)
-# Va en todos los torneos: se arma con lo guardado de cada uno.
-chequear("la previa está en todos los torneos",
-         "CON_SECCIONES[l]=['previa']" in HTML)
+# Por ahora, SÓLO en la Liga Profesional. Técnicamente anda en cualquier
+# torneo, pero en los demás sale a medias —sin promedios, sin historial
+# largo, sin jugador a seguir— y una pantalla incompleta se lee como una
+# pantalla rota.
+chequear("la previa está sólo en la Liga Profesional",
+         "lpf:['previa'," in HTML
+         and "CON_SECCIONES[l]=['previa']" not in HTML
+         and len([k for k in ("ca:['previa'", "nacional:['previa'")
+                  if k in HTML]) == 0)
+chequear("y la condición está en un solo lugar",
+         "const hayPrevia=m=>((m&&m.liga)||S.liga)==='lpf';" in HTML
+         and HTML.count("==='lpf'\n") >= 0)
 
 # Y la previa de verdad, con un calendario de mentira. Interesa sobre todo
 # el caso feo: un torneo del que todavía no guardamos ningún partido. Ahí
@@ -7218,17 +7227,19 @@ chequear("y se muestra a la derecha, con los escudos acotados",
 # Es su propia solapa, al lado de Resumen, Estadísticas y Formaciones.
 chequear("la previa es una solapa más en la página del partido",
          "App.mtab('pre')" in HTML and ">Previa</button>" in HTML
-         and "else if(mTab==='pre'){" in HTML)
+         and "else if(mTab==='pre'&&hayPrevia(m)){" in HTML)
+# Y en los otros torneos la solapa ni aparece.
+chequear("y en los otros torneos ni se dibuja",
+         "${hayPrevia(m)?`<button class=\"${mTab==='pre'?'on':''}\"" in HTML)
 # Y decide sola con cuál abrir: si el partido no empezó, la previa; si ya
 # empezó o terminó, el resumen.
 chequear("y un partido que no empezó abre en la previa",
-         "if(mBase&&mBase.status!=='FIN'&&mBase.status!=='LIVE') mTab='pre';"
-         in HTML)
+         "if(mBase&&hayPrevia(mBase)&&mBase.status!=='FIN'" in HTML)
 # Ojo con dónde va esa línea: arriba de la asignación, `mBase` todavía es
 # el partido ANTERIOR y la solapa salía la del que estabas mirando antes.
 chequear("y se decide después de saber qué partido es",
          HTML.index("mBase=S.games.find(igual)")
-         < HTML.index("if(mBase&&mBase.status!=='FIN'"))
+         < HTML.index("if(mBase&&hayPrevia(mBase)"))
 
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)

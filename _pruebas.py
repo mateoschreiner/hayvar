@@ -6661,9 +6661,15 @@ chequear("y al de afuera, a cuántos puntos está de entrar",
          "A 4 puntos de los playoffs" in _dice("Platense"),
          _dice("Platense"))
 chequear("al cuarto, a cuánto del puntero y que entra",
-         _dice("Independiente")[:2] == ["4º de 15 con 24 puntos",
-                                        "A 6 del puntero"],
+         _dice("Independiente")[:3] == ["4º de 15 con 24 puntos",
+                                        "A 6 del puntero",
+                                        "Entra a los playoffs"],
          _dice("Independiente"))
+# Adentro se dice "entra" y nada más: cuánto le sobra al que ya está
+# adentro no es una pregunta que se haga nadie.
+chequear("y al que ya está adentro no se le dice por cuántos",
+         not any("Entra a los playoffs por" in x
+                 for x in _dice("Independiente")), _dice("Independiente"))
 # Y en promedios, cuántos puntos necesita para estar salvo, que es el
 # número que la gente busca todos los lunes.
 chequear("y cuántos puntos necesita para salvarse",
@@ -6874,6 +6880,26 @@ chequear("sin datos igual dice quién juega contra quién",
 # El historial también en la pantalla principal, y en barra.
 chequear("el historial va en barra en la lista, no sólo en la ficha",
          "function histBarra(p)" in HTML and "${histBarra(p)}" in HTML)
+# Y con las claves que devuelve el servidor de verdad. Con `pj`/`gano_a`
+# la barra no se dibujaba nunca y no había error a la vista: el `if` daba
+# falso y la función devolvía vacío.
+chequear("y lee las claves que el servidor devuelve de verdad",
+         "if(!h||!h.jugados) return '';" in HTML
+         and "an(h.gano,col.local)" in HTML and "an(h.perdio,col.visita)" in HTML
+         and "h.gano_a" not in HTML and "h.gano_b" not in HTML)
+chequear("y el relato también",
+         'h.get("jugados"), h.get("gano"), h.get("perdio")' in _SRV
+         and 'h["gano_a"]' not in _SRV)
+# El `sin-caja` de la previa se quedaba pegado y Títulos y Equipos
+# perdían su globito blanco.
+chequear("la caja del medio se devuelve al salir de la previa",
+         "if(cajaMedio) cajaMedio.classList.remove('sin-caja');" in HTML)
+# Y los tres del costado, cada uno en su caja.
+chequear("el partido, el jugador y el equipo van en tres globitos",
+         HTML.count('<div class="globo"><div class="cl-sec">El partido '
+                    'de la fecha</div>') == 1
+         and '${d.delaFecha?`<div class="globo">' in HTML
+         and '${eq?`<div class="globo">' in HTML)
 
 # ── Lo que se rompió mirándolo en la pantalla ────────────────────────────
 # El encabezado no quedaba fijo: la caja de la pantalla tiene

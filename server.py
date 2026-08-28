@@ -9096,11 +9096,10 @@ def _que_se_juega(canon, zonas, promedios):
         # diferencia entre informar y rellenar.
         octavo = fila.get("octavo")
         if pos <= 8:
-            if octavo is not None and pos > 1 and pts > octavo:
-                dice.append("Entra a los playoffs por %d punto%s"
-                            % (pts - octavo, "" if pts - octavo == 1 else "s"))
-            else:
-                dice.append("Entra a los playoffs")
+            # Adentro se dice "entra" y nada más. Cuánto le sobra al que
+            # ya está adentro no es una pregunta que se haga nadie: lo que
+            # importa es cuánto le falta al que está afuera.
+            dice.append("Entra a los playoffs")
         elif octavo is not None:
             falta = octavo - pts
             if falta > 0:
@@ -9430,25 +9429,27 @@ def _relato(p):
     if p.get("dato"):
         fr.append(p["dato"] + ".")
     else:
-        h = p.get("historial")
-        if h and h.get("pj") and h["pj"] >= 3:
-            if h["gano_a"] > h["gano_b"]:
+        h = p.get("historial") or {}
+        # Las claves son las que devuelve `historial_entre`: jugados, gano
+        # y perdio. Con `pj`/`gano_a`/`gano_b` esta frase no salía nunca y
+        # no había forma de darse cuenta: el `if` daba falso y listo.
+        pj, ga, gb = h.get("jugados"), h.get("gano"), h.get("perdio")
+        if pj and pj >= 3:
+            if ga > gb:
                 fr.append(elegir(["El historial es de %s: ganó %d de los %d "
-                                  "cruces." % (hn, h["gano_a"], h["pj"]),
+                                  "cruces." % (hn, ga, pj),
                                   "En los %d antecedentes manda %s, con %d "
-                                  "triunfos." % (h["pj"], hn, h["gano_a"])]))
-            elif h["gano_b"] > h["gano_a"]:
+                                  "triunfos." % (pj, hn, ga)]))
+            elif gb > ga:
                 fr.append(elegir(["El historial es de %s: ganó %d de los %d "
-                                  "cruces." % (an, h["gano_b"], h["pj"]),
+                                  "cruces." % (an, gb, pj),
                                   "En los %d antecedentes manda %s, con %d "
-                                  "triunfos." % (h["pj"], an, h["gano_b"])]))
+                                  "triunfos." % (pj, an, gb)]))
             else:
                 fr.append(elegir(["El historial está partido al medio: %d y "
-                                  "%d en %d cruces."
-                                  % (h["gano_a"], h["gano_b"], h["pj"]),
+                                  "%d en %d cruces." % (ga, gb, pj),
                                   "Nunca se sacaron ventaja: %d y %d en %d "
-                                  "partidos."
-                                  % (h["gano_a"], h["gano_b"], h["pj"])]))
+                                  "partidos." % (ga, gb, pj)]))
 
     # ── El cierre: a quién mirar ────────────────────────────────────────
     # El cierre va sólo si hay UNO que sobresalga. Nombrar a los dos es

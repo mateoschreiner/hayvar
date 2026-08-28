@@ -1840,6 +1840,12 @@ const App=(()=>{
     $('#tabs').innerHTML='';
     const caja=$('#right')&&$('#right').parentElement;
     if(caja) caja.classList.add('sin-caja');
+    /* Y la caja del medio se limpia siempre: la previa se la saca para
+       que el encabezado pueda quedar fijo —`overflow:hidden` anula el
+       sticky— y si no se devuelve, Títulos y Equipos se quedaban sin su
+       globito blanco. */
+    const cajaMedio=$('#matches')&&$('#matches').parentElement;
+    if(cajaMedio) cajaMedio.classList.remove('sin-caja');
     if(sec==='equipos') return seccionEquipos();
     if(sec==='calculadora') return seccionCalculadora();
     if(sec==='historia') return seccionHistoria();
@@ -2108,18 +2114,23 @@ const App=(()=>{
      vistazo; una barra partida en tres, sí. */
   function histBarra(p){
     const h=p.historial;
-    if(!h||!h.pj) return '';
+    /* Ojo con los nombres: el servidor devuelve `jugados`, `gano` y
+       `perdio`, no `pj`/`gano_a`/`gano_b`. Con las claves equivocadas
+       esto devolvía vacío y no había ningún error a la vista: la barra
+       simplemente no aparecía nunca. */
+    if(!h||!h.jugados) return '';
     const col=coloresDelHistorial(p)||{};
-    const an=(n,c)=>`<i style="width:${100*n/h.pj}%${
+    const an=(n,c)=>`<i style="width:${100*n/h.jugados}%${
       c?';background:'+esc(c):''}"></i>`;
     return `<div class="pv-hist">
-      <div class="lb">Se cruzaron ${h.pj} ${h.pj===1?'vez':'veces'}</div>
-      <div class="barra">${an(h.gano_a,col.local)}${an(h.empates,'')}${
-        an(h.gano_b,col.visita)}</div>
+      <div class="lb">Se cruzaron ${h.jugados} ${
+        h.jugados===1?'vez':'veces'}</div>
+      <div class="barra">${an(h.gano,col.local)}${an(h.empates,'')}${
+        an(h.perdio,col.visita)}</div>
       <div class="pie">
-        <span><b>${h.gano_a}</b> ${esc(enMayusculas(p.home.name))}</span>
+        <span><b>${h.gano}</b> ${esc(enMayusculas(p.home.name))}</span>
         <span><b>${h.empates}</b> ${h.empates===1?'empate':'empates'}</span>
-        <span><b>${h.gano_b}</b> ${esc(enMayusculas(p.away.name))}</span>
+        <span><b>${h.perdio}</b> ${esc(enMayusculas(p.away.name))}</span>
       </div></div>`;
   }
 
@@ -2304,8 +2315,10 @@ const App=(()=>{
       </div>
       ${ps.map(p=>tarjetaPrevia(p)).join('')}`;
     const eq=d.equipoDeLaFecha, pf=d.partidoDeLaFecha;
-    $('#right').innerHTML=(d.delaFecha||eq||pf)?`<div class="globo">
-      ${pf?`<div class="cl-sec">El partido de la fecha</div>
+    // Cada uno en su propia caja: son tres respuestas distintas y juntas
+    // en un mismo globo se leen como una lista.
+    $('#right').innerHTML=`
+      ${pf?`<div class="globo"><div class="cl-sec">El partido de la fecha</div>
       <div class="pv-elegido pf">
         <div class="cruce">
           <span class="eq">${pf.home&&pf.home.logo
@@ -2317,8 +2330,9 @@ const App=(()=>{
             esc(enMayusculas((pf.away||{}).name||''))}</span>
         </div>
         <div class="dd">${esc(cuandoJuega(pf.start))}</div>
-      </div>`:''}
-      ${d.delaFecha?`<div class="cl-sec">El jugador de la fecha</div>
+      </div></div>`:''}
+      ${d.delaFecha?`<div class="globo">
+      <div class="cl-sec">El jugador de la fecha</div>
       <div class="pv-elegido">
         <a href="${esc(Rutas.url(rutaJugador(d.delaFecha.nombre)))}" data-ir>
           <span class="nm">${d.delaFecha.n!=null
@@ -2333,17 +2347,15 @@ const App=(()=>{
           : `${d.delaFecha.goles} ${d.delaFecha.goles===1?'gol':'goles'} en ${
               d.delaFecha.partidos} ${
               d.delaFecha.partidos===1?'partido':'partidos'}`}</div>
-
-      </div>`:''}
-      ${eq?`<div class="cl-sec">El equipo de la fecha</div>
+      </div></div>`:''}
+      ${eq?`<div class="globo">
+      <div class="cl-sec">El equipo de la fecha</div>
       <div class="pv-elegido">
         <div class="club big">${escudoHist(eq.club)}
           <b>${esc(enMayusculas(eq.club||''))}</b></div>
         <div class="dd">${(eq.pts/(eq.pj||1)).toFixed(2)} puntos por partido
           en ${eq.pj} ${eq.pj===1?'partido':'partidos'}</div>
-
-      </div>`:''}
-      </div>`:'';
+      </div></div>`:''}`;
     status('ok',`<b>${ps.length}</b> partidos · previa de la fecha`);
   }
 

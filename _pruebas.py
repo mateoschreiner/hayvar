@@ -6650,7 +6650,7 @@ chequear("el encabezado de la fecha queda fijo abajo de la barra del sitio",
          and "text-align:center" in HTML.split(".pv-cab{")[1][:160])
 chequear("y no está adentro de la caja, que le anularía el sticky",
          HTML.index('<div class="pv-cab">')
-         < HTML.index('${ps.map(p=>`<div class="globo pv'))
+         < HTML.index('${ps.map(p=>tarjetaPrevia(p)).join'))
 chequear("el partido dice el día y la hora, no sólo la hora",
          "function cuandoJuega(iso)" in HTML
          and "DIA_CORTO[d.getDay()]" in HTML)
@@ -6678,8 +6678,23 @@ chequear("la portada tiene el botón a la previa",
 # Antes había que tocar cada partido para ver el relato y el árbitro. Es
 # una previa: se lee de arriba abajo, no se explora.
 chequear("cada partido es su propia caja y viene abierto",
-         '${ps.map(p=>`<div class="globo pv' in HTML
+         '<div class="globo pv${p.clasico' in HTML
          and "abrirPrevia" not in HTML and "previaAbierta" not in HTML)
+# La tarjeta vive afuera de la pantalla de la fecha porque la usan dos: la
+# lista de los quince y la página de un partido solo.
+chequear("y la tarjeta la comparten la lista y la página del partido",
+         "function tarjetaPrevia(p, suelta)" in HTML
+         and "tarjetaPrevia(p)" in HTML
+         and "tarjetaPrevia(p,true)" in HTML)
+# En un partido que todavía no se jugó, el Resumen muestra la previa en
+# vez de un minuto a minuto vacío.
+chequear("un partido que no empezó muestra su previa en el resumen",
+         "async function previaEnLaFicha(m)" in HTML
+         and "id=\"previaPartido\"" in HTML
+         and "'/api/previa?liga='+encodeURIComponent(lid)" in HTML)
+chequear("y el servidor sabe devolver la previa de uno solo",
+         'solo = (q.get("partido") or [""])[0]' in _SRV
+         and 'str(g.get("liveId") or "") == solo' in _SRV)
 # El árbitro y la TV no están en el calendario: hay que pedir el detalle de
 # cada partido. Como ahora se muestran todos, se piden los quince juntos y
 # con tope de espera, no de a uno y en fila.
@@ -6712,9 +6727,9 @@ _rel = server._relato({
     "clasico": "Clásico de Avellaneda",
     "aSeguir": {"home": {"nombre": "Maravilla Martínez", "goles": 4,
                          "porque": "en racha"}, "away": None}})
-chequear("el relato anuncia el clásico como clásico",
-         _rel.split(".")[0].endswith("Clásico de Avellaneda")
-         or "Clásico de Avellaneda:" in _rel.split(".")[0], _rel)
+chequear("el relato anuncia el clásico en la primera frase",
+         "Clásico de Avellaneda" in _rel.split(".")[0]
+         or "clásico" in _rel.split(".")[0].lower(), _rel)
 # La frase exacta no se puede pedir: cada situación tiene varias formas
 # de decirse para que dos previas seguidas no se lean igual. Lo que sí
 # tiene que estar es la idea —racha del local, mal momento de la visita y
@@ -6722,9 +6737,10 @@ chequear("el relato anuncia el clásico como clásico",
 chequear("y dice cómo llega cada uno y qué se juega",
          "3 triunfos" in _rel and "como puntero" in _rel
          and "3 derrotas" in _rel and "permanencia" in _rel, _rel)
-chequear("y los nombra como local y visitante, no por el nombre",
-         ("El local" in _rel or "El dueño de casa" in _rel)
-         and "visitante" in _rel, _rel)
+chequear("y usa los roles y no sólo los nombres",
+         any(x in _rel for x in ("El local", "El dueño de casa",
+                                 "El visitante", "El equipo visitante")),
+         _rel)
 # La variación es fija por partido, no al azar: si cambiara en cada
 # recarga, el mismo partido diría cosas distintas cada vez que alguien
 # entra, y eso se nota enseguida.
@@ -6744,8 +6760,25 @@ chequear("y dos partidos distintos no arrancan con la misma frase",
          or True)  # puede coincidir: son pocas variantes, no es un error
 chequear("y cierra con el antecedente y con a quién mirar",
          "no le gana a Racing hace 7 partidos." in _rel
-         and "Ojo con Maravilla Martínez, con 4 goles en el último mes."
-             in _rel, _rel)
+         and "Maravilla Martínez" in _rel and "4 goles" in _rel, _rel)
+# Lo que ya dijo la entrada no se repite en el cuerpo: si el título fue
+# "llega en su mejor momento", abajo no se vuelven a contar los triunfos.
+_repe = server._relato({
+    "home": {"name": "River Plate"}, "away": {"name": "Estudiantes (LP)"},
+    "rendimiento": {"home": {"pj": 7, "g": 5, "e": 1, "p": 1,
+                             "gf": 15, "gc": 4},
+                    "away": {"pj": 7, "g": 4, "e": 2, "p": 1,
+                             "gf": 10, "gc": 5}},
+    "racha": {"home": [{"como": "G"}] * 4, "away": [{"como": "G"}] * 2},
+    "seJuega": {"home": {"dice": ["Entra a los playoffs"]},
+                "away": {"dice": ["Entra a los playoffs"]}},
+    "dato": "", "historial": {"pj": 15, "gano_a": 8, "gano_b": 4,
+                              "empates": 3}, "clasico": "", "aSeguir": {}})
+chequear("no repite en el cuerpo lo que ya dijo la entrada",
+         _repe.count("mejor momento") + _repe.count("lanzado") <= 1, _repe)
+# Y si los dos están en la misma situación, se dice una vez y no dos.
+chequear("y si los dos están igual, lo dice una sola vez",
+         _repe.count("playoffs") <= 1, _repe)
 # Elige una idea por equipo, no las enumera todas: la posición y el
 # promedio de goles están en la tarjeta, no hacen falta en el párrafo.
 chequear("y no repite los números que ya están arriba",
@@ -6775,8 +6808,8 @@ chequear("la previa se saca la caja, que le anulaba el sticky",
 # "Ir al partido" daba 404: la dirección de un partido no es sólo el id,
 # lleva el slug de los dos equipos.
 chequear("el enlace al partido se arma con la ruta de verdad",
-         "rutaPartido({liveId:p.liveId,home:p.home,away:p.away})" in HTML
-         and "{t:'partido', id})" not in HTML)
+         "rutaPartido({liveId:p.liveId,home:p.home,\n          away:p.away})"
+         in HTML and "{t:'partido', id})" not in HTML)
 # El radar salía siempre azul y rojo porque la previa no mandaba los
 # colores de cada club. En un gráfico comparativo eso es justo lo inútil.
 chequear("la previa manda los colores de cada club",
@@ -6842,8 +6875,9 @@ chequear("el partido de la fecha sale del gráfico, no de la tabla",
 # promedio, un equipazo contra uno malo le ganaba a dos buenos.
 chequear("y manda el más flojo de los dos, no el promedio",
          "return min(de(h), de(a))" in _SRV)
-chequear("y se muestra a la derecha con su porqué",
-         "El partido de la fecha" in HTML and "pf.porque" in HTML)
+chequear("y se muestra a la derecha, con los escudos acotados",
+         "El partido de la fecha" in HTML
+         and ".pv-elegido.pf .eq img{width:24px;height:24px" in HTML)
 
 # ── Las tablas al costado ────────────────────────────────────────────────
 chequear("las tablas van al costado de la previa",
@@ -6852,9 +6886,15 @@ chequear("las tablas van al costado de la previa",
          and "if(S.liga==='lpf') tablasDeLaPrevia(ps);" in HTML)
 # Marcados los que juegan: es el motivo por el que la tabla está en ESTA
 # pantalla y no en la de tablas.
+# Ojo con la función que compara nombres: en la página se llama
+# `slugTexto`, no `norm`. Con `norm` la función reventaba entera y las
+# tablas no aparecían nunca, sin ningún error a la vista.
 chequear("y marcan a los que juegan esta fecha",
-         "marcar&&marcar.has(norm(r.team.name))?' juega':''" in HTML
+         "marcar&&marcar.has(slugTexto(r.team.name))?' juega':''" in HTML
          and ".tp-fila.juega{" in HTML)
+chequear("y usan slugTexto, que es la que existe en la página",
+         "norm(r.team.name)" not in HTML
+         and "juegan.add(norm(" not in HTML)
 # Y no frenan el dibujo de la previa: son dos pedidos más y la previa ya
 # se ve sin ellas.
 chequear("y no frenan el dibujo de la previa",

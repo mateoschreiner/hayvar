@@ -551,6 +551,28 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
 .tp-corte{text-align:center;color:var(--txt3);font-size:11px;padding:1px 0}
 .pv-elegido .club.big{font-size:14px;color:var(--txt)}
 .pv-elegido .club.big img.hist-esc{width:22px;height:22px}
+/* El partido de la fecha: los dos equipos en una fila, con el escudo del
+   tamaño de un escudo. Sin acotarlo, el navegador los dibuja al tamaño
+   del archivo y ocupaban media pantalla. */
+/* Adentro de la página de un partido la tarjeta ya está en una caja: no
+   lleva otra encima ni el enlace a sí misma. */
+.pv.suelta{box-shadow:none;border:0;background:transparent;padding:0}
+
+.pv-elegido.pf .cruce{display:flex;flex-direction:column;gap:6px}
+.pv-elegido.pf .eq{display:flex;align-items:center;gap:8px;font-size:14px;
+  font-weight:700}
+.pv-elegido.pf .eq img{width:24px;height:24px;object-fit:contain;flex:none}
+.pv-elegido.pf .cruce i{font-style:italic;font-size:11px;color:var(--txt3);
+  padding-left:32px}
+.pv-elegido.pf .dd{margin-top:8px;font-size:12.5px;font-weight:600;
+  color:var(--txt2)}
+
+/* Quién es quién en el gráfico. Sin esto, dos formas superpuestas de dos
+   clubes celestes no se pueden distinguir. */
+.pv-radar .quien{display:flex;justify-content:center;gap:12px;margin-top:2px;
+  font-size:10px;font-weight:700;color:var(--txt2)}
+.pv-radar .quien span{display:flex;align-items:center;gap:4px}
+.pv-radar .quien i{width:8px;height:8px;border-radius:2px;display:block}
 
 /* Cada partido es su propia caja, con la misma forma que el resto de la
    página: así se lee como una tarjeta y no como un renglón de una lista. */
@@ -1968,6 +1990,12 @@ const App=(()=>{
     Momento:'Cómo viene en los últimos cinco partidos, con la misma '
       +'cuenta de puntos. Es la forma, no la temporada.'};
 
+  // Un nombre que entre en la leyenda del gráfico.
+  const cortito=n=>{
+    n=enMayusculas(n||'');
+    return n.length>14 ? n.split(' ')[0] : n;
+  };
+
   function radarDoble(id, a, b, p, grande){
     if(!a||!b) return '';
     /* Los colores salen de la misma puerta que la barra del historial:
@@ -2016,6 +2044,12 @@ const App=(()=>{
           stroke:${esc(cb||'#e5484d')}"/>
         <g class="ejes">${ejes.map(rotulo).join('')}</g>
       </svg>
+      <div class="quien">
+        <span><i style="background:${esc(ca)}"></i>${
+          esc(cortito((p.home||{}).name))}</span>
+        <span><i style="background:${esc(cb)}"></i>${
+          esc(cortito((p.away||{}).name))}</span>
+      </div>
     </div>`;
   }
 
@@ -2112,7 +2146,7 @@ const App=(()=>{
     const n=filas.length;
     const corte=n>12?[0,1,2,3,4,5,6,7]:null;
     const fila=r=>`<div class="tp-fila${
-        marcar&&marcar.has(norm(r.team.name))?' juega':''}">
+        marcar&&marcar.has(slugTexto(r.team.name))?' juega':''}">
       <span class="p">${r.pos}</span>
       ${r.team.logo?`<img src="${esc(r.team.logo)}" alt="" loading="lazy">`
                    :'<span class="sinesc"></span>'}
@@ -2133,7 +2167,7 @@ const App=(()=>{
     const juegan=new Set();
     (ps||[]).forEach(p=>{
       ['home','away'].forEach(l=>{ const t=p[l]; if(t&&t.name)
-        juegan.add(norm(t.canon||t.name)); });
+        juegan.add(slugTexto(t.canon||t.name)); });
     });
     let z=null, a=null;
     try{ [z,a]=await Promise.all([
@@ -2151,6 +2185,77 @@ const App=(()=>{
       ${partes.join('')}
       <div class="note" style="padding:6px 14px 12px">Los que juegan esta
         fecha van marcados.</div></div>`);
+  }
+
+  /* La tarjeta de un partido en la previa.
+
+     Vive afuera de la pantalla de la fecha porque la usan dos: la lista
+     de los quince partidos y la página de un partido solo. Es la misma
+     pregunta —qué se espera de esto— y conviene que se vea igual en los
+     dos lados. */
+  function tarjetaPrevia(p, suelta){
+    const lado=(e,r,vd,sj,j)=>`<div class="pv-lado">
+      ${e&&e.logo?`<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
+      <span class="nm">${esc(enMayusculas(e&&e.name||''))}</span>
+      ${r&&r.length?`<span class="bolas">${r.slice().reverse().map(bolita).join('')}</span>`:''}
+      ${vd?`<span class="viene">${esc(vd)}</span>`:''}
+      ${(sj&&sj.dice&&sj.dice.length)?`<span class="juega">${sj.dice.map(x=>
+        `<i>${esc(x)}</i>`).join('')}</span>`:''}
+      ${aSeguirHtml(j)}
+    </div>`;
+    return `<div class="globo pv${p.clasico?' clasico':''}${
+        suelta?' suelta':''}" id="pv${p.id}">
+      ${p.clasico?`<div class="pv-et">${esc(p.clasico)}</div>`:''}
+      <div class="pv-cuando">${esc(cuandoJuega(p.start))}
+        ${zonaDelPartido(p)}
+      </div>
+      <div class="pv-top">
+        ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
+               (p.seJuega||{}).home,(p.aSeguir||{}).home)}
+        <div class="pv-medio">
+          ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,p,true)
+            || '<span class="pv-vs">vs</span>'}
+        </div>
+        ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away,
+               (p.seJuega||{}).away,(p.aSeguir||{}).away)}
+      </div>
+      ${p.dato?`<div class="pv-dato">${esc(p.dato)}</div>`:''}
+      ${histBarra(p)}
+      ${p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
+      <div class="pv-pie">
+        ${p.venue?`<span>${ICONO_CANCHA}${esc(p.venue)}</span>`:''}
+        ${p.referee?`<span>${ICONO_SILBATO}${esc(p.referee)}</span>`:''}
+        ${(p.tv||[]).length?`<span>${ICONO_TV}${esc(p.tv.join(' · '))}</span>`:''}
+        ${suelta?'':(()=>{const r=rutaPartido({liveId:p.liveId,home:p.home,
+          away:p.away});
+          return r?`<a class="pv-ir" href="${esc(Rutas.url(r))}" data-ir
+            >Ir al partido ›</a>`:'';})()}
+      </div>
+    </div>`;
+  }
+
+  /* La previa adentro de la página de un partido que todavía no se jugó.
+
+     Es el mismo dato y la misma tarjeta: si alguien entra a un partido de
+     mañana, lo que quiere ver es esto y no un minuto a minuto vacío. */
+  const previaDeUno={};
+  async function previaEnLaFicha(m){
+    const cont=document.getElementById('previaPartido');
+    if(!cont||!m) return;
+    const id=String(m.liveId||m.id||'');
+    if(!id) return;
+    if(previaDeUno[id]===undefined){
+      try{
+        const lid=m.liga||S.liga||'lpf';
+        const d=await get('/api/previa?liga='+encodeURIComponent(lid)
+          +'&partido='+encodeURIComponent(id));
+        previaDeUno[id]=(d.partidos||[])[0]||null;
+      }catch(e){ previaDeUno[id]=null; }
+    }
+    const p=previaDeUno[id];
+    const c2=document.getElementById('previaPartido');
+    if(!c2) return;                    // te fuiste mientras cargaba
+    c2.innerHTML=p?tarjetaPrevia(p,true):'';
   }
 
   async function seccionPrevia(){
@@ -2171,67 +2276,26 @@ const App=(()=>{
         ${esc(d.nota||'No hay fecha por jugar.')}</div></div>`;
       return status('ok','sin fecha por jugar');
     }
-    const lado=(e,r,vd,sj,j)=>`<div class="pv-lado">
-      ${e&&e.logo?`<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
-      <span class="nm">${esc(enMayusculas(e&&e.name||''))}</span>
-      ${r&&r.length?`<span class="bolas">${r.slice().reverse().map(bolita).join('')}</span>`:''}
-      ${vd?`<span class="viene">${esc(vd)}</span>`:''}
-      ${(sj&&sj.dice&&sj.dice.length)?`<span class="juega">${sj.dice.map(x=>
-        `<i>${esc(x)}</i>`).join('')}</span>`:''}
-      ${aSeguirHtml(j)}
-    </div>`;
     main.innerHTML=`
       <div class="pv-cab">
         <b>${d.ronda?'Fecha '+d.ronda:'Los próximos partidos'}</b>
         <span>${ps.length} ${ps.length===1?'partido':'partidos'}</span>
       </div>
-      ${ps.map(p=>`<div class="globo pv${p.clasico?' clasico':''}" id="pv${p.id}">
-        ${p.clasico?`<div class="pv-et">${esc(p.clasico)}</div>`:''}
-        <div class="pv-cuando">${esc(cuandoJuega(p.start))}
-          ${/* La zona va una sola vez y en el medio: los dos equipos son
-               de la misma salvo en el interzonal, y repetirla dos veces
-               es ruido. Cuando NO coinciden, eso es justamente el dato. */''}
-          ${zonaDelPartido(p)}
-        </div>
-        <div class="pv-top">
-          ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
-                 (p.seJuega||{}).home,(p.aSeguir||{}).home)}
-          <div class="pv-medio">
-            ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,p,true)
-              || '<span class="pv-vs">vs</span>'}
-          </div>
-          ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away,
-                 (p.seJuega||{}).away,(p.aSeguir||{}).away)}
-        </div>
-        ${p.dato?`<div class="pv-dato">${esc(p.dato)}</div>`:''}
-        ${histBarra(p)}
-        ${p.relato?`<p class="relato">${esc(p.relato)}</p>`:''}
-        <div class="pv-pie">
-          ${p.venue?`<span>${ICONO_CANCHA}${esc(p.venue)}</span>`:''}
-          ${p.referee?`<span>${ICONO_SILBATO}${esc(p.referee)}</span>`:''}
-          ${(p.tv||[]).length?`<span>${ICONO_TV}${esc(p.tv.join(' · '))}</span>`:''}
-          ${(()=>{const r=rutaPartido({liveId:p.liveId,home:p.home,away:p.away});
-            return r?`<a class="pv-ir" href="${esc(Rutas.url(r))}" data-ir
-              >Ir al partido ›</a>`:'';})()}
-        </div>
-      </div>`).join('')}
-      <div class="globo"><div class="note" style="padding:12px 16px">${
-        esc(d.nota)}</div></div>`;
+      ${ps.map(p=>tarjetaPrevia(p)).join('')}`;
     const eq=d.equipoDeLaFecha, pf=d.partidoDeLaFecha;
     $('#right').innerHTML=(d.delaFecha||eq||pf)?`<div class="globo">
       ${pf?`<div class="cl-sec">El partido de la fecha</div>
       <div class="pv-elegido pf">
         <div class="cruce">
-          ${pf.home&&pf.home.logo?`<img src="${esc(pf.home.logo)}" alt="">`:''}
-          <span>${esc(enMayusculas((pf.home||{}).name||''))}</span>
+          <span class="eq">${pf.home&&pf.home.logo
+            ? `<img src="${esc(pf.home.logo)}" alt="">`:''}${
+            esc(enMayusculas((pf.home||{}).name||''))}</span>
           <i>vs</i>
-          ${pf.away&&pf.away.logo?`<img src="${esc(pf.away.logo)}" alt="">`:''}
-          <span>${esc(enMayusculas((pf.away||{}).name||''))}</span>
+          <span class="eq">${pf.away&&pf.away.logo
+            ? `<img src="${esc(pf.away.logo)}" alt="">`:''}${
+            esc(enMayusculas((pf.away||{}).name||''))}</span>
         </div>
         <div class="dd">${esc(cuandoJuega(pf.start))}</div>
-        <div class="pie">${esc(pf.porque)}. Se elige por el gráfico y no por
-          la tabla: un puntero que empata sin goles todas las semanas no da
-          un partido lindo.</div>
       </div>`:''}
       ${d.delaFecha?`<div class="cl-sec">El jugador de la fecha</div>
       <div class="pv-elegido">
@@ -2245,8 +2309,7 @@ const App=(()=>{
         <div class="dd">${d.delaFecha.goles}
           ${d.delaFecha.goles===1?'gol':'goles'} en
           ${d.delaFecha.partidos} ${d.delaFecha.partidos===1?'partido':'partidos'}</div>
-        <div class="pie">Elegido por lo que viene haciendo, no a dedo: el que
-          más convirtió en el último mes entre los que juegan esta fecha.</div>
+
       </div>`:''}
       ${eq?`<div class="cl-sec">El equipo de la fecha</div>
       <div class="pv-elegido">
@@ -2254,8 +2317,7 @@ const App=(()=>{
           <b>${esc(enMayusculas(eq.club||''))}</b></div>
         <div class="dd">${(eq.pts/(eq.pj||1)).toFixed(2)} puntos por partido
           en ${eq.pj} ${eq.pj===1?'partido':'partidos'}</div>
-        <div class="pie">El de mejor rendimiento entre los que juegan esta
-          fecha. La racha desempata.</div>
+
       </div>`:''}
       </div>`:'';
     // Las tablas van después, sin frenar el dibujo: son dos pedidos más
@@ -6126,6 +6188,15 @@ const App=(()=>{
       body=`<div class="empty">365scores sólo guarda el minuto a minuto de las fechas recientes,
         y esta ya salió de esa ventana.<br><br>
         <span style="color:var(--txt3);font-size:12px">El resultado y el árbitro salen de AFA y sí están, en Resumen.</span></div>`;
+    else if(mTab==='res'&&m.status!=='FIN'&&m.status!=='LIVE'
+            && !((mData&&mData.events)||[]).length){
+      /* Un partido que todavía no empezó no tiene minuto a minuto, y
+         mostrar "no hay eventos" es no contestar nada. Lo que la persona
+         vino a buscar es la previa, así que va la previa. */
+      body='<div id="previaPartido"><div class="skel"></div>'
+        +'<div class="skel"></div></div>';
+      setTimeout(()=>previaEnLaFicha(m),0);
+    }
     else if(mTab==='res'){
       const todos=(mData&&mData.events)||[];
       // la tanda va aparte, abajo: mezclada en el minuto a minuto se pierde

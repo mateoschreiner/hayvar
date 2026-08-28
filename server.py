@@ -9307,58 +9307,147 @@ def _relato(p):
                 return "adentro de los playoffs"
         return ""
 
+    # ── La entrada ──────────────────────────────────────────────────────
+    # No arranca siempre igual. Cuando hay algo que contar —un clásico,
+    # una racha, un equipo que se está yendo— se arranca por ahí, que es
+    # como arranca cualquier nota. El "A recibe a B" queda para cuando no
+    # hay nada mejor.
+    cvh, cva = como_viene("home", 0), como_viene("away", 1)
+    aph, apa = apuro("home"), apuro("away")
     fr = []
-    # La entrada: qué partido es. Un clásico se anuncia como clásico.
     if p.get("clasico"):
-        fr.append(elegir(["%s y %s juegan el %s." % (hn, an, p["clasico"]),
-                          "Hay %s: %s recibe a %s." % (p["clasico"], hn, an)]))
+        fr.append(elegir(["Hay clásico. %s recibe a %s en el %s."
+                          % (hn, an, p["clasico"]),
+                          "%s y %s se cruzan en el %s."
+                          % (hn, an, p["clasico"]),
+                          "El %s se juega en la cancha de %s."
+                          % (p["clasico"], hn)]))
+    elif "descenso" in (aph or "") or "descenso" in (apa or ""):
+        quien, otro = (hn, an) if "descenso" in (aph or "") else (an, hn)
+        fr.append(elegir(["%s se juega la categoría y recibe a %s."
+                          % (quien, otro) if quien == hn
+                          else "%s visita a %s con el descenso encima."
+                          % (quien, otro),
+                          "Partido caliente abajo: %s contra %s."
+                          % (hn, an)]))
+    elif "lanzado" in cvh or "lanzado" in cva or "mejor momento" in cvh \
+            or "mejor momento" in cva:
+        quien = hn if ("lanzado" in cvh or "mejor momento" in cvh) else an
+        fr.append(elegir(["%s quiere estirar la racha ante %s."
+                          % (quien, an if quien == hn else hn),
+                          "%s llega en su mejor momento y se cruza con %s."
+                          % (quien, an if quien == hn else hn)]))
     else:
         fr.append(elegir(["%s recibe a %s." % (hn, an),
                           "%s es local ante %s." % (hn, an),
                           "%s va a la cancha de %s." % (an, hn)]))
-    # Cómo llega cada uno, en una frase por equipo y con lo que se juega.
-    for i, (lado, nombre) in enumerate((("home", hn), ("away", an))):
-        cv, ap = como_viene(lado, i), apuro(lado)
+
+    # ── El cuerpo: cómo llega cada uno ──────────────────────────────────
+    # Lo que ya dijo la entrada no se repite. Si el título fue "River llega
+    # en su mejor momento", el cuerpo no vuelve a contar los cuatro
+    # triunfos: eso es lo que hace que un texto suene a máquina.
+    entrada = fr[0]
+    if "mejor momento" in entrada or "estirar la racha" in entrada:
+        if hn in entrada.split(" quiere")[0] or "mejor momento" in entrada:
+            if ("lanzado" in cvh or "mejor momento" in cvh) and hn in entrada:
+                cvh = ""
+            if ("lanzado" in cva or "mejor momento" in cva) and an in entrada:
+                cva = ""
+    if "categoría" in entrada or "descenso encima" in entrada:
+        if "descenso" in (aph or ""):
+            aph = ""
+        if "descenso" in (apa or ""):
+            apa = ""
+    # Y si los dos están en la misma situación, se dice una sola vez.
+    juntos = ""
+    if aph and aph == apa:
+        juntos = aph
+        aph = apa = ""
+
+    dichos = set()
+    for i, (lado, nombre, cv, ap) in enumerate(
+            (("home", hn, cvh, aph), ("away", an, cva, apa))):
+        if not cv and not ap:
+            continue
+        # No repetir la misma idea con otras palabras.
+        if cv and cv in dichos:
+            cv = ""
+        if cv:
+            dichos.add(cv)
         quien = elegir(["El local", "El dueño de casa"], i) if lado == "home" \
             else elegir(["El visitante", "El equipo visitante"], i)
         if cv and ap:
-            fr.append("%s %s, %s." % (quien, cv, ap))
+            fr.append(elegir(["%s %s y llega %s." % (quien, cv, ap),
+                              "%s %s. Llega %s." % (nombre, cv, ap)], i))
         elif cv:
             fr.append("%s %s." % (nombre, cv))
         elif ap:
             fr.append("%s llega %s." % (nombre, ap))
-    # El antecedente, que es lo que le da peso al partido.
+    if juntos:
+        fr.append(elegir(["Los dos llegan %s." % juntos,
+                          "Están los dos en la misma: %s." % juntos]))
+
+    # ── El antecedente ──────────────────────────────────────────────────
     if p.get("dato"):
         fr.append(p["dato"] + ".")
     else:
         h = p.get("historial")
         if h and h.get("pj") and h["pj"] >= 3:
             if h["gano_a"] > h["gano_b"]:
-                fr.append("El historial favorece a %s, que ganó %d de los "
-                          "%d cruces." % (hn, h["gano_a"], h["pj"]))
+                fr.append(elegir(["El historial es de %s: ganó %d de los %d "
+                                  "cruces." % (hn, h["gano_a"], h["pj"]),
+                                  "En los %d antecedentes manda %s, con %d "
+                                  "triunfos." % (h["pj"], hn, h["gano_a"])]))
             elif h["gano_b"] > h["gano_a"]:
-                fr.append("El historial favorece a %s, que ganó %d de los "
-                          "%d cruces." % (an, h["gano_b"], h["pj"]))
+                fr.append(elegir(["El historial es de %s: ganó %d de los %d "
+                                  "cruces." % (an, h["gano_b"], h["pj"]),
+                                  "En los %d antecedentes manda %s, con %d "
+                                  "triunfos." % (h["pj"], an, h["gano_b"])]))
             else:
-                fr.append("El historial está parejo: %d y %d en %d cruces."
-                          % (h["gano_a"], h["gano_b"], h["pj"]))
-    # Y a quién mirar, que es con lo que uno se queda.
+                fr.append(elegir(["El historial está partido al medio: %d y "
+                                  "%d en %d cruces."
+                                  % (h["gano_a"], h["gano_b"], h["pj"]),
+                                  "Nunca se sacaron ventaja: %d y %d en %d "
+                                  "partidos."
+                                  % (h["gano_a"], h["gano_b"], h["pj"])]))
+
+    # ── El cierre: a quién mirar ────────────────────────────────────────
     ver = []
     for lado in ("home", "away"):
         j = (p.get("aSeguir") or {}).get(lado)
         if j and j.get("porque") == "en racha":
-            ver.append("%s, con %d %s en el último mes"
-                       % (j["nombre"], j["goles"],
-                          "gol" if j["goles"] == 1 else "goles"))
-    if ver:
-        fr.append("Ojo con %s." % " y ".join(ver))
+            ver.append((j["nombre"], j["goles"]))
+    if len(ver) == 2:
+        fr.append(elegir(["Los dos llegan con el arco entre ojos: %s lleva "
+                          "%d y %s, %d." % (ver[0][0], ver[0][1],
+                                            ver[1][0], ver[1][1]),
+                          "%s y %s vienen de convertir y son los que más "
+                          "pueden desnivelar." % (ver[0][0], ver[1][0])]))
+    elif len(ver) == 1:
+        n, g = ver[0]
+        fr.append(elegir(["Ojo con %s, que lleva %d %s en el último mes."
+                          % (n, g, "gol" if g == 1 else "goles"),
+                          "%s es el que está fino: %d %s en el último mes."
+                          % (n, g, "gol" if g == 1 else "goles")]))
     return " ".join(fr)
 
 
 def enmayus(s):
-    """La primera letra de cada palabra. La pantalla hace lo mismo."""
-    return " ".join(w[:1].upper() + w[1:] if w else w
-                    for w in (s or "").split(" "))
+    """
+    La primera letra de cada palabra.
+
+    Salta lo que no sea letra: sin eso, "estudiantes (lp)" quedaba
+    "Estudiantes (lp)", porque la primera letra de esa palabra es el
+    paréntesis.
+    """
+    salida = []
+    for w in (s or "").split(" "):
+        for i, c in enumerate(w):
+            if c.isalpha():
+                w = w[:i] + c.upper() + w[i + 1:]
+                break
+        salida.append(w)
+    return " ".join(salida)
 
 
 def _radar_equipo(rend, racha):
@@ -9450,7 +9539,17 @@ def api_previa(q):
                  else api_liga_games({"id": [lid]}).get("games", []))
     except Exception as e:
         return {"error": str(e), "partidos": []}
+    # La previa de UN partido, para poder mostrarla en su propia página.
+    # Es la misma tarjeta: se arma todo y se devuelve sólo la que se pidió.
+    solo = (q.get("partido") or [""])[0]
     porv = [g for g in games if g.get("status") != "FIN"]
+    if solo:
+        porv = [g for g in games
+                if str(g.get("liveId") or "") == solo
+                or str(g.get("id") or "") == solo]
+        if not porv:
+            return {"liga": lid, "ronda": None, "partidos": [],
+                    "nota": "Ese partido no está en el calendario."}
     if not porv:
         return {"liga": lid, "ronda": None, "partidos": [],
                 "nota": "El torneo terminó: no hay fecha por jugar."}
@@ -9458,7 +9557,9 @@ def api_previa(q):
     # sin fecha numerada— se agrupan por día.
     rondas = sorted({g["round"] for g in porv if g.get("round")})
     ronda = rondas[0] if rondas else None
-    if ronda:
+    if solo:
+        dela, ronda = porv, porv[0].get("round")
+    elif ronda:
         dela = [g for g in games if g.get("round") == ronda]
     else:
         dia = min((g.get("start") or "") for g in porv)[:10]

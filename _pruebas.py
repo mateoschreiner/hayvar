@@ -6383,6 +6383,21 @@ chequear("y arriba están los que uno espera",
          [x["club"] for x in _TH["filas"][:4]])
 chequear("cada uno con su posición, sin repetir",
          [x["pos"] for x in _TH["filas"]] == list(range(1, 108)))
+# Y que llegue hasta hoy. La página de la década de RSSSF está congelada
+# en 2021, así que de 2025 en adelante hay que leer la página de cada
+# temporada, que viene con otra forma. Si un día se regenera sin eso, la
+# tabla vuelve a 2024 y no se nota mirándola.
+chequear("llega hasta el torneo de este año",
+         _TB.HASTA == "2026" and _TB.TEMPORADAS == 96,
+         (_TB.HASTA, _TB.TEMPORADAS))
+# Los clubes que sólo jugaron Primera en los últimos años son el control
+# de que las temporadas nuevas entraron: si faltaran, éstos quedan en cero
+# o directamente no están.
+for _c, _min in [("Estudiantes (RC)", 30), ("Deportivo Riestra", 70),
+                 ("Barracas Central", 120)]:
+    _f = next((t for t in _TB.TABLA if t[0] == _c), None)
+    chequear("%s tiene los partidos de las últimas temporadas" % _c,
+             _f and _f[1] >= _min, _f)
 
 print("\n── los títulos internacionales ──")
 import internacionales as _IN                                     # noqa: E402

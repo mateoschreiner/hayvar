@@ -9079,20 +9079,30 @@ def _el_dato(hist, local, visita):
     if not hist or not hist.get("partidos"):
         return ""
     ps = hist["partidos"]
-    # ¿Hace cuántos cruces que el visitante no le gana al local?
-    for quien, otro, clave in ((visita, local, "visita"),
-                               (local, visita, "local")):
+
+    # Quién ganó cada uno. Antes esto leía `m["ganador"]`, una clave que
+    # NO existe: siempre daba vacío, así que la cuenta nunca encontraba un
+    # triunfo y la frase salía siempre, con el número de partidos que
+    # hubiera en la lista. Decía "no le gana desde hace 6 cruces" con la
+    # victoria a la vista tres renglones más abajo.
+    def gano(m, quien):
+        gh, ga = m.get("gh"), m.get("ga")
+        if gh is None or ga is None or gh == ga:
+            return False
+        return (m.get("local") == quien) == (gh > ga)
+
+    # Y la racha se cuenta sólo si la lista alcanza para afirmarla. Con
+    # seis partidos guardados, "no gana hace 6" no es un dato: es el
+    # tamaño de la lista. Se pide margen —que haya más cruces de los que
+    # dura la racha— para que decirlo signifique algo.
+    for quien, otro in ((visita, local), (local, visita)):
         sin = 0
         for m in ps:
-            gano = (m.get("ganador") or "")
-            if gano == quien:
+            if gano(m, quien):
                 break
             sin += 1
-        if sin >= 5 and sin == len(ps):
-            return "%s no le gana a %s desde hace %d cruces" % (
-                quien, otro, sin)
-        if sin >= 5:
-            return "%s no le gana a %s hace %d partidos" % (quien, otro, sin)
+        if sin >= 5 and sin < len(ps):
+            return "%s no le gana a %s hace %d cruces" % (quien, otro, sin)
     return ""
 
 
@@ -9899,7 +9909,7 @@ def _api_previa(q):
             lado["colores"] = list(c) if c else None
         ih = tablas.equipo_id(ch, lid) if ch else None
         ia = tablas.equipo_id(ca, lid) if ca else None
-        hist = historial_entre(ih, ia, excluir=g.get("id"),
+        hist = historial_entre(ih, ia, excluir=g.get("id"), tope=12,
                                dia=(g.get("start") or "")[:10]) or None
         # Y el total histórico, que la fuente no da: son quince cruces y
         # nada más. Esto es lo que permite decir "se enfrentaron 266

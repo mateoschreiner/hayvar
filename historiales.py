@@ -183,6 +183,11 @@ def pares():
 #
 # Se sacan de la página del club: el número está en la imagen del escudo,
 # en `logos/equipas/<numero>_...`.
+# Una trampa que conviene no volver a pisar: un club que no existe NO da
+# error. La fuente devuelve una página genérica y ahí el primer escudo que
+# aparece es el de Boca, así que adivinar mal el nombre te devuelve, en
+# silencio, el número de Boca. Los treinta de abajo se confirmaron contra
+# el nombre completo, el año de fundación y la ciudad de cada página.
 IDS = {
     "Boca Juniors": 1179,
     "River Plate": 2218,
@@ -196,6 +201,28 @@ IDS = {
     "Rosario Central": 2219,
     "Argentinos Juniors": 2224,
     "Aldosivi": 9198,
+    "Atlético Tucumán": 9199,
+    "Banfield": 2205,
+    "Barracas Central": 36413,
+    "Belgrano": 2225,
+    "Central Córdoba (SdE)": 55853,
+    "Defensa y Justicia": 9311,
+    "Deportivo Riestra": 45604,
+    "Estudiantes (RC)": 55044,
+    "Gimnasia y Esgrima (LP)": 2209,
+    "Gimnasia y Esgrima (M)": 30538,
+    "Godoy Cruz": 7873,
+    "Independiente Rivadavia": 9201,
+    # Ojo con éste: su nombre formal es "Instituto Atlético Central
+    # Córdoba" y no es el Central Córdoba santiagueño. Son dos clubes
+    # distintos y los dos están en Primera.
+    "Instituto": 4331,
+    "Lanús": 2212,
+    "Platense": 6658,
+    "Sarmiento (J)": 9065,
+    "Talleres (C)": 2221,
+    "Tigre": 9657,
+    "Unión": 2222,
 }
 
 

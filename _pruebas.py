@@ -5485,7 +5485,11 @@ App.init();
     clasicoEscudo: /class="cl-clasico">\s*<img/.test(main),
     /* El plantel: el número grande de la izquierda y el dorsal chico.
        Vive a la derecha, abajo del último y el próximo partido. */
-    numeros: [...der.matchAll(/class="num">([^<]*)</g)].map(m=>m[1]),
+    /* "num" a secas en el ascenso y "num fijo" en Primera: el patrón
+       tiene que aceptar los dos o la prueba de Primera lee una lista
+       vacía y pasa por vacía, que es la peor forma de pasar. */
+    numeros: [...der.matchAll(/class="num[^"]*">([^<]*)</g)]
+      .map(m=>m[1].trim()),
     dorsales: [...der.matchAll(/class="dorsal">([^<]*)</g)].map(m=>m[1]),
     categorias: [...der.matchAll(/class="nm">([^<]+)<\/span>\s*<span class="barra">/g)]
       .map(m => m[1]),
@@ -5713,11 +5717,13 @@ App.init();
         chequear("y el clásico va con el escudo del rival cuando lo tenemos",
                  _s4["clasico"] == "Boca Juniors" and _s4["clasicoEscudo"],
                  (_s4["clasico"], _s4["clasicoEscudo"]))
-        # Un plantel de Primera sí tiene dorsal fijo: se numera de corrido
-        # igual —el orden en la lista— y el dorsal va al lado del nombre.
-        chequear("un plantel con dorsales muestra los dos números",
-                 _s4["numeros"] == ["1", "2", "DT"]
-                 and _s4["dorsales"] == ["1", "8"],
+        # Un plantel de Primera sí tiene dorsal fijo, y ahí manda el
+        # dorsal: es el número que se ve desde la tribuna. No hay número
+        # de orden ni chapita al lado del nombre, que era decir dos veces
+        # lo mismo. El del ascenso —arriba— sigue yendo de corrido.
+        chequear("donde el dorsal es fijo, es el que se muestra",
+                 _s4["numeros"] == ["1", "8", "DT"]
+                 and _s4["dorsales"] == [],
                  (_s4["numeros"], _s4["dorsales"]))
 
 
@@ -6472,14 +6478,42 @@ for _r, _dice in [([{"como": "G"}] * 3, "Viene de 3 triunfos seguidos"),
     chequear("la racha %s se dice %r" % ([x["como"] for x in _r], _dice),
              server._racha_texto(_r) == _dice, server._racha_texto(_r))
 # El dato del partido: si no hay nada llamativo, no se inventa una frase.
+#
+# Y quién ganó cada cruce se deduce del resultado. Antes se leía una clave
+# `ganador` que la fuente NO manda: la cuenta no encontraba nunca un
+# triunfo, así que la frase salía siempre y decía "no le gana hace 6" con
+# la victoria tres renglones más abajo, a la vista. Las listas de acá
+# abajo tienen la forma de verdad —local, goles y goles— justamente para
+# que la prueba falle si alguien vuelve a inventarse una clave.
+def _cruce(local, gh, ga):
+    return {"local": local, "gh": gh, "ga": ga}
+
+
 chequear("sin nada llamativo, no hay frase de relleno",
          server._el_dato(None, "A", "B") == ""
          and server._el_dato({"pj": 2, "partidos": [
-             {"ganador": "A"}, {"ganador": "B"}]}, "A", "B") == "")
-_seco = {"pj": 6, "partidos": [{"ganador": "A"}] * 6}
+             _cruce("A", 2, 0), _cruce("B", 1, 0)]}, "A", "B") == "")
+# Seis sin ganar B, y un séptimo donde B ganó: la racha es real y se dice.
+_seco = {"pj": 7, "partidos": [_cruce("A", 2, 0)] * 6 + [_cruce("B", 1, 0)]}
 chequear("pero una racha larga sin ganar sí se cuenta",
-         "no le gana" in server._el_dato(_seco, "A", "B"),
+         server._el_dato(_seco, "A", "B") == "B no le gana a A hace 6 cruces",
          server._el_dato(_seco, "A", "B"))
+# La misma racha pero sin nada detrás: "no gana hace 6" con seis cruces
+# guardados no es un dato, es el tamaño de la lista.
+chequear("y no se dice si la racha es toda la lista",
+         server._el_dato({"pj": 6, "partidos": [_cruce("A", 2, 0)] * 6},
+                         "A", "B") == "")
+# Un empate no corta la racha —no es ganar— pero tampoco la inventa.
+chequear("el empate no corta la racha ni la cuenta como triunfo",
+         server._el_dato({"pj": 7, "partidos": [_cruce("A", 1, 1)] * 6
+                          + [_cruce("B", 1, 0)]}, "A", "B")
+         == "B no le gana a A hace 6 cruces")
+# Y de visitante gana con el gol de la derecha: si esto se lee al revés,
+# la frase sale para el equipo equivocado.
+chequear("gana el visitante cuando el gol de la derecha es más alto",
+         server._el_dato({"pj": 7, "partidos": [_cruce("A", 0, 2)] * 6
+                          + [_cruce("A", 2, 0)]}, "A", "B")
+         == "A no le gana a B hace 6 cruces")
 # El goleador de un equipo no puede incluir los goles del rival: el gol
 # trae el nombre del equipo que lo hizo y hay que filtrarlo.
 chequear("los goles del rival no cuentan como propios",
@@ -6966,13 +7000,17 @@ chequear("y uno viejo lleva su año y no el torneo de ahora",
 chequear("y sin fecha no inventa nada",
          server._torneo_del_partido("lpf", {}) == _lpf)
 # La fecha se montaba sobre el nombre del local: la columna era de 40px y
-# "31/03/26" a 10px no entra.
+# "31/03/26" a 10px no entra. Ahora son 58 con aire propio a la derecha,
+# así que el nombre no arranca pegado al año aunque el panel sea angosto.
 chequear("la columna de la fecha entra sin pisar el nombre",
-         "grid-template-columns:54px 1fr 34px 1fr" in HTML)
-# Y el historial de la previa se puede abrir.
+         "grid-template-columns:58px 1fr 34px 1fr" in HTML
+         and "font-variant-numeric:tabular-nums;padding-right:4px}" in HTML)
+# Y el historial de la previa se puede abrir. El título dice "los" o "los
+# últimos" según si la lista es todo el historial o un recorte: prometer
+# 266 y mostrar 12 es peor que no decir nada.
 chequear("el historial de la previa se despliega",
          'class="pv-cruces"' in HTML
-         and "Ver los ${h.partidos.length} cruces" in HTML
+         and "h.partidos.length===h.jugados?'los':'los últimos'" in HTML
          and 'onclick="event.stopPropagation()"' in HTML)
 chequear("y el mismo cruce que viene por dos partidos se junta antes",
          "porId[m[\"id\"]] = m" in _SRV)
@@ -7475,7 +7513,7 @@ chequear("el técnico se reconoce en un solo lugar",
          and 'or es_tecnico(f.get("puesto"), f.get("pos")))' in _SRV)
 chequear("y en el plantel dice DT, no -1",
          'f["dt"] = True' in _SRV and 'f["n"] = None' in _SRV
-         and "j.dt?'DT':orden" in HTML)
+         and "${j.dt?'DT'" in HTML)
 chequear("y va al final, no ordenado por un número que no tiene",
          '5 if x.get("dt") else puesto_rango' in _SRV
          and "j.dt?'Cuerpo técnico'" in HTML)

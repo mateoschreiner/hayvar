@@ -5283,17 +5283,16 @@ chequear("y una sección que no existe no es una dirección nuestra",
 chequear("las secciones están declaradas en un solo lugar",
          sorted(server.SECCIONES_LIGA) == ["calculadora", "equipos",
                                            "historia", "internacionales",
-                                           "previa", "tabla"],
+                                           "previa", "tabla"],  # noqa
          sorted(server.SECCIONES_LIGA))
 chequear("y la página conoce las mismas",
          "calculadora:{rotulo:'Calculadora de promedios'" in HTML
          and "equipos:{rotulo:'Equipos'" in HTML
-         and "historia:{rotulo:'Historia'" in HTML
+         and "historia:{rotulo:'Títulos'" in HTML
          and "previa:{rotulo:'Previa de la fecha'" in HTML
          and "tabla:{rotulo:'Tabla histórica'" in HTML
-         and "internacionales:{rotulo:'Títulos internacionales'" in HTML
-         and ("lpf:['previa','calculadora','equipos','historia',"
-              "'tabla','internacionales']," in HTML))
+         and ("lpf:['previa','calculadora','equipos','historia','tabla'],"
+              in HTML))
 # La Copa Argentina tiene Equipos e Historia pero no calculadora: los
 # promedios son de la liga, ahí no significan nada.
 chequear("la Copa Argentina tiene sus secciones y no la calculadora",
@@ -5443,7 +5442,7 @@ App.init();
     /* La cuenta por club vive a la derecha, no en el medio. */
     histClubes: (der.match(/class="hist-club"/g) || []).length,
     histClubesEnMedio: (main.match(/class="hist-club"/g) || []).length,
-    histPrimero: (der.match(/class="cant">(\\d+)</) || [])[1] || '',
+    histPrimero: (der.match(/class="cant"[^>]*>(\\d+)</) || [])[1] || '',
     histDesglose: (der.match(/class="desglose">([^<]*)</) || [])[1] || '',
     /* La tarjeta de títulos de la ficha del club, con su rótulo, su
        número y el desglose de abajo. */
@@ -5537,7 +5536,7 @@ App.init();
              (_s1, _s2))
     if _s1 and _s2:
         chequear("con todas las opciones y Fixture/Tablas ya elegida",
-                 _s1["haySubmenu"] and _s1["opciones"] == 7
+                 _s1["haySubmenu"] and _s1["opciones"] == 6
                  and _s1["seleccionado"] == "Fixture/Tablas", _s1)
         # Y las pestañas del panel, dibujadas de verdad: `shell()` las
         # reescribía con las de su plantilla y se llevaba puesta la nueva.
@@ -5587,7 +5586,7 @@ App.init();
     chequear("la historia se abre entrando en frío", _s3 is not None, _s3)
     if _s3:
         chequear("con su opción del submenú marcada",
-                 _s3["seleccionado"] == "Historia", _s3["seleccionado"])
+                 _s3["seleccionado"] == "Títulos", _s3["seleccionado"])
         # Las dos vistas van a la vez y no en pestañas: la lista año por año
         # en el medio, que es lo que uno viene a mirar, y la cuenta por club
         # al costado.
@@ -5606,7 +5605,7 @@ App.init();
         chequear("y no quedaron pestañas de vistas", not _s3["pestanas"],
                  _s3["pestanas"])
         chequear("la cuenta por club va a la derecha",
-                 _s3["histClubes"] == len(_hist.resumen_por_club()) == 25,
+                 _s3["histClubes"] == len(_hist.resumen_por_club()) == 26,
                  _s3["histClubes"])
         # El total primero y el desglose abajo: 37 ligas y 9 copas de River
         # suman 46, y el 46 solo no dice nada.
@@ -6416,19 +6415,24 @@ chequear("y los demás también dan",
          and _lib["Argentinos Juniors"] == 1, _lib)
 chequear("son 25 Libertadores argentinas en total",
          sum(_lib.values()) == 25, sum(_lib.values()))
-chequear("y 76 títulos internacionales entre 13 clubes",
-         _INT["total"] == 76 and len(_INT["porClub"]) == 13,
+chequear("y 79 títulos internacionales entre 13 clubes",
+         _INT["total"] == 79 and len(_INT["porClub"]) == 13,
          (_INT["total"], len(_INT["porClub"])))
-# La Suruga Bank va aparte y NO suma. Es una decisión, y cambia quién está
-# primero: contándola, Boca e Independiente empatan en 18.
-chequear("la Suruga Bank está pero no suma al total",
-         _INT["aparte"] and _INT["aparte"][0]["copa"] == "Copa Suruga Bank"
-         and len(_INT["aparte"][0]["campeones"]) == 3
+# La Suruga Bank cuenta, por la misma regla que la Anual 2025 en la liga:
+# si la federación que la organiza la considera oficial, la contamos,
+# aunque esté discutida. Y cambia quién está primero: con ella, Boca e
+# Independiente empatan en 18.
+chequear("la Suruga Bank cuenta y empata a Boca con Independiente",
+         any(c["copa"] == "Copa Suruga Bank" for c in _INT["copas"])
          and _INT["porClub"][0]["total"] == 18
-         and _INT["porClub"][1]["total"] == 17,
+         and _INT["porClub"][1]["total"] == 18,
          [(x["club"], x["total"]) for x in _INT["porClub"][:2]])
-chequear("y no se coló en la lista que suma",
-         not any(c["copa"] == "Copa Suruga Bank" for c in _INT["copas"]))
+# Pero lleva su aclaración: contarla es una decisión y el que la mira
+# tiene derecho a saber por qué alguien la discute.
+chequear("y lleva la aclaración de por qué se discute",
+         any(c["copa"] == "Copa Suruga Bank" and "amistoso" in (c.get("porque") or "")
+             for c in _INT["copas"]),
+         [(c["copa"], c.get("porque")) for c in _INT["copas"]][-3:])
 # Y no se mezclan con las copas nacionales, que son otra cosa.
 chequear("no se mezclan con las copas nacionales",
          not ({c["copa"] for c in _INT["copas"]}
@@ -6478,7 +6482,7 @@ chequear("el jugador a seguir se elige por la racha, no a dedo",
          '"porque": "en racha"' in _SRV
          and '"porque": "goleador del equipo"' in _SRV)
 chequear("y si nadie convirtió, no se inventa un nombre",
-         "    return None\n\n\ndef api_previa" in _SRV)
+         "    return None\n\n\ndef _radar_equipo" in _SRV)
 chequear("el de la fecha sale de los mismos, con la misma regla",
          'candidatos.sort(key=lambda j: (j["porque"] != "en racha",' in _SRV)
 # La pantalla.
@@ -6555,6 +6559,79 @@ chequear("con el torneo terminado lo dice, no muestra la última fecha",
 chequear("y una liga que no existe no revienta",
          "error" in server.ROUTES["/api/previa"]({"liga": ["nada"]}))
 
+# ── El contexto: por qué juega cada uno ──────────────────────────────────
+# Es lo que la tabla sola no contesta. La tabla dice que va décimo; no dice
+# que con tres puntos entra a los playoffs.
+_zon = {server.norm("Racing"): {"pos": 1, "de": 15, "pts": 30, "lider": 30},
+        server.norm("Independiente"): {"pos": 4, "de": 15, "pts": 24,
+                                       "lider": 30},
+        server.norm("Platense"): {"pos": 13, "de": 15, "pts": 9, "lider": 30}}
+_pro = {server.norm("Platense"): {"pos": 29, "de": 30, "desciende": True,
+                                  "alBorde": False},
+        server.norm("Independiente"): {"pos": 27, "de": 30,
+                                       "desciende": False, "alBorde": True}}
+chequear("al puntero le dice que es puntero",
+         server._que_se_juega("Racing", _zon, _pro)[0]
+         == "Puntero de su zona con 30 puntos",
+         server._que_se_juega("Racing", _zon, _pro))
+chequear("al cuarto, a cuánto está y que entra a los playoffs",
+         server._que_se_juega("Independiente", _zon, _pro)[:2]
+         == ["4º, a 6 del puntero", "Hoy entra a los playoffs"],
+         server._que_se_juega("Independiente", _zon, _pro))
+chequear("y al que se está yendo, que se está yendo",
+         any("descenso" in x for x in
+             server._que_se_juega("Platense", _zon, _pro)),
+         server._que_se_juega("Platense", _zon, _pro))
+# Un equipo del que no sabemos nada no recibe una frase inventada.
+chequear("y del que no sabemos nada no dice nada",
+         server._que_se_juega("Cualquiera", _zon, _pro) == [])
+
+# ── El radar de los dos equipos ──────────────────────────────────────────
+_ren = {"pj": 10, "g": 6, "e": 2, "p": 2, "gf": 18, "gc": 8}
+_rad = server._radar_equipo(_ren, [{"como": "G"}] * 5)
+chequear("el radar tiene sus cinco ejes",
+         sorted(_rad) == ["Ataque", "Contundencia", "Defensa", "Efectividad",
+                          "Momento"], sorted(_rad or {}))
+chequear("y todos entre 0 y 100",
+         all(0 <= v <= 100 for v in _rad.values()), _rad)
+# Ganar los cinco últimos es el máximo de "Momento". Si un día ese número
+# baja de 100 ganando todo, la escala se rompió.
+chequear("ganar todo da el máximo de momento", _rad["Momento"] == 100, _rad)
+chequear("y un equipo que no jugó no tiene radar",
+         server._radar_equipo({"pj": 0, "g": 0, "e": 0, "p": 0,
+                               "gf": 0, "gc": 0}, []) is None
+         and server._radar_equipo(None, []) is None)
+# La pantalla: chiquito entre los escudos, grande al tocarlo, y los
+# nombres de los ejes recién cuando hay lugar para leerlos.
+chequear("el radar se dibuja chiquito y se agranda al tocarlo",
+         "function radarDoble(id, a, b, ca, cb)" in HTML
+         and "App.verRadar(" in HTML
+         and ".pv-radar.grande{width:190px}" in HTML
+         and ".pv-radar .ejes{display:none}" in HTML
+         and ".pv-radar.grande .ejes{display:block}" in HTML)
+# El encabezado de la fecha: centrado y pegado arriba. Con quince partidos,
+# scrolleando se pierde de vista qué fecha se está mirando.
+chequear("el encabezado de la fecha queda fijo arriba",
+         ".pv-cab{position:sticky;top:0" in HTML
+         and "text-align:center" in HTML.split(".pv-cab{")[1][:120])
+chequear("el partido dice el día y la hora, no sólo la hora",
+         "function cuandoJuega(iso)" in HTML
+         and "DIA_CORTO[d.getDay()]" in HTML)
+chequear("y el estadio va con su dibujito",
+         "const ICONO_CANCHA=" in HTML and "ICONO_CANCHA}${esc(p.venue)}" in HTML)
+chequear("el contexto de cada equipo se dibuja",
+         'class="juega"' in HTML and '(p.seJuega||{}).home' in HTML)
+chequear("y a la derecha van el jugador y el equipo de la fecha",
+         "El jugador de la fecha" in HTML and "El equipo de la fecha" in HTML
+         and '"equipoDeLaFecha"' in _SRV)
+# El equipo de la fecha se elige por rendimiento, con la racha de desempate.
+chequear("el equipo de la fecha se elige por puntos por partido",
+         'equipos.sort(key=lambda e: (-(e["pts"] / (e["pj"] or 1)), -e["racha"]))'
+         in _SRV)
+# Y el botón en la portada, que es de donde viene la gente.
+chequear("la portada tiene el botón a la previa",
+         'class="bt-previa" href="/liga-profesional/previa"' in HTML)
+
 # Que se sirva, y sin pedir nada afuera.
 chequear("la historia tiene su dirección", "/api/historia" in server.ROUTES)
 _h = server.ROUTES["/api/historia"]({})
@@ -6571,12 +6648,17 @@ chequear("la sección de historia se dibuja",
          and "function histCopas()" in HTML)
 # Las dos vistas a la vez: el año por año en el medio y la cuenta por club
 # a la derecha. Sin pestañas, así que tampoco tiene que quedar el botón.
-chequear("las dos vistas van a la vez, sin pestañas",
-         "main.innerHTML=histPorAno() + histCopas()" in HTML
-         and "if(der) der.innerHTML=histPorClub();" in HTML
-         and "App.hist(" not in HTML and "histVista" not in HTML)
+chequear("las dos vistas van a la vez: año por año y cuenta por club",
+         "main.innerHTML=solapas+histPorAno()+histCopas()" in HTML
+         and "if(der) der.innerHTML=histPorClub();" in HTML)
+# Y las dos solapas: nacionales e internacionales. Son la misma pregunta
+# —qué ganó cada club— así que van en una pantalla, no en dos.
+chequear("con solapa de nacionales y de internacionales",
+         "let titSolapa='nacionales'" in HTML
+         and "App.verTitulos(" in HTML
+         and "function interPorAno()" in HTML)
 chequear("y las copas abajo, separadas",
-         '<div class="hist-sep">Copas nacionales</div>' in HTML)
+         '<div class="hist-sep">Copas nacionales</div>' in HTML)  # noqa
 # Y al desplegarse, la copa se lee igual que la lista de ligas: la misma
 # función arma las dos.
 chequear("la copa desplegada usa la misma fila que las ligas",
@@ -6585,10 +6667,15 @@ chequear("la copa desplegada usa la misma fila que las ligas",
          and "histFila(x.temporada,[{campeon:x.campeon}])" in HTML)
 # El total y el desglose, que es lo que hace que el número signifique algo.
 chequear("por club muestra el total y lo discrimina",
-         '<span class="cant">${c.total}</span>' in HTML
+         'class="cant" title="Títulos nacionales">${c.total}' in HTML
          and "c.ligas?plural(c.ligas,unidad):''" in HTML
          and "c.copas?plural(c.copas,'copa'):''" in HTML
-         and '<div class="hist-grupo">Copas</div>' in HTML)
+         and '<div class="hist-grupo">Copas nacionales</div>' in HTML)
+# Los internacionales van al lado y NUNCA sumados a los nacionales: son
+# dos preguntas distintas y un número que las mezcle no contesta ninguna.
+chequear("y los internacionales aparte, no sumados",
+         'class="cant inter"' in HTML
+         and '<div class="hist-grupo">Internacionales</div>' in HTML)
 # Y que el rótulo lo mande el servidor: en la pantalla de una copa, decir
 # "3 ligas" abajo del campeón de la Copa Argentina es falso.
 chequear("y el rótulo cambia cuando la competencia es una copa",

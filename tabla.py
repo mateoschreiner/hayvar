@@ -35,69 +35,70 @@ de hoy: con el sistema viejo, un triunfo del 72 vale menos que uno del
 Qué tan exacta es
 ─────────────────
 Las cuatro verificaciones corren en las pruebas. Los partidos dan la suma
-de ganados, empatados y perdidos en las 3.238 filas leídas, sin una
+de ganados, empatados y perdidos en las 3.328 filas leídas, sin una
 sola excepción. Quedan 15 partidos y 17 goles de desbalance
-sobre 25.555 y 99.511: es el residuo de la propia fuente, que asienta de
+sobre 26.080 y 101.035: es el residuo de la propia fuente, que asienta de
 forma asimétrica los partidos dados por ganados y los abandonados.
 
 Fuente: RSSSF, tablas finales de Argentina, de Osvaldo José Gorgazzi y
-Víctor Hugo Kurhy. 94 temporadas, de 1931 a 2024.
+Víctor Hugo Kurhy. 96 temporadas, de 1931 a 2026.
 """
 
 # (club, PJ, G, E, P, GF, GC). Los puntos se calculan: 3*G + E.
 TABLA = [
-    ("River Plate",              3506,  1803,   914,   789,   6363,   3895),
-    ("Boca Juniors",             3581,  1753,   954,   874,   6056,   4032),
-    ("San Lorenzo",              3645,  1557,  1017,  1071,   5804,   4643),
-    ("Independiente",            3551,  1535,  1017,   999,   5687,   4318),
-    ("Vélez Sarsfield",          3488,  1447,   995,  1046,   5191,   4302),
-    ("Racing",                   3483,  1405,  1013,  1065,   5328,   4445),
-    ("Estudiantes (LP)",         3556,  1372,   998,  1186,   5135,   4661),
-    ("Newell's Old Boys",        3174,  1140,   998,  1036,   4345,   3964),
-    ("Rosario Central",          2957,  1040,   912,  1005,   4137,   3979),
-    ("Huracán",                  3007,  1066,   808,  1133,   4389,   4506),
-    ("Gimnasia y Esgrima (LP)",  2996,   969,   873,  1154,   4043,   4556),
-    ("Argentinos Juniors",       2781,   851,   872,  1058,   3498,   3967),
-    ("Lanús",                    2562,   894,   714,   954,   3605,   3907),
+    ("River Plate",              3561,  1829,   929,   803,   6439,   3940),
+    ("Boca Juniors",             3635,  1781,   969,   885,   6135,   4069),
+    ("San Lorenzo",              3698,  1576,  1038,  1084,   5851,   4685),
+    ("Independiente",            3603,  1555,  1035,  1013,   5751,   4366),
+    ("Vélez Sarsfield",          3538,  1465,  1009,  1064,   5235,   4351),
+    ("Racing",                   3538,  1429,  1026,  1083,   5394,   4495),
+    ("Estudiantes (LP)",         3610,  1395,  1012,  1203,   5193,   4709),
+    ("Newell's Old Boys",        3222,  1151,  1013,  1058,   4385,   4029),
+    ("Rosario Central",          3011,  1069,   928,  1014,   4204,   4016),
+    ("Huracán",                  3061,  1086,   827,  1148,   4442,   4552),
+    ("Gimnasia y Esgrima (LP)",  3049,   991,   880,  1178,   4090,   4613),
+    ("Argentinos Juniors",       2836,   879,   888,  1069,   3567,   4006),
+    ("Lanús",                    2613,   913,   732,   968,   3656,   3949),
     ("Ferro Carril Oeste",       2266,   689,   717,   860,   2954,   3470),
-    ("Platense",                 2107,   625,   647,   835,   2784,   3303),
-    ("Banfield",                 2026,   627,   618,   781,   2564,   2820),
+    ("Platense",                 2159,   639,   666,   854,   2823,   3355),
+    ("Banfield",                 2074,   641,   629,   804,   2610,   2879),
     ("Colón",                    1835,   608,   561,   666,   2259,   2474),
     ("Chacarita Juniors",        1974,   611,   504,   859,   2696,   3265),
-    ("Unión",                    1494,   444,   502,   548,   1748,   1903),
+    ("Unión",                    1545,   459,   520,   566,   1806,   1958),
     ("Atlanta",                  1488,   443,   379,   666,   2126,   2720),
-    ("Talleres (C)",             1206,   426,   366,   414,   1601,   1580),
-    ("Tigre",                    1428,   405,   337,   686,   1927,   2637),
+    ("Talleres (C)",             1256,   440,   384,   432,   1638,   1623),
+    ("Tigre",                    1479,   423,   356,   700,   1979,   2679),
     ("Quilmes",                  1266,   352,   355,   559,   1438,   1969),
+    ("Belgrano",                  963,   307,   331,   325,   1040,   1099),
     ("Arsenal",                   908,   309,   266,   333,   1002,   1118),
-    ("Belgrano",                  911,   290,   309,   312,    990,   1049),
-    ("Godoy Cruz",                791,   274,   223,   294,    948,    988),
-    ("Instituto",                 622,   190,   183,   249,    744,    867),
+    ("Godoy Cruz",                823,   278,   240,   305,    967,   1025),
+    ("Instituto",                 671,   204,   196,   271,    787,    924),
     ("All Boys",                  653,   170,   196,   287,    661,    944),
     ("Deportivo Español",         539,   163,   189,   187,    568,    632),
-    ("Atlético Tucumán",          479,   156,   149,   174,    566,    625),
+    ("Atlético Tucumán",          527,   169,   158,   200,    615,    688),
     ("Olimpo",                    510,   140,   141,   229,    513,    670),
     ("Racing (C)",                403,   130,   125,   148,    487,    519),
-    ("San Martín Tucumán",        443,   116,   131,   196,    491,    665),
+    ("Defensa y Justicia",        324,   128,    95,   101,    387,    339),
     ("Temperley",                 425,   109,   129,   187,    444,    607),
-    ("Defensa y Justicia",        276,   114,    80,    82,    337,    277),
+    ("San Martín Tucumán",        405,   106,   121,   178,    456,    624),
+    ("San Martín San Juan",       390,   106,   111,   173,    411,    507),
     ("Gimnasia de Jujuy",         379,   104,   108,   167,    436,    600),
     ("Atlético Rafaela",          332,    94,    96,   142,    377,    466),
-    ("San Martín San Juan",       320,    90,    91,   139,    358,    432),
-    ("Gimnasia y Esgrima (M)",    275,    86,    81,   108,    336,    377),
+    ("Gimnasia y Esgrima (M)",    291,    91,    85,   115,    350,    399),
+    ("Sarmiento (J)",             330,    78,   106,   146,    308,    428),
     ("Deportivo Mandiyú",         303,    68,   122,   113,    306,    383),
     ("Nueva Chicago",             286,    70,    89,   127,    295,    417),
-    ("Sarmiento (J)",             282,    65,    91,   126,    271,    372),
-    ("Aldosivi",                  228,    67,    49,   112,    229,    346),
+    ("Aldosivi",                  276,    76,    63,   137,    266,    411),
+    ("Central Córdoba (SdE)",     208,    57,    59,    92,    213,    282),
     ("Talleres (RdE)",            236,    57,    43,   136,    374,    560),
+    ("Independiente Rivadavia",   165,    53,    54,    58,    189,    230),
     ("Patronato",                 171,    48,    54,    69,    178,    226),
     ("Los Andes",                 183,    44,    46,    93,    219,    323),
-    ("Central Córdoba (SdE)",     158,    42,    43,    73,    162,    226),
+    ("Barracas Central",          132,    38,    51,    43,    126,    155),
     ("San Martín (M)",            108,    38,    30,    40,    149,    172),
     ("Chaco For Ever",            158,    33,    42,    83,    155,    282),
-    ("Independiente Rivadavia",   115,    33,    37,    45,    125,    178),
     ("Almagro",                   108,    24,    31,    53,    145,    214),
-    ("Barracas Central",           81,    20,    32,    29,     71,    100),
+    ("Deportivo Riestra",          77,    22,    32,    23,     65,     62),
     ("Deportivo Armenio",          95,    16,    40,    39,     81,    132),
     ("Central Norte (S)",          92,    21,    21,    50,     87,    167),
     ("Gimnasia y Tiro",           104,    17,    30,    57,     81,    178),
@@ -113,7 +114,6 @@ TABLA = [
     ("Juventud Antoniana",         77,    10,    18,    49,     90,    169),
     ("Atlético Concepción",        36,    11,     7,    18,     40,     54),
     ("Deportivo Roca",             30,    10,     8,    12,     30,     41),
-    ("Deportivo Riestra",          27,     8,    11,     8,     26,     27),
     ("Unión Talleres-Lanús",       39,     8,    11,    20,     50,     81),
     ("San Telmo",                  47,     7,    11,    29,     54,    100),
     ("Renato Cesarini",            28,     7,     8,    13,     35,     47),
@@ -124,10 +124,10 @@ TABLA = [
     ("Huracán (Tres Arroyos)",     42,     4,    12,    26,     38,     82),
     ("Juventud Alianza (SJ)",      22,     7,     1,    14,     28,     51),
     ("Los Andes (SJ)",             14,     6,     4,     4,     22,     19),
+    ("Estudiantes (RC)",           34,     5,     6,    23,     30,     58),
     ("Deportivo Morón",            22,     5,     3,    14,     16,     38),
     ("Huracán (IW)",               29,     4,     6,    19,     18,     82),
     ("San Martín (T)",             20,     4,     5,    11,     27,     47),
-    ("Estudiantes (RC)",           18,     4,     4,    10,     25,     34),
     ("Sarmiento (R)",              14,     4,     4,     6,     18,     29),
     ("Sportivo Patria",            18,     4,     4,    10,     24,     37),
     ("Atlético Regina",            18,     3,     6,     9,     13,     30),
@@ -156,5 +156,5 @@ TABLA = [
 ]
 
 DESDE = '1931'
-HASTA = '2024'
-TEMPORADAS = 94
+HASTA = '2026'
+TEMPORADAS = 96

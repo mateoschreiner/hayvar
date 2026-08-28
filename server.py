@@ -9046,6 +9046,85 @@ def _el_dato(hist, local, visita):
     return ""
 
 
+def _que_se_juega(canon, zonas, promedios):
+    """
+    Por qué juega este equipo: qué se lleva si gana y qué pierde si pierde.
+
+    Es la pregunta que contesta una previa y que la tabla sola no contesta:
+    la tabla dice que va décimo, no dice que con tres puntos entra a la
+    Sudamericana. Sale de la posición en su zona y, en Primera, de los
+    promedios, que es donde se juega la otra mitad del año.
+
+    Devuelve una lista de frases cortas. Vacía si no hay nada que decir,
+    y entonces la pantalla no dibuja nada: a mitad de torneo hay equipos
+    que efectivamente no se juegan nada, y decir "pelea por entrar" cuando
+    está a veinte puntos es mentirle a la gente.
+    """
+    dice = []
+    fila = zonas.get(norm(canon or ""))
+    if fila:
+        pos, de, pts = fila["pos"], fila["de"], fila["pts"]
+        lider = fila.get("lider")
+        if pos == 1:
+            dice.append("Puntero de su zona con %d puntos" % pts)
+        elif lider is not None and pos <= 8:
+            falta = lider - pts
+            dice.append("%dº, a %d del puntero" % (pos, falta) if falta
+                        else "%dº, igualado con el puntero" % pos)
+        else:
+            dice.append("%dº de %d en su zona" % (pos, de))
+        # Los ocho de cada zona entran a los playoffs. Es lo que más se
+        # mira de la tabla después del descenso.
+        if pos <= 8:
+            dice.append("Hoy entra a los playoffs")
+        elif pos <= 11:
+            dice.append("Está afuera de los playoffs por poco")
+    p = promedios.get(norm(canon or ""))
+    if p:
+        if p.get("desciende"):
+            dice.append("Hoy se va al descenso (%dº en promedios)" % p["pos"])
+        elif p.get("alBorde"):
+            dice.append("%dº en la tabla de promedios" % p["pos"])
+    return dice
+
+
+def _contexto_de_liga(lid):
+    """
+    La foto de la tabla y de los promedios, una sola vez por previa.
+
+    Se arma acá afuera y se le pasa a cada partido: pedirla adentro del
+    bucle serían treinta consultas para contestar la misma pregunta.
+    Si algo falla, se devuelve vacío y la previa sale sin contexto, que es
+    mejor que no salir.
+    """
+    zonas, promedios = {}, {}
+    try:
+        for z in (api_standings({}).get("zones") or []):
+            lider = (z["rows"][0]["pts"] if z.get("rows") else None)
+            for r in z["rows"]:
+                zonas[norm(r["team"]["name"])] = {
+                    "pos": r["pos"], "de": len(z["rows"]),
+                    "pts": r["pts"], "zona": z.get("name"), "lider": lider}
+    except Exception:
+        pass
+    if lid == "lpf":
+        try:
+            filas = api_promedios({}).get("rows") or []
+            # La tabla ya viene ordenada por promedio y numerada. Los dos
+            # últimos se van; los tres de arriba de ésos son los que
+            # miran la tabla todos los lunes.
+            n = len(filas)
+            for r in filas:
+                pos = r.get("pos") or 0
+                promedios[norm(r["team"]["name"])] = {
+                    "pos": pos, "de": n,
+                    "desciende": n and pos > n - 2,
+                    "alBorde": n and n - 5 < pos <= n - 2}
+        except Exception:
+            pass
+    return zonas, promedios
+
+
 def _jugador_a_seguir(equipo_id, liga, temporada, desde):
     """
     A quién mirar de cada equipo.
@@ -9068,6 +9147,37 @@ def _jugador_a_seguir(equipo_id, liga, temporada, desde):
         return {"nombre": g["jugador"], "goles": g["goles"],
                 "partidos": g["partidos"], "porque": "goleador del equipo"}
     return None
+
+
+def _radar_equipo(rend, racha):
+    """
+    Los cinco números del equipo, de 0 a 100, para el gráfico.
+
+    Se eligieron los que se pueden sacar de lo que ya tenemos y que
+    significan algo distinto entre sí. Cada uno se lleva a una escala
+    donde 100 es "muy bueno para esta categoría", no "el mejor de la
+    historia": un equipo que hace 2 goles por partido es un equipazo, así
+    que ahí está el techo.
+
+    Sin partidos jugados no hay radar. Devolver ceros dibujaría un equipo
+    nulo, que es peor que no dibujar nada.
+    """
+    if not rend or not rend.get("pj"):
+        return None
+    pj = rend["pj"]
+    def tope(x, maximo):
+        return max(0, min(100, round(100.0 * x / maximo)))
+    forma = 0
+    if racha:
+        puntos = sum({"G": 3, "E": 1, "P": 0}[r["como"]] for r in racha)
+        forma = tope(puntos, 3 * len(racha))
+    return {
+        "Ataque": tope(rend["gf"] / pj, 2.0),
+        "Defensa": tope(max(0, 2.0 - rend["gc"] / pj), 2.0),
+        "Efectividad": tope((3 * rend["g"] + rend["e"]) / pj, 3.0),
+        "Contundencia": tope(rend["g"] / pj, 1.0),
+        "Momento": forma,
+    }
 
 
 def api_previa(q):
@@ -9108,8 +9218,10 @@ def api_previa(q):
     temporada = temporada_actual(LIGAS.get(lid, {}).get("sc")) if lid != "lpf" \
         else None
     desde = (dt.datetime.utcnow() - dt.timedelta(days=45)).isoformat()
+    # La tabla y los promedios, una sola vez para toda la fecha.
+    zonas, promedios = _contexto_de_liga(lid)
 
-    salida, candidatos = [], []
+    salida, candidatos, equipos = [], [], []
     for g in dela:
         h, a = g.get("home") or {}, g.get("away") or {}
         ch, ca = h.get("canon"), a.get("canon")
@@ -9131,6 +9243,18 @@ def api_previa(q):
             f = CLUBES_INFO.get(uno) or {}
             if f.get("clasico") and match_team(f["clasico"], False) == otro:
                 clasico = f.get("clasicoNombre") or "Clásico"
+        renh = rendimiento_en([m for m in games
+                               if ch in (m["home"]["canon"],
+                                         m["away"]["canon"])], ch)
+        rena = rendimiento_en([m for m in games
+                               if ca in (m["home"]["canon"],
+                                         m["away"]["canon"])], ca)
+        for canon, ren, ra_ in ((ch, renh, rh), (ca, rena, ra)):
+            if ren and ren.get("pj"):
+                equipos.append({
+                    "club": canon, "partido": g.get("id"),
+                    "pts": 3 * ren["g"] + ren["e"], "pj": ren["pj"],
+                    "racha": sum(1 for x in ra_[:3] if x["como"] == "G")})
         salida.append({
             "id": g.get("id"), "start": g.get("start"),
             "home": h, "away": a, "zone": g.get("zone"),
@@ -9140,24 +9264,28 @@ def api_previa(q):
             "dato": _el_dato(hist, h.get("name"), a.get("name")),
             "racha": {"home": rh, "away": ra},
             "vieneDe": {"home": _racha_texto(rh), "away": _racha_texto(ra)},
-            "rendimiento": {
-                "home": rendimiento_en([m for m in games
-                                        if ch in (m["home"]["canon"],
-                                                  m["away"]["canon"])], ch),
-                "away": rendimiento_en([m for m in games
-                                        if ca in (m["home"]["canon"],
-                                                  m["away"]["canon"])], ca)},
+            "rendimiento": {"home": renh, "away": rena},
+            # Por qué juega cada uno: qué se lleva si gana.
+            "seJuega": {"home": _que_se_juega(ch, zonas, promedios),
+                        "away": _que_se_juega(ca, zonas, promedios)},
+            # Los cinco números para el gráfico, ya en escala 0-100.
+            "radar": {"home": _radar_equipo(renh, rh),
+                      "away": _radar_equipo(rena, ra)},
             "aSeguir": {"home": jh, "away": ja},
         })
     # El jugador de la fecha: el mejor de los elegidos partido por partido,
     # con la misma regla. Primero los que están en racha.
     candidatos.sort(key=lambda j: (j["porque"] != "en racha",
                                    -j["goles"], j["partidos"]))
+    # Y el equipo de la fecha: el que mejor viene, medido en puntos por
+    # partido, y con la racha como desempate.
+    equipos.sort(key=lambda e: (-(e["pts"] / (e["pj"] or 1)), -e["racha"]))
     return {
         "liga": lid, "ronda": ronda,
         "cuando": min((g.get("start") or "") for g in dela) or None,
         "partidos": salida,
         "delaFecha": candidatos[0] if candidatos else None,
+        "equipoDeLaFecha": equipos[0] if equipos else None,
         "nota": ("Sale de lo que ya está guardado: los cruces anteriores, "
                  "los últimos partidos de cada uno y quién viene "
                  "convirtiendo. Se va llenando a medida que el torneo "

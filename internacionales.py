@@ -15,14 +15,20 @@ las discontinuadas: la Supercopa, la Copa CONMEBOL, el Mercosur, la
 Interamericana, la Copa Master y la Copa de Oro. Y la Intercontinental,
 que era el partido contra el campeón de Europa.
 
+La Copa Suruga Bank cuenta
+──────────────────────────
+Se discute: CONMEBOL la coorganizaba con Japón y la lista entre sus
+competencias oficiales, pero era un partido único y Wikipedia en inglés la
+cataloga como amistoso. Acá cuenta, por la misma regla que usamos en la
+liga: si la federación que la organiza la considera oficial, la contamos,
+aunque esté discutida. Es lo mismo que hacemos con la tabla Anual 2025 que
+AFA declaró campeona.
+
+No es un detalle: con ella el total es 79 y Boca e Independiente quedan
+empatados en 18 arriba de todo. Sin ella, Boca queda solo con 18.
+
 Qué NO cuenta, y por qué
 ────────────────────────
-· La Copa Suruga Bank está abajo, en APARTE, y no suma al total. CONMEBOL
-  la coorganizaba y la lista como oficial, pero era un partido único
-  contra un equipo japonés y Wikipedia en inglés directamente la cataloga
-  como amistoso. Contarla cambia quién está primero —Boca 18 solo, o Boca
-  e Independiente empatados en 18—, así que la decisión se toma a la vista
-  y no escondida en un total.
 · Las copas rioplatenses (Aldao, Tie Cup, Cousenier) son títulos
   internacionales de verdad, pero son anteriores a que CONMEBOL
   organizara torneos de clubes y no integran su nómina.
@@ -139,17 +145,28 @@ COPAS = [
     ("Copa de Oro", [
         ("1993", "Boca Juniors", "Atlético Mineiro (BRA)"),
     ]),
+    ("Copa Suruga Bank", [
+        ("2008", "Arsenal", "Gamba Osaka (JPN)"),
+        ("2015", "River Plate", "Gamba Osaka (JPN)"),
+        ("2018", "Independiente", "Cerezo Osaka (JPN)"),
+    ]),
 ]
 
-# Los tres que no suman al total, y por qué. Se muestran igual: existen,
-# los clubes los exhiben, y esconderlos sería tan discutible como
-# contarlos.
-APARTE = [
-    ("Copa Suruga Bank",
-     "CONMEBOL la coorganizaba con Japón y la lista como oficial, pero "
-     "era un partido único contra el campeón de la Copa J.League y "
-     "Wikipedia en inglés la cataloga como amistoso. No suma al total.",
-     [("2008", "Arsenal", "Gamba Osaka (JPN)"),
-      ("2015", "River Plate", "Gamba Osaka (JPN)"),
-      ("2018", "Independiente", "Cerezo Osaka (JPN)")]),
-]
+# Las que están discutidas llevan su aclaración al lado, como las ligas.
+# Cuentan igual —CONMEBOL las lista como oficiales— pero el que las mira
+# tiene derecho a saber por qué alguien las discute.
+DISCUTIDAS = {
+    "Copa Suruga Bank":
+        "Partido único contra el campeón de la Copa J.League. CONMEBOL la "
+        "coorganizaba y la lista como oficial; Wikipedia en inglés la "
+        "cataloga como amistoso.",
+    "Copa Master de Supercopa":
+        "Torneo de invitación con cuatro equipos en sede única. CONMEBOL "
+        "lo cuenta como oficial.",
+    "Copa de Oro":
+        "Torneo de invitación entre campeones de las copas de CONMEBOL. "
+        "En dos ediciones varios invitados se negaron a jugar.",
+}
+
+# Se deja el nombre viejo para que nada de afuera se rompa si lo pedía.
+APARTE = []

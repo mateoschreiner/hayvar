@@ -459,16 +459,35 @@ def resumen_por_club():
                 "copa": nombre,
                 "temporadas": sorted(temporadas, key=_clave, reverse=True)})
 
+    # Los internacionales, en su propia columna. Van al lado y no sumados
+    # al total nacional: en Argentina "cuántas ligas tiene" y "cuántas
+    # Libertadores tiene" son dos preguntas distintas, y un número que las
+    # mezcle no contesta ninguna de las dos.
+    for x in internacionales()["porClub"]:
+        e = entrada(x["club"])
+        e["inter"] = x["total"]
+        e["detalleInter"] = x["detalle"]
+
+    for x in c.values():
+        x["total"] = x["ligas"] + x["copas"]
+        x.setdefault("inter", 0)
+        x.setdefault("detalleInter", [])
+        # El total de todo, que es por el que se ordena. Va aparte y con
+        # nombre propio para que nadie lo confunda con el nacional: en
+        # pantalla los dos números se muestran separados.
+        x["todo"] = x["total"] + x["inter"]
+    # Se ordena por todos los títulos y no sólo por los nacionales. Si no,
+    # Defensa y Justicia —que tiene dos internacionales y ninguno de acá—
+    # quedaba último de la lista, abajo de clubes con una sola copa.
     salida = sorted(c.values(),
-                    key=lambda x: (-(x["ligas"] + x["copas"]), -x["ligas"],
+                    key=lambda x: (-x["todo"], -x["ligas"], -x["inter"],
                                    _plano(x["club"])))
     for x in salida:
-        x["total"] = x["ligas"] + x["copas"]
         x["detalleLigas"].sort(key=lambda d: _clave(d["temporada"]),
                                reverse=True)
         x["detalleCopas"].sort(key=lambda d: (-len(d["temporadas"]), d["copa"]))
     for i, x in enumerate(salida, 1):
-        x["pos"] = i if i == 1 or x["total"] != salida[i - 2]["total"] \
+        x["pos"] = i if i == 1 or x["todo"] != salida[i - 2]["todo"] \
             else salida[i - 2]["pos"]
     return salida
 
@@ -680,6 +699,9 @@ def internacionales():
         x["pos"] = i if i == 1 or x["total"] != salida[i - 2]["total"] \
             else salida[i - 2]["pos"]
     copas = [{"copa": n,
+              # Las discutidas llevan su aclaración al lado, como la Anual
+              # 2025 en la liga: cuentan, pero se dice por qué se discuten.
+              "porque": _i.DISCUTIDAS.get(n),
               "campeones": [{"temporada": t, "campeon": c, "rival": r}
                             for t, c, r in sorted(f, reverse=True)]}
              for n, f in _i.COPAS]

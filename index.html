@@ -418,7 +418,65 @@ td.nec{text-align:center;color:var(--txt2);font-variant-numeric:tabular-nums}
   .th-cab .n:nth-child(6),.th-fila .n:nth-child(6){display:none}
 }
 
+/* ── Títulos: las dos solapas ── */
+.tit-solapas{display:flex;gap:6px;padding:12px 14px 4px}
+.tit-sol{font:inherit;font-size:12.5px;font-weight:700;padding:6px 14px;
+  border-radius:99px;border:1px solid var(--line);background:var(--card);
+  color:var(--txt2);cursor:pointer}
+.tit-sol:hover{background:var(--bg)}
+.tit-sol.on{background:var(--nav);color:#fff;border-color:var(--nav)}
+/* Los dos números del costado: nacionales primero, internacionales al
+   lado y en otro color. Nunca sumados. */
+.hist-club .cuentas{display:flex;align-items:center;gap:5px;flex:none}
+.hist-club .cant.inter{background:rgba(47,111,237,.12);color:#1d4ed8;
+  border-radius:6px;padding:0 6px}
+
 /* ── La previa ── */
+/* El encabezado de la fecha: centrado y pegado arriba, para que al
+   scrollear quince partidos siempre se sepa qué fecha se está mirando. */
+.calhead .bt-previa{font-size:11.5px;font-weight:700;padding:5px 12px;
+  border-radius:99px;background:var(--nav);color:#fff;text-decoration:none;
+  white-space:nowrap}
+.calhead .bt-previa:hover{opacity:.9}
+@media(max-width:520px){ .calhead .bt-previa{font-size:10.5px;padding:4px 9px} }
+
+.pv-cab{position:sticky;top:0;z-index:5;text-align:center;
+  padding:10px 14px;margin-bottom:10px;border-radius:12px;
+  background:var(--card);border:1px solid var(--line);
+  box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.pv-cab b{display:block;font-size:17px;letter-spacing:-.01em}
+.pv-cab span{font-size:12px;color:var(--txt3)}
+.pv-cuando{text-align:center;font-size:11.5px;font-weight:700;
+  color:var(--txt3);text-transform:uppercase;letter-spacing:.04em;
+  margin-bottom:8px}
+/* Por qué juega cada uno. Va debajo del nombre, chiquito: es contexto, no
+   titular. */
+.pv-lado .juega{display:flex;flex-direction:column;gap:2px;margin-top:3px}
+.pv-lado .juega i{font-style:normal;font-size:10.5px;line-height:1.35;
+  color:var(--txt2)}
+.pv-medio{display:flex;align-items:center;justify-content:center;
+  min-width:74px}
+/* El radar: chiquito entre los dos escudos, grande al tocarlo. Los
+   nombres de los ejes aparecen recién cuando hay lugar para leerlos. */
+.pv-radar{width:74px;cursor:pointer;transition:width .18s ease}
+.pv-radar svg{width:100%;height:auto;display:block;overflow:visible}
+.pv-radar .red{fill:none;stroke:var(--line);stroke-width:1}
+.pv-radar polygon.a,.pv-radar polygon.b{fill-opacity:.22;stroke-width:1.6;
+  stroke-linejoin:round}
+.pv-radar .ejes{display:none}
+.pv-radar .ejes text{font-size:7px;font-weight:700;fill:var(--txt2)}
+.pv-radar .ejes .v{font-size:6px;font-weight:400;fill:var(--txt3)}
+.pv-radar.grande{width:190px}
+.pv-radar.grande .ejes{display:block}
+@media(max-width:560px){
+  .pv-radar{width:58px}
+  .pv-radar.grande{width:150px}
+}
+.pv-pie .ic{width:13px;height:13px;vertical-align:-2px;margin-right:5px;
+  fill:none;stroke:var(--txt3);stroke-width:1.2}
+.pv-elegido .club.big{font-size:14px;color:var(--txt)}
+.pv-elegido .club.big img.hist-esc{width:22px;height:22px}
+
 .pv{padding:12px 14px;border-bottom:1px solid var(--line)}
 .pv:last-of-type{border-bottom:0}
 .pv.clasico{background:rgba(224,30,43,.05);
@@ -1526,9 +1584,11 @@ const App=(()=>{
     previa:{rotulo:'Previa de la fecha', corto:'Previa'},
     calculadora:{rotulo:'Calculadora de promedios', corto:'Promedios'},
     equipos:{rotulo:'Equipos', corto:'Equipos'},
-    historia:{rotulo:'Historia', corto:'Historia'},
+    /* Antes eran dos: Historia y Títulos internacionales. Son la misma
+       pregunta —qué ganó cada club— y separarlas obligaba a mirar en dos
+       lados para contestarla. Ahora es una sola con dos solapas. */
+    historia:{rotulo:'Títulos', corto:'Títulos'},
     tabla:{rotulo:'Tabla histórica', corto:'Histórica'},
-    internacionales:{rotulo:'Títulos internacionales', corto:'Internacionales'},
   };
   /* Qué secciones tiene cada torneo.
 
@@ -1541,7 +1601,7 @@ const App=(()=>{
      de ese torneo y con nada más. La tabla histórica y los internacionales,
      sólo en Primera, que es de donde son los datos. */
   const CON_SECCIONES={
-    lpf:['previa','calculadora','equipos','historia','tabla','internacionales'],
+    lpf:['previa','calculadora','equipos','historia','tabla'],
     ca:['previa','equipos','historia'],
     nacional:['previa','equipos','historia'],
   };
@@ -1657,7 +1717,6 @@ const App=(()=>{
     if(sec==='calculadora') return seccionCalculadora();
     if(sec==='historia') return seccionHistoria();
     if(sec==='tabla') return seccionTabla();
-    if(sec==='internacionales') return seccionInternacionales();
     if(sec==='previa') return seccionPrevia();
   }
 
@@ -1675,8 +1734,8 @@ const App=(()=>{
      quedan en memoria. */
   // Una por competencia: los campeones de Primera y los de la Copa
   // Argentina son listas distintas.
-  const histDe={};
-  let hist=null;
+  const histDe={}, interDe={};
+  let hist=null, inter=null;
 
   // El escudo de un club en la historia. Muchos campeones ya no están en
   // Primera —Chacarita, Ferro, Quilmes, Estudiantil Porteño— y para esos
@@ -1788,6 +1847,45 @@ const App=(()=>{
 
      Las líneas que no tienen dato no se dibujan. Una previa con frases de
      relleno —"será un partido parejo"— es peor que una previa corta. */
+
+  /* El radar de los dos equipos, chiquito entre los escudos.
+
+     Es un gráfico y no una tabla porque la pregunta que contesta es "cuál
+     de los dos es mejor en qué", y eso se ve de un vistazo con dos formas
+     superpuestas y no leyendo diez números. Va chico porque en una previa
+     de quince partidos no puede ocupar media pantalla; al tocarlo se
+     agranda y recién ahí aparecen los nombres de cada eje. */
+  function radarDoble(id, a, b, ca, cb){
+    if(!a||!b) return '';
+    const ejes=Object.keys(a);
+    const n=ejes.length, R=42, cx=50, cy=50;
+    const punto=(v,i)=>{
+      const ang=(Math.PI*2*i/n)-Math.PI/2, r=R*Math.max(4,v)/100;
+      return [cx+r*Math.cos(ang), cy+r*Math.sin(ang)];
+    };
+    const forma=o=>ejes.map((k,i)=>punto(o[k],i).map(x=>x.toFixed(1)).join(','))
+      .join(' ');
+    const rotulo=(k,i)=>{
+      const [x,y]=punto(118,i);
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}"
+        text-anchor="middle" dominant-baseline="middle">${esc(k)}
+        <tspan class="v">${a[k]}-${b[k]}</tspan></text>`;
+    };
+    return `<div class="pv-radar" id="rad${id}" onclick="App.verRadar('${id}')"
+        title="Tocá para agrandar">
+      <svg viewBox="-30 -30 160 160" aria-hidden="true">
+        ${[100,66,33].map(r=>`<polygon class="red" points="${
+          ejes.map((k,i)=>punto(r,i).map(x=>x.toFixed(1)).join(',')).join(' ')
+        }"/>`).join('')}
+        <polygon class="a" points="${forma(a)}" style="fill:${esc(ca||'#2f6fed')};
+          stroke:${esc(ca||'#2f6fed')}"/>
+        <polygon class="b" points="${forma(b)}" style="fill:${esc(cb||'#e5484d')};
+          stroke:${esc(cb||'#e5484d')}"/>
+        <g class="ejes">${ejes.map(rotulo).join('')}</g>
+      </svg>
+    </div>`;
+  }
+
   const bolita=r=>`<i class="bo ${r.como}" title="${esc(r.rival)} ${r.gf}-${r.gc}"></i>`;
 
   function aSeguirHtml(j, lado){
@@ -1797,6 +1895,29 @@ const App=(()=>{
       <span class="dd">${j.goles} ${j.goles===1?'gol':'goles'}${
         j.porque==='en racha'?' · en racha':''}</span></a>`;
   }
+
+  /* El día y la hora juntos: "Sáb 30 · 17:00". En una previa el día
+     importa tanto como la hora, porque la fecha se juega en tres días. */
+  const DIA_CORTO=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const MES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct',
+                   'nov','dic'];
+  function cuandoJuega(iso){
+    if(!iso) return '';
+    const d=new Date(iso);
+    if(isNaN(d)) return '';
+    return `${DIA_CORTO[d.getDay()]} ${d.getDate()} ${MES_CORTO[d.getMonth()]}`
+      + ` · ${hhmm(iso)}`;
+  }
+
+  // Una cancha, dibujada. Es un rótulo visual: dice "esto es el estadio"
+  // sin gastar una palabra.
+  const ICONO_CANCHA=`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+    <line x1="8" y1="3" x2="8" y2="13"/>
+    <circle cx="8" cy="8" r="2"/>
+    <rect x="1" y="5.5" width="2.5" height="5"/>
+    <rect x="12.5" y="5.5" width="2.5" height="5"/>
+  </svg>`;
 
   async function seccionPrevia(){
     const main=$('#matches');
@@ -1810,22 +1931,33 @@ const App=(()=>{
         ${esc(d.nota||'No hay fecha por jugar.')}</div></div>`;
       return status('ok','sin fecha por jugar');
     }
-    const lado=(e,r,vd,j)=>`<div class="pv-lado">
+    const lado=(e,r,vd,sj)=>`<div class="pv-lado">
       ${e&&e.logo?`<img src="${esc(e.logo)}" alt="" loading="lazy">`:''}
       <span class="nm">${esc(enMayusculas(e&&e.name||''))}</span>
       ${r&&r.length?`<span class="bolas">${r.slice().reverse().map(bolita).join('')}</span>`:''}
       ${vd?`<span class="viene">${esc(vd)}</span>`:''}
+      ${(sj&&sj.length)?`<span class="juega">${sj.map(x=>
+        `<i>${esc(x)}</i>`).join('')}</span>`:''}
     </div>`;
-    main.innerHTML=`<div class="globo">
-      <div class="hist-sep" style="border-top:0;padding-top:14px">
-        ${d.ronda?'Fecha '+d.ronda:'Los próximos partidos'} ·
-        ${ps.length} ${ps.length===1?'partido':'partidos'}</div>
+    main.innerHTML=`
+      <div class="pv-cab">
+        <b>${d.ronda?'Fecha '+d.ronda:'Los próximos partidos'}</b>
+        <span>${ps.length} ${ps.length===1?'partido':'partidos'}</span>
+      </div>
+      <div class="globo">
       ${ps.map(p=>`<div class="pv${p.clasico?' clasico':''}">
         ${p.clasico?`<div class="pv-et">${esc(p.clasico)}</div>`:''}
+        <div class="pv-cuando">${esc(cuandoJuega(p.start))}</div>
         <div class="pv-top">
-          ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home)}
-          <span class="pv-vs">${p.start?esc(hhmm(p.start)):'vs'}</span>
-          ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away)}
+          ${lado(p.home,(p.racha||{}).home,(p.vieneDe||{}).home,
+                 (p.seJuega||{}).home)}
+          <div class="pv-medio">
+            ${radarDoble(p.id,(p.radar||{}).home,(p.radar||{}).away,
+                         (p.home||{}).primary,(p.away||{}).primary)
+              || '<span class="pv-vs">vs</span>'}
+          </div>
+          ${lado(p.away,(p.racha||{}).away,(p.vieneDe||{}).away,
+                 (p.seJuega||{}).away)}
         </div>
         ${p.dato?`<div class="pv-dato">${esc(p.dato)}</div>`:''}
         ${p.historial&&p.historial.pj?`<div class="pv-hist">
@@ -1839,12 +1971,13 @@ const App=(()=>{
           <span class="lb">A seguir</span>
           ${aSeguirHtml(p.aSeguir.home,'h')}${aSeguirHtml(p.aSeguir.away,'a')}
         </div>`:''}
-        ${p.venue?`<div class="pv-pie">${esc(p.venue)}</div>`:''}
+        ${p.venue?`<div class="pv-pie">${ICONO_CANCHA}${esc(p.venue)}</div>`:''}
       </div>`).join('')}
       <div class="note" style="padding:12px 16px">${esc(d.nota)}</div>
-    </div>`;
-    $('#right').innerHTML=d.delaFecha?`<div class="globo">
-      <div class="cl-sec">El jugador de la fecha</div>
+      </div>`;
+    const eq=d.equipoDeLaFecha;
+    $('#right').innerHTML=(d.delaFecha||eq)?`<div class="globo">
+      ${d.delaFecha?`<div class="cl-sec">El jugador de la fecha</div>
       <div class="pv-elegido">
         <a href="${esc(Rutas.url(rutaJugador(d.delaFecha.nombre)))}" data-ir>
           <span class="nm">${esc(d.delaFecha.nombre)}</span></a>
@@ -1855,7 +1988,17 @@ const App=(()=>{
           ${d.delaFecha.partidos} ${d.delaFecha.partidos===1?'partido':'partidos'}</div>
         <div class="pie">Elegido por lo que viene haciendo, no a dedo: el que
           más convirtió en el último mes entre los que juegan esta fecha.</div>
-      </div></div>`:'';
+      </div>`:''}
+      ${eq?`<div class="cl-sec">El equipo de la fecha</div>
+      <div class="pv-elegido">
+        <div class="club big">${escudoHist(eq.club)}
+          <b>${esc(enMayusculas(eq.club||''))}</b></div>
+        <div class="dd">${(eq.pts/(eq.pj||1)).toFixed(2)} puntos por partido
+          en ${eq.pj} ${eq.pj===1?'partido':'partidos'}</div>
+        <div class="pie">El de mejor rendimiento entre los que juegan esta
+          fecha. La racha desempata.</div>
+      </div>`:''}
+      </div>`:'';
     status('ok',`<b>${ps.length}</b> partidos · previa de la fecha`);
   }
 
@@ -1872,15 +2015,19 @@ const App=(()=>{
          un campeón de la Copa Argentina puede no estar jugándola este año
          —Huracán, Arsenal, Patronato— y en cambio sí estar en Primera. Con
          la lista de la copa sola, esos campeones salían sin escudo. */
-      const [h]=await Promise.all([
+      const [h,,,i]=await Promise.all([
         get('/api/historia?liga='+encodeURIComponent(liga)).catch(()=>null),
         equipos(liga),
         liga==='lpf'?Promise.resolve():equipos('lpf'),
+        // Los internacionales son de clubes argentinos, así que sólo
+        // tienen sentido en Primera. En las demás la solapa no aparece.
+        liga==='lpf'?get('/api/internacionales').catch(()=>null)
+                    :Promise.resolve(null),
       ]);
-      histDe[liga]=h;
+      histDe[liga]=h; interDe[liga]=i;
     }
     if(S.sec!=='historia'||S.liga!==liga) return;  // te fuiste mientras cargaba
-    hist=histDe[liga];
+    hist=histDe[liga]; inter=interDe[liga];
     if(!hist){
       main.innerHTML='<div class="empty" style="padding:30px">No se pudo '
         +'cargar la historia.</div>';
@@ -1889,12 +2036,55 @@ const App=(()=>{
     pintarHistoria();
   }
 
+  /* Qué solapa de Títulos se está mirando: los nacionales o los
+     internacionales. Es la misma pregunta —qué ganó cada club— así que va
+     en una sola pantalla; lo que cambia es de qué lado del mundo. */
+  let titSolapa='nacionales';
+
   function pintarHistoria(){
     const main=$('#matches'); if(!main||!hist) return;
-    main.innerHTML=histPorAno() + histCopas()
-      + `<div class="note" style="padding:14px 16px 18px">
-           ${esc(hist.nota||'')} Fuente: ${esc(hist.fuente||'')}.</div>`;
+    // Los internacionales sólo existen en Primera: son de clubes
+    // argentinos y no de una competencia en particular.
+    const hayInter=S.liga==='lpf' && inter;
+    const solapas=hayInter?`<div class="tit-solapas">
+      ${['nacionales','internacionales'].map(k=>`<button
+        class="tit-sol${titSolapa===k?' on':''}"
+        onclick="App.verTitulos('${k}')">${k==='nacionales'
+          ?'Nacionales':'Internacionales'}</button>`).join('')}
+    </div>`:'';
+    if(hayInter && titSolapa==='internacionales'){
+      main.innerHTML=solapas+interPorAno();
+    }else{
+      main.innerHTML=solapas+histPorAno()+histCopas()
+        +`<div class="note" style="padding:14px 16px 18px">
+            ${esc(hist.nota||'')} Fuente: ${esc(hist.fuente||'')}.</div>`;
+    }
     const der=$('#right'); if(der) der.innerHTML=histPorClub();
+  }
+
+  function verTitulos(cual){
+    titSolapa=cual;
+    pintarHistoria();
+    const m=$('#matches'); if(m) m.scrollIntoView({block:'start'});
+  }
+
+  /* Los internacionales, año por año, con la misma fila que todo lo
+     demás. Las discutidas llevan su aclaración al lado, igual que la
+     Anual 2025 en la liga: cuentan, pero el que las mira tiene derecho a
+     saber por qué alguien las discute. */
+  function interPorAno(){
+    return `<div class="hist-sep" style="border-top:0;padding-top:14px">
+        ${esc(inter.titulo)} · ${inter.total} desde ${esc(inter.desde)}</div>`
+      + (inter.copas||[]).map(c=>`<details class="hist-copa">
+          <summary><span class="nm">${esc(c.copa)}</span>
+            ${c.porque?'<span class="hist-nota" title="'+esc(c.porque)
+              +'">ⓘ</span>':''}
+            <span class="cant">${c.campeones.length}</span></summary>
+          ${c.campeones.map(x=>histFila(x.temporada,[{campeon:x.campeon,
+            torneo:'', nota:x.rival?('Le ganó la final a '+x.rival):null}]
+            )).join('')}</details>`).join('')
+      + `<div class="note" style="padding:14px 16px 18px">
+           ${esc(inter.nota||'')} Fuente: ${esc(inter.fuente||'')}.</div>`;
   }
 
   /* Cuántas tiene cada uno, al costado. El número grande es el total, y
@@ -1919,22 +2109,33 @@ const App=(()=>{
               c.ligas?plural(c.ligas,unidad):'',
               c.copas?plural(c.copas,'copa'):''].filter(Boolean).join(' · ')}</span>
           </span>
-          <span class="cant">${c.total}</span>
+          <span class="cuentas">
+            <span class="cant" title="Títulos nacionales">${c.total}</span>
+            ${c.inter?`<span class="cant inter"
+              title="Títulos internacionales">${c.inter}</span>`:''}
+          </span>
         </summary>
         ${c.ligas?`<div class="hist-grupo">${unidad==='copa'?'Ediciones':'Ligas'}</div>
           <div class="hist-tit">${c.detalleLigas.map(d=>
             `<span><b>${esc(d.temporada)}</b>${d.torneo?' '+esc(d.torneo):''}</span>`
           ).join('')}</div>`:''}
-        ${c.copas?`<div class="hist-grupo">Copas</div>
+        ${c.copas?`<div class="hist-grupo">Copas nacionales</div>
           <div class="hist-tit">${c.detalleCopas.map(d=>
+            `<span><b>${esc(d.copa)}</b> ${d.temporadas.map(esc).join(' · ')}</span>`
+          ).join('')}</div>`:''}
+        ${c.inter?`<div class="hist-grupo">Internacionales</div>
+          <div class="hist-tit">${(c.detalleInter||[]).map(d=>
             `<span><b>${esc(d.copa)}</b> ${d.temporadas.map(esc).join(' · ')}</span>`
           ).join('')}</div>`:''}
       </details>`).join('')}
       <div class="note" style="padding:8px 14px 12px">${hist.porClub.length}
         clubes campeones.${hist.copa
           ? ' Tocá uno para ver en qué ediciones la ganó.'
-          : ' El total suma ligas y copas nacionales; el desglose está en '
-            +'cada fila.'}</div>
+          : ' El primer número son los títulos nacionales —ligas y copas— y '
+            +'el segundo los internacionales. Van separados a propósito: '
+            +'\u0022cuántas ligas tiene\u0022 y \u0022cuántas Libertadores '
+            +'tiene\u0022 son dos preguntas distintas. Tocá un club para ver '
+            +'el detalle.'}</div>
     </div>`;
   }
 
@@ -2468,6 +2669,12 @@ const App=(()=>{
             : quiere==='portada'
             ? `<div class="calbar">
                  <div class="calhead"><div class="mth" id="calMonth">—</div>
+                   ${/* La previa, en el medio del encabezado del
+                        calendario. Va acá porque es donde uno está cuando
+                        se pregunta qué se juega el fin de semana: el
+                        calendario dice cuándo y la previa dice qué. */''}
+                   <a class="bt-previa" href="/liga-profesional/previa"
+                      data-ir>Previa de la fecha</a>
                    <div class="navs"><button onclick="App.homeWeek(-1)">‹</button>
                      <button onclick="App.homeDay()" style="width:auto;padding:0 10px;font-size:11px;font-weight:700">HOY</button>
                      <button onclick="App.homeWeek(1)">›</button></div></div>
@@ -7191,6 +7398,13 @@ const App=(()=>{
     // cambiar de fase en los torneos que la tienen (Federal A)
     fase(n){ S.fase=n; S.round=null; drawRounds(); pintarFecha(); },
     serie(id){ const k=S.series[id]; if(k) Rutas.ir(rutaSerie(k)); },
+    // Nacionales o internacionales, en la pantalla de Títulos.
+    verTitulos(cual){ verTitulos(cual); },
+    // El radar de la previa: chiquito por defecto, grande al tocarlo.
+    verRadar(id){
+      const c=document.getElementById('rad'+id); if(!c) return;
+      c.classList.toggle('grande');
+    },
     girarKit(i){
       const p=document.getElementById('kit'+i); if(!p) return;
       const dado=p.dataset.girada==='1';

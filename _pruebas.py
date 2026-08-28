@@ -7264,6 +7264,67 @@ try:
     chequear("el partido repetido conserva el número que lo abre",
              _h[0]["partidos"][0]["id"] == "g1",
              _h[0]["partidos"][0]["id"])
+    # ── El día corrido por el huso ──────────────────────────────────────
+    #
+    # Esto se vio en pantalla: Boca-Lanús mostraba el mismo 0-3 dos veces,
+    # una el 04/03 y otra el 05/03. Las dos fuentes fechan con husos
+    # distintos, así que un partido de las nueve de la noche cae en el día
+    # siguiente para una de las dos. Juntar por día exacto —que es lo que
+    # uno escribe primero— no alcanza.
+    _tb.contra_cada_rival = lambda eq, li: [
+        {"id": "g1", "dia": "2026-03-05", "local_id": 1, "visita_id": 2,
+         "local": "Lanús", "visita": "Boca Juniors", "gh": 0, "ga": 3,
+         "ronda": "7", "temporada": "2026"}]
+    _tb.cruces_de = lambda a, b: [
+        # El mismo partido, un día antes.
+        {"dia": "2026-03-04", "local": "Lanús", "visita": "Boca Juniors",
+         "gh": 0, "ga": 3, "torneo": "Apertura 2026"},
+        # Y uno de verdad, viejo.
+        {"dia": "1961-08-20", "local": "Lanús", "visita": "Boca Juniors",
+         "gh": 1, "ga": 2, "torneo": "Primera 1961"}]
+    _d = server.historial_del_club(1, "lpf", tope_por_rival=300,
+                                   canon="Boca Juniors")
+    chequear("un día de diferencia sigue siendo el mismo partido",
+             _d[0]["pj"] == 2 and len(_d[0]["partidos"]) == 2,
+             [x["dia"] for x in _d[0]["partidos"]])
+    chequear("y queda la fecha del recolector, que es la que usa el sitio",
+             _d[0]["partidos"][0]["dia"] == "2026-03-05"
+             and _d[0]["partidos"][0]["id"] == "g1",
+             _d[0]["partidos"][0])
+    # Y al revés: si el cruce viejo llega primero, tampoco se duplica.
+    _tb.contra_cada_rival = lambda eq, li: [
+        {"id": "g1", "dia": "2026-03-04", "local_id": 1, "visita_id": 2,
+         "local": "Lanús", "visita": "Boca Juniors", "gh": 0, "ga": 3,
+         "ronda": "7", "temporada": "2026"}]
+    chequear("la tolerancia va para los dos lados",
+             server.historial_del_club(1, "lpf", tope_por_rival=300,
+                                       canon="Boca Juniors")[0]["pj"] == 2)
+    # Pero dos días SÍ son dos partidos: la ida y la vuelta de una serie
+    # están a una semana, no a un día, así que un día es margen suficiente
+    # y dos ya empezaría a comerse partidos de verdad.
+    _tb.cruces_de = lambda a, b: [
+        {"dia": "2026-03-06", "local": "Lanús", "visita": "Boca Juniors",
+         "gh": 0, "ga": 3, "torneo": "Apertura 2026"}]
+    chequear("pero a dos días son dos partidos distintos",
+             server.historial_del_club(1, "lpf", tope_por_rival=300,
+                                       canon="Boca Juniors")[0]["pj"] == 2)
+    # Una fecha rota no puede tirar el historial entero.
+    _tb.cruces_de = lambda a, b: [
+        {"dia": "no es una fecha", "local": "Lanús", "visita": "Boca Juniors",
+         "gh": 1, "ga": 1, "torneo": "?"}]
+    chequear("y una fecha que no se entiende no rompe nada",
+             server.historial_del_club(1, "lpf", tope_por_rival=300,
+                                       canon="Boca Juniors")[0]["pj"] == 2)
+
+    # Vuelvo al caso de arriba para lo que sigue.
+    _tb.contra_cada_rival = lambda eq, li: [
+        {"id": "g1", "dia": "2026-03-05", "local_id": 1, "visita_id": 2,
+         "local": "Boca Juniors", "visita": "Lanús", "gh": 3, "ga": 0,
+         "ronda": "7", "temporada": "2026"},
+        {"id": "g2", "dia": "2025-05-11", "local_id": 1, "visita_id": 2,
+         "local": "Boca Juniors", "visita": "Lanús", "gh": 0, "ga": 0,
+         "ronda": "3", "temporada": "2025"}]
+    _tb.cruces_de = lambda a, b: []
     # Sin nombre no se puede mirar la tabla de cruces, y ahí tiene que
     # devolver lo de siempre en vez de romperse.
     _sin = server.historial_del_club(1, "lpf", tope_por_rival=300)

@@ -6835,11 +6835,31 @@ def historial_del_club(equipo, liga, tope_por_rival=10, canon=None):
     que permite abrirlo— y la de cruces tiene el historial entero, desde
     1955. Acá el club quiere ver todos, así que van los dos.
 
-    Se juntan **por día**, y ésa es toda la defensa contra contar dos
-    veces: un partido que está en las dos fuentes es un solo partido, y
-    dos clubes no juegan dos veces el mismo día. Gana la fila del
-    recolector cuando está, porque trae el número que hace el enlace.
+    Se juntan por día, pero con un día de tolerancia para cada lado, y
+    esa tolerancia no es una precaución teórica: sin ella el historial de
+    Boca-Lanús mostraba el mismo 0-3 dos veces, una el 04/03 y otra el
+    05/03. Las dos fuentes fechan con husos distintos —una guarda la hora
+    universal y la otra la de acá—, así que un partido de las nueve de la
+    noche queda en el día siguiente para una de las dos.
+
+    Juntar por día exacto es lo que uno escribe primero y parece
+    suficiente. No lo es. Lo que sí se puede afirmar es que dos clubes no
+    juegan en días consecutivos, así que dos filas a menos de un día de
+    distancia son el mismo partido. Gana la del recolector, que trae el
+    número que hace el enlace y la fecha que el resto del sitio ya
+    muestra: que un mismo partido aparezca con dos fechas distintas en dos
+    pantallas es peor que tener una sola de las dos.
     """
+    import datetime
+
+    def vecinos(dia):
+        """El día, el anterior y el siguiente."""
+        try:
+            d = datetime.date.fromisoformat(dia)
+        except ValueError:
+            return {dia}
+        return {(d + datetime.timedelta(days=n)).isoformat()
+                for n in (-1, 0, 1)}
     if not equipo or not liga:
         return []
     # Una sola vez y afuera del bucle: son los mismos escudos para todos
@@ -6866,7 +6886,7 @@ def historial_del_club(equipo, liga, tope_por_rival=10, canon=None):
             "escudo": (escudos.get(rnombre) or {}).get("logo")})
         r.setdefault("dias", set())
         dia = (m.get("dia") or "")[:10]
-        if dia in r["dias"]:
+        if vecinos(dia) & r["dias"]:
             continue
         r["dias"].add(dia)
         r["pj"] += 1
@@ -6887,7 +6907,9 @@ def historial_del_club(equipo, liga, tope_por_rival=10, canon=None):
                     lambda n=r["rival"]: tablas.cruces_de(canon, n), []) or []:
                 dia = (f.get("dia") or "")[:10]
                 gh, ga = f.get("gh"), f.get("ga")
-                if not dia or dia in dias or gh is None or ga is None:
+                if not dia or gh is None or ga is None:
+                    continue
+                if vecinos(dia) & dias:
                     continue
                 dias.add(dia)
                 casa = f.get("local") == canon

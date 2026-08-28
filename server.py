@@ -9578,15 +9578,53 @@ def guardar_cruces(partidos, liga="lpf"):
     for lista in listas:
         for m in lista:
             porId[m["id"]] = m
+    # Cada cruce se guarda en SU torneo, no en el de la previa.
+    #
+    # El h2h mezcla competencias a propósito: en la misma lista vienen los
+    # de liga, los de la Copa de la Liga, los de Copa Argentina y los de
+    # Libertadores. Guardarlos todos como "lpf" —que es lo que hacía la
+    # primera versión— hacía que la ficha de un partido de Copa Argentina
+    # dijera Liga Profesional. Un dato mal guardado no se nota hasta que
+    # alguien lo lee.
+    porLiga = {}
+    for m in porId.values():
+        porLiga.setdefault(liga_de_competencia(m.get("comp")) or liga,
+                           []).append(m)
     guardados = 0
-    if porId:
+    for lid2, ms in porLiga.items():
         # `principal=False`: esto es historial traído de costado y no puede
         # pisar lo que guardó el recolector del torneo, que es la fuente
         # buena para los partidos de esta temporada.
-        guardados = _sin_reventar(
-            lambda: tablas.guardar(liga, None, list(porId.values()), False), 0)
+        guardados += _sin_reventar(
+            lambda l=lid2, x=ms: tablas.guardar(l, None, x, False), 0)
     return {"pedidos": len(ids), "cruces": sum(len(x) for x in listas),
-            "guardados": guardados}
+            "guardados": guardados,
+            "torneos": {k: len(v) for k, v in porLiga.items()}}
+
+
+_POR_COMPETENCIA = None
+
+
+def liga_de_competencia(comp):
+    """
+    De qué torneo nuestro es una competencia de la fuente.
+
+    La fuente numera las competencias y nosotros les ponemos nombre. El
+    índice se arma una vez leyendo la misma configuración que usa el
+    recolector, así que un torneo nuevo se suma solo.
+
+    Devuelve None para las competencias que no seguimos —el Mundial de
+    Clubes, una liga extranjera que apareció en un h2h— y ahí el partido
+    se guarda en el torneo desde donde se lo pidió, que es lo más cerca
+    que estamos de la verdad.
+    """
+    global _POR_COMPETENCIA
+    if _POR_COMPETENCIA is None:
+        _POR_COMPETENCIA = {}
+        for lid, cfg in LIGAS.items():
+            for c in comps_de(cfg):
+                _POR_COMPETENCIA.setdefault(c, lid)
+    return _POR_COMPETENCIA.get(comp)
 
 
 def _quien_dirige(ids):

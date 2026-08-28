@@ -6902,7 +6902,32 @@ chequear("y los que todavía no se jugaron no son historial",
 # Se guardan con su id de verdad: la clave primaria es la que evita que se
 # dupliquen. Y no pueden pisar lo que guardó el recolector del torneo.
 chequear("los cruces se guardan sin pisar lo del recolector",
-         "tablas.guardar(liga, None, list(porId.values()), False)" in _SRV)
+         "tablas.guardar(l, None, x, False)" in _SRV)
+# Y cada uno en SU torneo. El h2h mezcla competencias a propósito, y
+# guardarlos todos como "lpf" —que es lo que hacía la primera versión—
+# hacía que la ficha de un partido de Copa Argentina dijera Liga
+# Profesional. Un dato mal guardado no se nota hasta que alguien lo lee.
+chequear("y cada cruce va al torneo que le corresponde",
+         "def liga_de_competencia(comp)" in _SRV
+         and "liga_de_competencia(m.get(\"comp\")) or liga" in _SRV)
+chequear("y el índice sale de la misma configuración que el recolector",
+         "for lid, cfg in LIGAS.items():" in _SRV.split(
+             "def liga_de_competencia")[1][:900])
+chequear("la Copa Argentina y la liga se distinguen",
+         server.liga_de_competencia(server.LIGAS["ca"]["sc"]) == "ca"
+         and server.liga_de_competencia(server.LIGAS["lpf"]["sc"]) == "lpf")
+chequear("y una competencia que no seguimos devuelve nada",
+         server.liga_de_competencia(999999) is None)
+# La fecha del historial va con año: "30/08" en una lista que abarca
+# quince años no ubica a nadie.
+chequear("el historial muestra el año",
+         "const diaCorto=iso=>{" in HTML
+         and "p[0].slice(2)" in HTML
+         and "esc(diaCorto(p.dia))" in HTML
+         and ".split('-').reverse().slice(0,2)" not in HTML)
+chequear("y la fecha entera queda en el title",
+         "const fechaLarga=iso=>{" in HTML
+         and 'title="${esc(fechaLarga(p.dia))}"' in HTML)
 chequear("y el mismo cruce que viene por dos partidos se junta antes",
          "porId[m[\"id\"]] = m" in _SRV)
 # Se guardan al abrir la previa: así el historial se llena solo, fecha a

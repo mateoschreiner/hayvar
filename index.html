@@ -324,7 +324,8 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .hist-p{display:grid;grid-template-columns:40px 1fr 34px 1fr;align-items:center;
   gap:6px;padding:4px 0;font-size:11.5px;color:inherit;text-decoration:none;
   border-top:1px solid var(--line)}
-.hist-p .cuando{color:var(--txt3);font-size:10px}
+.hist-p .cuando{color:var(--txt3);font-size:10px;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
 /* El que se está mirando: cuenta en el resumen y se marca acá, para que se
    vea de dónde sale la cuenta. No se enlaza a sí mismo. */
 .hist-p.este{background:rgba(47,111,237,.07);border-radius:6px;
@@ -5920,6 +5921,20 @@ const App=(()=>{
     return {local:a, visita:b};
   }
 
+  /* Una fecha corta pero completa: 30/08/21. El año va sí o sí —en un
+     historial de quince años, "30/08" no ubica a nadie— y va con dos
+     dígitos para que la columna no se coma la fila. La fecha entera está
+     en el `title`, para el que quiera precisión. */
+  const diaCorto=iso=>{
+    const p=String(iso||'').slice(0,10).split('-');
+    return p.length===3 ? `${p[2]}/${p[1]}/${p[0].slice(2)}` : '';
+  };
+  const fechaLarga=iso=>{
+    const d=new Date(String(iso||'').slice(0,10)+'T12:00:00');
+    return isNaN(d) ? '' : `${d.getDate()} de ${MESES[d.getMonth()]} de ${
+      d.getFullYear()}`;
+  };
+
   function historialAlCostado(m){
     const el=$('#right'), h=m&&m.historial;
     if(!el||!h||!h.partidos||!h.partidos.length) return;
@@ -5949,8 +5964,12 @@ const App=(()=>{
           const gano=p.gh>p.ga?'l':p.gh<p.ga?'v':'';
           return `<${r?'a':'div'} class="hist-p${p.este?' este':''}"${r
               ? ` href="${esc(Rutas.url(r))}" data-ir`:''}>
-            <span class="cuando">${p.este?'éste'
-              :esc((p.dia||'').split('-').reverse().slice(0,2).join('/'))}</span>
+            ${/* Con el año. Sin él, "30/08" en una lista que abarca
+                  quince años no dice nada: no se sabe si es de hace un
+                  mes o de hace una década, que es justo lo que uno
+                  quiere saber al mirar un historial. */''}
+            <span class="cuando" title="${esc(fechaLarga(p.dia))}">${p.este
+              ?'éste':esc(diaCorto(p.dia))}</span>
             <span class="eq ${gano==='l'?'gano':''}">${esc(p.local)}</span>
             <b>${p.gh}-${p.ga}</b>
             <span class="eq der ${gano==='v'?'gano':''}">${esc(p.visita)}</span>

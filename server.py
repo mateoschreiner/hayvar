@@ -6818,7 +6818,7 @@ def _sin_reventar(hacer, porDefecto=None):
         return porDefecto
 
 
-def historial_del_club(equipo, liga, tope_por_rival=10):
+def historial_del_club(equipo, liga, tope_por_rival=10, canon=None):
     """
     El historial de un club contra cada rival de su propio torneo.
 
@@ -6829,6 +6829,16 @@ def historial_del_club(equipo, liga, tope_por_rival=10):
 
     Todo se lee desde el lado del club: ganó, empató o perdió él, haya
     jugado de local o de visitante.
+
+    Se juntan las dos fuentes. La tabla de partidos tiene lo que bajó el
+    recolector —pocos años, pero con el número de cada partido, que es lo
+    que permite abrirlo— y la de cruces tiene el historial entero, desde
+    1955. Acá el club quiere ver todos, así que van los dos.
+
+    Se juntan **por día**, y ésa es toda la defensa contra contar dos
+    veces: un partido que está en las dos fuentes es un solo partido, y
+    dos clubes no juegan dos veces el mismo día. Gana la fila del
+    recolector cuando está, porque trae el número que hace el enlace.
     """
     if not equipo or not liga:
         return []
@@ -6854,16 +6864,53 @@ def historial_del_club(equipo, liga, tope_por_rival=10):
                 lambda n=rnombre, e=(escudos.get(rnombre) or {}).get("logo"):
                 colores_de_club(n, escudo=e)) or ()) or None,
             "escudo": (escudos.get(rnombre) or {}).get("logo")})
+        r.setdefault("dias", set())
+        dia = (m.get("dia") or "")[:10]
+        if dia in r["dias"]:
+            continue
+        r["dias"].add(dia)
         r["pj"] += 1
         r["gf"] += gf
         r["gc"] += gc
         r["g" if gf > gc else "e" if gf == gc else "p"] += 1
-        if len(r["partidos"]) < tope_por_rival:
-            r["partidos"].append({
-                "id": m["id"], "dia": m.get("dia"), "ronda": m.get("ronda"),
-                "temporada": m.get("temporada"),
-                "local": m.get("local"), "visita": m.get("visita"),
-                "gh": m["gh"], "ga": m["ga"], "casa": casa})
+        r["partidos"].append({
+            "id": m["id"], "dia": m.get("dia"), "ronda": m.get("ronda"),
+            "temporada": m.get("temporada"),
+            "local": m.get("local"), "visita": m.get("visita"),
+            "gh": m["gh"], "ga": m["ga"], "casa": casa})
+
+    # Y ahora los cruces viejos, los que el recolector nunca vio.
+    if canon:
+        for r in rivales.values():
+            dias = r.setdefault("dias", set())
+            for f in _sin_reventar(
+                    lambda n=r["rival"]: tablas.cruces_de(canon, n), []) or []:
+                dia = (f.get("dia") or "")[:10]
+                gh, ga = f.get("gh"), f.get("ga")
+                if not dia or dia in dias or gh is None or ga is None:
+                    continue
+                dias.add(dia)
+                casa = f.get("local") == canon
+                gf, gc = (gh, ga) if casa else (ga, gh)
+                r["pj"] += 1
+                r["gf"] += gf
+                r["gc"] += gc
+                r["g" if gf > gc else "e" if gf == gc else "p"] += 1
+                r["partidos"].append({
+                    "id": None, "dia": dia, "ronda": None,
+                    "temporada": f.get("torneo") or None,
+                    "local": f.get("local"), "visita": f.get("visita"),
+                    "gh": gh, "ga": ga, "casa": casa,
+                    "torneo": f.get("torneo") or ""})
+
+    for r in rivales.values():
+        # Del más nuevo al más viejo, que es como se lee un historial.
+        # Hace falta ordenar acá y no antes porque las dos fuentes se
+        # mezclaron: el recolector trae los recientes y los cruces los
+        # viejos, y sin esto quedarían en dos bloques.
+        r["partidos"].sort(key=lambda x: x.get("dia") or "", reverse=True)
+        del r["partidos"][tope_por_rival:]
+        r.pop("dias", None)
     # De los que más se jugaron a los que menos, y a igualdad por nombre:
     # los clásicos de toda la vida arriba y los recién ascendidos abajo.
     return sorted(rivales.values(),
@@ -8867,7 +8914,8 @@ def armar_club_info(canon):
         # tabla de partidos con dos consultas indexadas, así que no cuesta
         # ni un pedido a la fuente ni una espera.
         "historial": _sin_reventar(
-            lambda: historial_del_club(tablas.equipo_id(canon, "lpf"), "lpf"),
+            lambda: historial_del_club(tablas.equipo_id(canon, "lpf"), "lpf",
+                                       tope_por_rival=300, canon=canon),
             []),
         "plantel": plantel_de(canon),
         "partidos": api_club({"name": [canon]}),
@@ -9773,13 +9821,19 @@ def api_cruces(q):
     return salida
 
 
-def _desde_cruces(filas, local):
+def _desde_cruces(filas, local, tope=None):
     """
     Los cruces guardados, con la forma que ya usa la pantalla.
 
     Cuenta desde el lado del que hoy es local, que es como uno lo lee
     parado en esta página: "ganó 12, empataron 8, ganó 9". Da igual quién
     fue local en cada uno de esos partidos.
+
+    `tope` acorta la LISTA, no la cuenta. Los dos números salen de cosas
+    distintas a propósito: la barra resume ochenta y cinco cruces y abajo
+    se muestran cinco, porque una lista de ochenta y cinco no se lee. Si
+    el tope recortara también la cuenta, la barra diría "los últimos 5"
+    con ochenta y cinco partidos detrás.
     """
     gano = empates = perdio = 0
     partidos = []
@@ -9795,9 +9849,10 @@ def _desde_cruces(filas, local):
             empates += 1
         else:
             perdio += 1
-        partidos.append({"id": None, "dia": f["dia"], "local": f["local"],
-                         "visita": f["visita"], "gh": gh, "ga": ga,
-                         "torneo": f.get("torneo") or ""})
+        if tope is None or len(partidos) < tope:
+            partidos.append({"id": None, "dia": f["dia"], "local": f["local"],
+                             "visita": f["visita"], "gh": gh, "ga": ga,
+                             "torneo": f.get("torneo") or ""})
     return {"partidos": partidos, "gano": gano, "empates": empates,
             "perdio": perdio, "jugados": gano + empates + perdio}
 
@@ -10051,7 +10106,9 @@ def _api_previa(q):
         guardados = _sin_reventar(lambda: tablas.cruces_de(ch, ca), []) if ch \
             and ca else []
         if guardados:
-            hist = _desde_cruces(guardados, ch)
+            # Cinco en la lista. La barra de arriba sigue contando todos:
+            # son dos preguntas distintas y cada una quiere su número.
+            hist = _desde_cruces(guardados, ch, tope=5)
         rh = tablas.racha_de(ih, lid) if ih else []
         ra = tablas.racha_de(ia, lid) if ia else []
         jh = _jugador_a_seguir(ih, ch, lid, temporada, desde)

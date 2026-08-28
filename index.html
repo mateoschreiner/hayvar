@@ -335,6 +335,12 @@ html:not([data-theme="dark"]) .lg-sud .lgimg{filter:brightness(0)}
 .hist-p .eq{min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;color:var(--txt2)}
 .hist-p .eq.der{text-align:right}
+/* La competencia, a la derecha del cruce. Va sólo en la previa: en el
+   panel del club la fila ya tiene cuatro columnas en la mitad del ancho y
+   una quinta la deja ilegible. */
+.pv-cruces .hist-p{grid-template-columns:58px 1fr 34px 1fr 88px}
+.pv-cruces .hist-p .torneo{font-size:10px;color:var(--txt3);text-align:right;
+  min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hist-p .eq.gano{color:var(--txt);font-weight:700}
 .hist-p b{text-align:center;font-variant-numeric:tabular-nums}
 a.hist-p:hover{color:var(--acc)}
@@ -2177,6 +2183,11 @@ const App=(()=>{
             <span class="eq ${g==='l'?'gano':''}">${esc(x.local)}</span>
             <b>${x.gh}-${x.ga}</b>
             <span class="eq der ${g==='v'?'gano':''}">${esc(x.visita)}</span>
+            ${/* El nombre completo en el title: "Primera División Argentina
+                 2022" no entra en la columna, pero recortado a secas no se
+                 entiende y el que quiere saber, quiere saber. */''}
+            <span class="torneo" title="${esc(x.torneo||'')}">${
+              esc(x.torneo||'')}</span>
           </${r?'a':'div'}>`;
         }).join('')}
       </details>`:''}

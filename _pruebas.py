@@ -7189,6 +7189,91 @@ chequear("y una respuesta vacía se distingue de una que falló",
          zerozero.bajar(lambda u: "", 1, 2, 2020, 2026, pausa=0)[2][0]
          == "respuesta vacía")
 
+# ── El tope acorta la lista, no la cuenta ───────────────────────────────
+#
+# La barra resume todos los cruces y abajo se muestran cinco: una lista de
+# ochenta y cinco no se lee. Si el tope recortara también la cuenta, la
+# barra diría "los últimos 5" con ochenta y cinco partidos detrás, y ése
+# es justo el tipo de número que después alguien copia como si fuera real.
+_muchos = [{"dia": "20%02d-05-05" % i, "local": "A", "visita": "B",
+            "gh": 2 if i % 3 else 0, "ga": 0 if i % 3 else 2,
+            "torneo": "Liga %d" % i} for i in range(20, 0, -1)]
+_corto = server._desde_cruces(_muchos, "A", tope=5)
+_todo = server._desde_cruces(_muchos, "A")
+chequear("con tope, la lista se corta", len(_corto["partidos"]) == 5,
+         len(_corto["partidos"]))
+chequear("pero la cuenta sigue siendo de todos",
+         _corto["jugados"] == 20 == _todo["jugados"], _corto["jugados"])
+chequear("y los tres números no cambian por el tope",
+         (_corto["gano"], _corto["empates"], _corto["perdio"])
+         == (_todo["gano"], _todo["empates"], _todo["perdio"]))
+chequear("se cortan los últimos, no unos cualesquiera",
+         [x["dia"] for x in _corto["partidos"]]
+         == [x["dia"] for x in _todo["partidos"][:5]])
+chequear("y cada cruce lleva su competencia",
+         all(x["torneo"] for x in _corto["partidos"]),
+         [x["torneo"] for x in _corto["partidos"][:2]])
+chequear("la previa pide cinco", "_desde_cruces(guardados, ch, tope=5)" in _SRV)
+chequear("y la pantalla muestra la competencia a la derecha",
+         'class="torneo" title="${esc(x.torneo' in HTML
+         and ".pv-cruces .hist-p{grid-template-columns:58px 1fr 34px 1fr 88px}"
+         in HTML)
+
+# ── La ficha del club: las dos fuentes, sin contar dos veces ────────────
+#
+# El recolector tiene los partidos recientes con su número —que es lo que
+# permite abrirlos— y la tabla de cruces tiene el historial entero desde
+# 1955. En el medio hay partidos que están en las DOS. Sumarlos sin más
+# haría que un clásico reciente valiera doble, y un historial inflado no
+# se distingue a simple vista de uno correcto.
+#
+# Se juntan por día: dos clubes no juegan dos veces el mismo día.
+import tablas as _tb
+_ccrAntes, _cdAntes = _tb.contra_cada_rival, _tb.cruces_de
+try:
+    _tb.contra_cada_rival = lambda eq, li: [
+        {"id": "g1", "dia": "2026-03-05", "local_id": 1, "visita_id": 2,
+         "local": "Boca Juniors", "visita": "Lanús", "gh": 3, "ga": 0,
+         "ronda": "7", "temporada": "2026"},
+        {"id": "g2", "dia": "2025-05-11", "local_id": 1, "visita_id": 2,
+         "local": "Boca Juniors", "visita": "Lanús", "gh": 0, "ga": 0,
+         "ronda": "3", "temporada": "2025"}]
+    # El primero es el MISMO partido que ya trajo el recolector.
+    _tb.cruces_de = lambda a, b: [
+        {"dia": "2026-03-05", "local": "Boca Juniors", "visita": "Lanús",
+         "gh": 3, "ga": 0, "torneo": "Apertura 2026"},
+        {"dia": "1961-08-20", "local": "Lanús", "visita": "Boca Juniors",
+         "gh": 1, "ga": 2, "torneo": "Primera 1961"}]
+    _h = server.historial_del_club(1, "lpf", tope_por_rival=300,
+                                   canon="Boca Juniors")
+    chequear("la ficha junta las dos fuentes", len(_h) == 1 and _h[0]["pj"] == 3,
+             _h and _h[0]["pj"])
+    chequear("y el que está en las dos cuenta una sola vez",
+             len(_h[0]["partidos"]) == 3,
+             [x["dia"] for x in _h[0]["partidos"]])
+    chequear("los tres resultados suman los partidos",
+             _h[0]["g"] + _h[0]["e"] + _h[0]["p"] == _h[0]["pj"],
+             (_h[0]["g"], _h[0]["e"], _h[0]["p"], _h[0]["pj"]))
+    chequear("gana 2 —el 3-0 y el de 1961 de visitante— y empata 1",
+             (_h[0]["g"], _h[0]["e"], _h[0]["p"]) == (2, 1, 0),
+             (_h[0]["g"], _h[0]["e"], _h[0]["p"]))
+    chequear("y van del más nuevo al más viejo aunque vengan de dos lados",
+             [x["dia"] for x in _h[0]["partidos"]]
+             == ["2026-03-05", "2025-05-11", "1961-08-20"])
+    # El del recolector gana porque trae el número que hace el enlace.
+    chequear("el partido repetido conserva el número que lo abre",
+             _h[0]["partidos"][0]["id"] == "g1",
+             _h[0]["partidos"][0]["id"])
+    # Sin nombre no se puede mirar la tabla de cruces, y ahí tiene que
+    # devolver lo de siempre en vez de romperse.
+    _sin = server.historial_del_club(1, "lpf", tope_por_rival=300)
+    chequear("sin el nombre del club, sigue andando con lo que hay",
+             len(_sin) == 1 and _sin[0]["pj"] == 2, _sin and _sin[0]["pj"])
+    chequear("y la ficha pide todos, no diez",
+             "tope_por_rival=300, canon=canon" in _SRV)
+finally:
+    _tb.contra_cada_rival, _tb.cruces_de = _ccrAntes, _cdAntes
+
 # ── El diario: lo único que va a haber para mirar cuando esto falle ─────
 #
 # La bajada corre en segundo plano y con un `_sin_reventar` alrededor. Sin

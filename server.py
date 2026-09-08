@@ -4538,6 +4538,74 @@ FASES_COPA = {
 }
 
 
+def numerar_fechas(games, corte_dias=3):
+    """
+    Le pone número de fecha a los partidos de una fase de liga que no lo
+    traen, agrupándolos por los días en que se juegan.
+
+    Devuelve una lista de (partido, número) o `[]` si no se puede
+    sostener. Vacío quiere decir "no lo sé", y es una respuesta legítima.
+
+    Por qué hace falta
+    ──────────────────
+    La fuente numera la fecha de sólo algunos partidos: en la Champions
+    de esta temporada, 18 de 144 llevan fecha 1, otros 18 fecha 2 y los
+    108 restantes vienen sin nada. En la Europa League son 5 de 8. Con
+    eso, la fase de liga es una lista de 144 partidos que no se puede
+    partir.
+
+    Cómo
+    ────
+    Una fecha de la fase de liga se juega toda junta: dos o tres días
+    seguidos, y después pasan semanas. Así que se ordenan por día y se
+    corta donde hay un salto de más de tres días. En la Champions eso da
+    ocho bloques de 18, que es exactamente 36 equipos por 8 fechas.
+
+    Y acá está lo que hace que esto no sea adivinar
+    ───────────────────────────────────────────────
+    Los bloques deducidos se COMPARAN contra los partidos que sí traen
+    número. Si el bloque 1 no coincide con los que la fuente llama fecha
+    1, la deducción está mal y se devuelve vacío: se prefiere no dividir
+    la fase antes que dividirla mal. Un partido puesto en la fecha
+    equivocada se lee igual que uno bien puesto, y ése es el problema.
+
+    Con la Champions se verifican 2 de 8 fechas y con la Europa 5 de 8.
+    No es toda la comprobación posible, pero es la que hay, y es real.
+    """
+    import datetime
+
+    def dia(g):
+        return (g.get("start") or "")[:10]
+
+    con_dia = sorted((g for g in games if dia(g)), key=dia)
+    if not con_dia:
+        return []
+
+    def distancia(a, b):
+        try:
+            return (datetime.date.fromisoformat(b)
+                    - datetime.date.fromisoformat(a)).days
+        except ValueError:
+            return 999          # una fecha rota corta el bloque, no lo une
+
+    bloques = []
+    for g in con_dia:
+        if bloques and distancia(dia(bloques[-1][-1]), dia(g)) <= corte_dias:
+            bloques[-1].append(g)
+        else:
+            bloques.append([g])
+
+    salida = []
+    for i, bloque in enumerate(bloques, 1):
+        for g in bloque:
+            # La comprobación: donde la fuente dijo un número, el nuestro
+            # tiene que ser el mismo.
+            if g.get("fecha") and g["fecha"] != i:
+                return []
+            salida.append((g, i))
+    return salida
+
+
 def etapa_sin_nombre(suyos, libres):
     """
     A qué etapa del torneo van los partidos de una fase que llega sin
@@ -5210,6 +5278,15 @@ def api_liga_games(q):
             # antes de pisarlo.
             g["fecha"] = g.get("round") if rango_etapa(et) == 1 else None
             g["round"] = idx[et]
+
+        # Y las que la fuente no numeró, deducidas por los días. Se hace
+        # por etapa y no todo junto: dos fases distintas pueden jugarse
+        # en las mismas semanas y mezclarlas sería numerar cualquier cosa.
+        for _et in {g["etapa"] for g in games if rango_etapa(g["etapa"]) == 1}:
+            suyos = [g for g in games if g["etapa"] == _et]
+            if any(g.get("fecha") is None for g in suyos):
+                for g, n_ in numerar_fechas(suyos):
+                    g["fecha"] = n_
             # Fuera de la fase de grupos no hay zonas: en octavos se cruzan
             # equipos de grupos distintos y todos los partidos salían
             # marcados como "Interzonal", que acá no quiere decir nada.

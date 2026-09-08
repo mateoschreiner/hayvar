@@ -6571,6 +6571,90 @@ chequear("y no se queja de código que está bien",
              "    z.sort(key=lambda x: x)\n"
              "    return json.dumps(g())\n") == [])
 
+print("\n── las fechas de la fase de liga, deducidas y verificadas ──")
+# La fuente numera la fecha de UNOS POCOS partidos: en la Champions de
+# esta temporada, 18 de 144 llevan fecha 1, otros 18 fecha 2 y los 108
+# restantes vienen sin nada. Así la fase de liga es una lista de 144
+# partidos que no se puede partir.
+#
+# Las fechas se deducen agrupando por días —una fecha se juega toda junta
+# y después pasan semanas— y se VERIFICAN contra las que sí traen número.
+# Los días de abajo son los de verdad, copiados del calendario.
+_DIAS_CHAMPIONS = [
+    ("2026-09-08", 6), ("2026-09-09", 6), ("2026-09-10", 6),
+    ("2026-10-13", 9), ("2026-10-14", 9), ("2026-10-20", 9),
+    ("2026-10-21", 9), ("2026-11-03", 9), ("2026-11-04", 9),
+    ("2026-11-24", 9), ("2026-11-25", 9), ("2026-12-08", 9),
+    ("2026-12-09", 9), ("2027-01-19", 9), ("2027-01-20", 9),
+    ("2027-01-27", 18)]
+_DIAS_EUROPA = [
+    ("2026-09-16", 9), ("2026-09-17", 9), ("2026-10-15", 18),
+    ("2026-10-22", 18), ("2026-11-05", 18), ("2026-11-26", 18),
+    ("2026-12-10", 18), ("2027-01-21", 18), ("2027-01-28", 18)]
+
+
+def _comoLlega(dias, numeradas):
+    """El calendario como lo manda la fuente: sólo las primeras con número."""
+    import datetime as _dt
+    gs, bloque, ultimo = [], 0, None
+    for d, cuantos in dias:
+        if ultimo is None:
+            bloque = 1
+        elif (_dt.date.fromisoformat(d)
+              - _dt.date.fromisoformat(ultimo)).days > 3:
+            bloque += 1
+        ultimo = d
+        for _ in range(cuantos):
+            gs.append({"start": d + "T19:00:00",
+                       "fecha": bloque if bloque <= numeradas else None})
+    return gs
+
+
+for _nom, _dias, _num, _cuantas in (("Champions", _DIAS_CHAMPIONS, 2, 8),
+                                    ("Europa League", _DIAS_EUROPA, 5, 8)):
+    _gs = _comoLlega(_dias, _num)
+    _r = server.numerar_fechas(_gs)
+    _porFecha = {}
+    for _g, _n in _r:
+        _porFecha[_n] = _porFecha.get(_n, 0) + 1
+    chequear("la %s queda en %d fechas" % (_nom, _cuantas),
+             sorted(_porFecha) == list(range(1, _cuantas + 1)),
+             sorted(_porFecha))
+    # 36 equipos son 18 partidos por fecha. Si un bloque tuviera otro
+    # tamaño, el corte por días estaría partiendo mal.
+    chequear("  con 18 partidos cada una, que son 36 equipos",
+             set(_porFecha.values()) == {18}, sorted(set(_porFecha.values())))
+    # Y LA comprobación: donde la fuente puso número, el nuestro coincide.
+    # Sin esto sería adivinar; con esto se verifican 2 de 8 en la Champions
+    # y 5 de 8 en la Europa.
+    chequear("  y coincide con las %d que sí numera la fuente" % _num,
+             all(_g["fecha"] is None or _g["fecha"] == _n for _g, _n in _r))
+
+# Lo que NO puede pasar: publicar una numeración que contradice al dato.
+# Un partido en la fecha equivocada se lee igual que uno bien puesto.
+chequear("si la deducción contradice a la fuente, no publica nada",
+         server.numerar_fechas([{"start": "2026-09-08T19:00", "fecha": 1},
+                                {"start": "2026-10-13T19:00", "fecha": 5}])
+         == [])
+chequear("sin fechas en el calendario tampoco inventa",
+         server.numerar_fechas([{"start": ""}, {}]) == [])
+# Tres días seguidos son la misma fecha —la Champions juega martes,
+# miércoles y jueves— pero una semana ya es otra.
+chequear("tres días seguidos son una sola fecha",
+         len({n for _, n in server.numerar_fechas(
+             [{"start": "2026-09-%02dT19:00" % d}
+              for d in (8, 9, 10)])}) == 1)
+# Y una fecha que no se entiende corta el bloque en vez de unirlo: ante la
+# duda, dos fechas separadas: juntar dos que no van juntas es peor.
+chequear("una fecha ilegible corta y no une",
+         len({n for _, n in server.numerar_fechas(
+             [{"start": "2026-09-08T19:00"},
+              {"start": "no es una fecha"}])}) == 2)
+chequear("y una semana después es otra",
+         len({n for _, n in server.numerar_fechas(
+             [{"start": "2026-09-08T19:00"},
+              {"start": "2026-09-15T19:00"}])}) == 2)
+
 print("\n── las cinco copas, llamadas de verdad ──")
 # Y la otra mitad de lo que faltaba: NINGUNA prueba llamaba a
 # `api_liga_games` para una copa. Por eso un `out` en vez de `res` pasó

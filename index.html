@@ -5378,7 +5378,32 @@ const App=(()=>{
     ).join('')+(faltan>0
       ? `<span class="lb" style="margin-left:8px;text-transform:none;letter-spacing:0"
            title="El calendario se baja solo, de a poco">de ${S.totalFechas} · bajando</span>`
-      : '');
+      : '')+fechasDeLaEtapa();
+  }
+
+  /* Las fechas de adentro de una etapa.
+
+     La fase de liga de la Champions son 36 equipos por 8 fechas: 144
+     partidos en una sola lista. Eso no se lee, se scrollea. Las
+     eliminatorias no llevan esta fila porque no tienen fechas: son ida y
+     vuelta y entran de un vistazo.
+
+     Se dibuja sola desde lo que manda el servidor: si una etapa no tiene
+     más de una fecha, no aparece nada. Así no hay que saber acá qué
+     torneos tienen fase de liga y cuáles no. */
+  function fechasDeLaEtapa(){
+    const et=S.etapas, dd=S.fechasDeEtapa;
+    if(!et||!dd) return '';
+    const nombre=et[S.round-1];
+    const fechas=nombre&&dd[nombre];
+    if(!fechas||fechas.length<2) return '';
+    /* "Todas" primero y elegida por defecto: al entrar a la etapa lo que
+       corresponde mostrar es la etapa, no una fecha cualquiera. */
+    return `<span class="lb" style="margin-left:10px">Fecha</span>`
+      + `<button class="${S.fechaEtapa==null?'on':''}"
+           onclick="App.fechaEtapa(null)">Todas</button>`
+      + fechas.map(f=>`<button class="${S.fechaEtapa===f?'on':''}"
+           onclick="App.fechaEtapa(${f})">${f}</button>`).join('');
   }
 
   /* ── partidos ── */
@@ -6805,10 +6830,21 @@ const App=(()=>{
   }
 
   function pintarFecha(){
+    /* La fecha elegida es de la etapa en la que se eligió: si te moviste a
+       otra, se suelta. Sin esto, entrar a Octavos con la Fecha 3 puesta
+       dejaba la pantalla vacía sin decir por qué. */
+    if(S.fechaEtapa!=null){
+      const nom=S.etapas&&S.etapas[S.round-1];
+      const suyas=(S.fechasDeEtapa||{})[nom];
+      if(!suyas||!suyas.includes(S.fechaEtapa)) S.fechaEtapa=null;
+    }
     // con fases, la fecha 3 de la reválida y la 3 de la primera fase son
     // distintas: hay que filtrar por las dos cosas
     const todos=S.games.filter(m=>String(m.round)===String(S.round)
-      && (!S.fasesLiga || S.fase==null || m.fase===S.fase));
+      && (!S.fasesLiga || S.fase==null || m.fase===S.fase)
+      /* Y si adentro de la etapa elegiste una fecha, sólo ésa. Con
+         `null` van todas, que es como se entra. */
+      && (S.fechaEtapa==null || m.fecha===S.fechaEtapa));
     /* Y el botón de arriba, que acá no existía: el filtro de "sólo en
        vivo" estaba escrito nada más que en el dibujante de la Liga
        Profesional, así que en las demás competencias apretarlo no hacía
@@ -6937,6 +6973,8 @@ const App=(()=>{
     S.finalCopa=g.final||null;
     S.grupoAbierto=null; S.cuadroDesde=null;
     S.fasesLiga=(g.fasesLiga&&g.fasesLiga.length)?g.fasesLiga:null;
+    S.fechasDeEtapa=g.fechasDeEtapa||null;
+    S.fechaEtapa=null;   // dentro de la etapa, cuál fecha se está viendo
     if(S.fasesLiga&&!S.fasesLiga.some(f=>f.num===S.fase)) S.fase=null;
     if(S.fechaPedida!=null||S.round==null||!g.rounds.includes(S.round))
       aplicarFechaPedida(g.current??g.rounds[g.rounds.length-1]??null);
@@ -8118,6 +8156,10 @@ const App=(()=>{
       medir.evento('modo_club',{club:c?c.name:'(ninguno)'});
       if(S.liga==='home') loadHome(); else if(S.liga==='lpf') drawRight(); },
     pick(r){ Rutas.ir({t:'liga', id:S.liga, fecha:r}); },
+    /* Elegir una fecha adentro de la etapa. No cambia la dirección: la
+       etapa sí es un lugar al que uno vuelve o comparte, una fecha de
+       adentro es una forma de mirar. */
+    fechaEtapa(f){ S.fechaEtapa=f; drawRounds(); repintarPartidos(); },
     /* Cambiar contra qué se compara al jugador. Se vuelve a pedir la misma
        ficha con `contra` y se redibuja sólo el gráfico: el resto de la
        ficha no cambia, y rehacerla entera haría saltar el scroll. */

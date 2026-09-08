@@ -4538,6 +4538,46 @@ FASES_COPA = {
 }
 
 
+def etapa_sin_nombre(suyos, libres):
+    """
+    A qué etapa del torneo van los partidos de una fase que llega sin
+    nombre. `libres` son las etapas que todavía no se asignaron.
+
+    Vive suelta y no adentro del armado del calendario porque es la
+    decisión que más costó: la fuente no manda nombre de etapa para la
+    fase de liga europea, así que estos partidos caen acá.
+
+    La regla vieja miraba las zonas y para las copas europeas eso no
+    sirve nunca: `zone` sale de NUESTRAS zonas de Primera y en Europa
+    siempre es nulo. Entonces la condición no se cumplía jamás y todo
+    caía en `libres[0]`, la primera etapa libre del torneo. En la Europa
+    League ésa es "Fase de liga" y quedaba bien de casualidad; en la
+    Champions es "Ronda preliminar", y los 144 partidos de la fase de
+    liga aparecían ahí con la preliminar de verdad —que son dos—
+    enterrada entre ellos.
+
+    Lo que sí distingue es el número de fecha. Las eliminatorias no lo
+    traen: está comprobado contra la fuente, el play-off de la Champions
+    tiene cero fechas distintas. Una fase que numera fechas y tiene doce
+    partidos o más sólo puede ser la de grupos o la de liga. Es el mismo
+    criterio que ya usaba `etapa_de_copa` para un partido suelto.
+
+    Queda una limitación conocida: una eliminatoria que llegue sin nombre
+    Y sin fechas sigue cayendo en la primera etapa libre. No se puede
+    hacer mejor sin inventar, y en la práctica las eliminatorias sí
+    llegan con nombre.
+    """
+    if not libres:
+        return None
+    con_zona = sum(1 for g in suyos if g.get("zone"))
+    con_fecha = sum(1 for g in suyos if g.get("round"))
+    if (con_zona or con_fecha) and len(suyos) >= 12:
+        de_liga = next((f for f in libres if rango_etapa(f) == 1), None)
+        if de_liga:
+            return de_liga
+    return libres[0]
+
+
 def canonizar_fase(crudo, fases):
     """
     Lleva el nombre que manda la fuente al nombre de fase del torneo.
@@ -5107,12 +5147,7 @@ def api_liga_games(q):
             if sn in nombre_stage:
                 continue
             suyos = [g for g in games if g.get("stageNum") == sn]
-            con_zona = sum(1 for g in suyos if g.get("zone"))
-            elegida = None
-            if con_zona and len(suyos) >= 12:
-                elegida = next((f for f in libres if rango_etapa(f) == 1), None)
-            if not elegida and libres:
-                elegida = libres[0]
+            elegida = etapa_sin_nombre(suyos, libres)
             if elegida:
                 nombre_stage[sn] = elegida
                 libres = [f for f in libres if f != elegida]
@@ -5168,6 +5203,12 @@ def api_liga_games(q):
         for g in games:
             et = nombre_etapa(g)
             g["etapa"] = et
+            # En una copa `round` pasa a ser la etapa, porque los botones
+            # de arriba son etapas y no fechas. Pero el número de fecha
+            # que venía adentro se perdía, y con él la única forma de
+            # partir la fase de liga en Fecha 1, Fecha 2… Ahora se guarda
+            # antes de pisarlo.
+            g["fecha"] = g.get("round") if rango_etapa(et) == 1 else None
             g["round"] = idx[et]
             # Fuera de la fase de grupos no hay zonas: en octavos se cruzan
             # equipos de grupos distintos y todos los partidos salían
@@ -5311,6 +5352,19 @@ def api_liga_games(q):
            "sinZona": sin_zona, "nombre": cfg["nombre"],
            "copa": bool(cfg.get("copa")), "etapas": etapas,
            "fasesLiga": fases_liga}
+    # Qué fechas tiene la fase de liga, para poder partirla en pantalla.
+    #
+    # Ocho fechas y treinta y seis equipos son 144 partidos en una sola
+    # lista: eso no se lee, se scrollea. Va acá y no lo deduce la pantalla
+    # porque el servidor ya tiene los partidos en la mano.
+    if cfg.get("copa"):
+        porEtapa = {}
+        for g in games:
+            if g.get("fecha"):
+                porEtapa.setdefault(g["etapa"], set()).add(g["fecha"])
+        if porEtapa:
+            out["fechasDeEtapa"] = {e: sorted(f)
+                                    for e, f in porEtapa.items()}
     # Cuántas fechas tiene el torneo en total. Si son más de las que hay
     # cargadas, el calendario todavía se está bajando: mejor decirlo que
     # dejar creer que la Premier tiene ocho fechas.

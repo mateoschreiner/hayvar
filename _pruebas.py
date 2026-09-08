@@ -6521,6 +6521,68 @@ chequear("Boca tiene 18 y Talleres 1",
 chequear("y un club sin ninguno no muestra la tarjeta",
          historia.internacionales_de("Platense") is None)
 
+print("\n── la fase de liga europea, que caía en la preliminar ──")
+# El síntoma: los 144 partidos de la fase de liga de la Champions
+# aparecían bajo "Preliminar", con la preliminar de verdad —que son dos—
+# enterrada entre ellos. La pestaña "Fase de liga" decía "falta el sorteo"
+# con el sorteo hecho.
+#
+# La causa: la fuente NO manda nombre de etapa para la fase de liga, así
+# que esos partidos caían en el reparto por descarte y se llevaban la
+# primera etapa libre del torneo. En la Europa League ésa es "Fase de
+# liga" y quedaba bien de casualidad; en la Champions es "Ronda
+# preliminar". Andaba por suerte, no por lógica.
+_CH = list(server.FASES_COPA["champions"])
+_EU = list(server.FASES_COPA["europa"])
+_LI = list(server.FASES_COPA["lib"])
+_liga144 = [{"round": (i % 8) + 1} for i in range(144)]
+
+chequear("una fase sin nombre pero con fechas es la de liga",
+         server.etapa_sin_nombre(_liga144, _CH) == "Fase de liga",
+         server.etapa_sin_nombre(_liga144, _CH))
+# Y en la Europa, donde ya andaba: que siga andando. Es lo que más
+# importa de este cambio, porque ahí no había nada roto que arreglar.
+chequear("y en la Europa League sigue dando lo mismo que antes",
+         server.etapa_sin_nombre(_liga144, _EU) == "Fase de liga")
+chequear("la fase de grupos de la Libertadores también",
+         server.etapa_sin_nombre([{"round": (i % 6) + 1} for i in range(96)],
+                                 _LI) == "Fase de grupos")
+# La regla vieja miraba las zonas. Sigue valiendo para los torneos que sí
+# las tienen: no se reemplazó una señal por otra, se sumó.
+chequear("y una fase con zonas y sin fechas sigue siendo la de grupos",
+         server.etapa_sin_nombre([{"zone": "A"}] * 20, _LI) == "Fase de grupos")
+# Lo que NO puede pasar: que una eliminatoria se lleve la fase de liga.
+# Catorce partidos son más que doce, así que sin la condición de la fecha
+# el play-off de acceso se la llevaba.
+chequear("una eliminatoria sin fechas no se lleva la fase de liga",
+         server.etapa_sin_nombre([{"round": None}] * 14, _CH)
+         != "Fase de liga",
+         server.etapa_sin_nombre([{"round": None}] * 14, _CH))
+# Ni una fase chica, aunque numere fechas: doce es el piso.
+chequear("ni una fase de dos partidos, aunque tenga número de fecha",
+         server.etapa_sin_nombre([{"round": 1}] * 2, _CH) != "Fase de liga")
+chequear("y sin etapas libres no inventa ninguna",
+         server.etapa_sin_nombre(_liga144, []) is None)
+# El número de fecha tiene que sobrevivir: en una copa `round` pasa a ser
+# la etapa, y con él se perdía la única forma de partir la fase de liga.
+chequear("la fecha se guarda antes de que la pise la etapa",
+         'g["fecha"] = g.get("round") if rango_etapa(et) == 1 else None' in _SRV
+         and 'g["round"] = idx[et]' in _SRV)
+chequear("y el servidor dice qué fechas tiene cada etapa",
+         '"fechasDeEtapa"' in _SRV)
+# En pantalla: la fila de fechas sólo aparece si hay más de una, y al
+# cambiar de etapa la fecha elegida se suelta. Sin eso, entrar a Octavos
+# con la Fecha 3 puesta dejaba la pantalla vacía sin decir por qué.
+chequear("la fila de fechas aparece sólo si hay más de una",
+         "if(!fechas||fechas.length<2) return '';" in HTML)
+chequear("se entra a la etapa viendo todas, no una fecha suelta",
+         "S.fechaEtapa=null;   // dentro de la etapa" in HTML
+         and 'onclick="App.fechaEtapa(null)">Todas' in HTML)
+chequear("y al cambiar de etapa la fecha elegida se suelta",
+         "if(!suyas||!suyas.includes(S.fechaEtapa)) S.fechaEtapa=null;" in HTML)
+chequear("los partidos se filtran por la fecha elegida",
+         "(S.fechaEtapa==null || m.fecha===S.fechaEtapa)" in HTML)
+
 print("\n── los títulos de España ──")
 import espana                                                    # noqa: E402
 import fichas_es as _fes                                         # noqa: E402

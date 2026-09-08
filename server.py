@@ -5363,7 +5363,7 @@ def api_liga_games(q):
             if g.get("fecha"):
                 porEtapa.setdefault(g["etapa"], set()).add(g["fecha"])
         if porEtapa:
-            out["fechasDeEtapa"] = {e: sorted(f)
+            res["fechasDeEtapa"] = {e: sorted(f)
                                     for e, f in porEtapa.items()}
     # Cuántas fechas tiene el torneo en total. Si son más de las que hay
     # cargadas, el calendario todavía se está bajando: mejor decirlo que

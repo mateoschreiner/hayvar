@@ -9,6 +9,7 @@ estuvieron todos los errores.
 import itertools
 import json, os, random, re, sys
 
+import glob as _glob
 AQUI = os.path.dirname(os.path.abspath(__file__))
 os.environ["HAYVAR_DB"] = "/tmp/hayvar_pruebas.db"
 for _e in ("", "-wal", "-shm"):
@@ -6520,6 +6521,112 @@ chequear("Boca tiene 18 y Talleres 1",
          and historia.internacionales_de("Talleres (C)")["total"] == 1)
 chequear("y un club sin ninguno no muestra la tarjeta",
          historia.internacionales_de("Platense") is None)
+
+def _sin_reventar_prueba(hacer):
+    """Corre algo y, si explota, devuelve el error como texto."""
+    try:
+        return hacer()
+    except Exception as e:
+        return "%s: %s" % (type(e).__name__, e)
+
+
+print("\n── nombres que no existen ──")
+# La prueba que faltaba, y que costó cuatro competencias caídas.
+#
+# Tres veces en la misma sesión escribí un nombre inexistente y las tres
+# se descubrieron en pantalla: `norm()` cuando la función se llama
+# `slugTexto`, `escudosDe` que nunca existió, y `out["fechasDeEtapa"]`
+# cuando el diccionario se llama `res`. Este último tiró Libertadores,
+# Sudamericana, Champions y Europa League, y la suite pasó en verde
+# porque ninguna prueba llamaba a esa función.
+#
+# Python no revisa los nombres hasta ejecutar la línea. Si la línea está
+# adentro de un `if` que sólo se cumple en las copas, no hay prueba de
+# comportamiento que la vea salvo que alguien la escriba justo para eso.
+# Esto lo mira sin ejecutar nada.
+import _nombres                                                  # noqa: E402
+_pys = sorted(f for f in _glob.glob(os.path.join(AQUI, "*.py"))
+              if not os.path.basename(f).startswith("_pruebas"))
+_malos = _nombres.revisar_archivos(_pys)
+chequear("ningún archivo lee un nombre que no existe",
+         _malos == [],
+         ["%s:%d %s -> %s" % (os.path.basename(a), l, f, n)
+          for a, l, f, n in _malos[:6]])
+chequear("y son todos los archivos, no una muestra", len(_pys) >= 15, len(_pys))
+# Que el revisor sirva: se le da el error de hoy y tiene que verlo.
+chequear("el revisor encuentra el error que se nos escapó",
+         [x[3] for x in _nombres.revisar(
+             'def f(q):\n    res = {}\n    if q:\n        out["x"] = 1\n'
+             '    return res\n')] == ["out"])
+# Y que no invente: un lambda, un cierre, una comprensión y un except
+# atan nombres de formas distintas y las cuatro tienen que pasar.
+chequear("y no se queja de código que está bien",
+         _nombres.revisar(
+             "import json\nT = 5\n\n"
+             "def f(a, *xs, **kw):\n"
+             "    b = a + T\n"
+             "    def g():\n        return b + len(xs) + len(kw)\n"
+             "    try:\n        z = [y for y in range(b) if y]\n"
+             "    except ValueError as e:\n        return str(e)\n"
+             "    z.sort(key=lambda x: x)\n"
+             "    return json.dumps(g())\n") == [])
+
+print("\n── las cinco copas, llamadas de verdad ──")
+# Y la otra mitad de lo que faltaba: NINGUNA prueba llamaba a
+# `api_liga_games` para una copa. Por eso un `out` en vez de `res` pasó
+# entera la suite y tiró cuatro competencias.
+#
+# Esto la llama para las cinco, sin red: se le enchufa un calendario
+# inventado y se mira que conteste algo con forma de calendario. No
+# comprueba los datos —para eso están las otras— comprueba que la función
+# CORRA. Es una prueba de humo, y era justo la que hacía falta.
+_copas = [k for k, v in server.LIGAS.items() if v.get("copa")]
+chequear("hay cinco copas", len(_copas) == 5, _copas)
+_fetchAntes = server.fetch
+
+
+def _calendarioFalso(path, params, ttl=15, guardar=True):
+    """Una fase de liga sin nombre y con fechas, más una eliminatoria."""
+    if "games" not in path:
+        return {}
+    gs = []
+    for i in range(24):
+        gs.append({"id": 900 + i, "stageNum": 1, "stageName": None,
+                   "roundNum": (i % 8) + 1, "startTime": "2026-09-08T19:00:00",
+                   "statusText": "Prog.", "competitionId": params.get(
+                       "competitions"),
+                   "homeCompetitor": {"name": "Uno %d" % i, "id": i},
+                   "awayCompetitor": {"name": "Otro %d" % i, "id": 100 + i}})
+    for i in range(2):
+        gs.append({"id": 800 + i, "stageNum": 4, "stageName": "Playoff",
+                   "groupNum": i + 1, "startTime": "2026-08-19T19:00:00",
+                   "statusText": "Prog.", "competitionId": params.get(
+                       "competitions"),
+                   "homeCompetitor": {"name": "Tres %d" % i, "id": 200 + i},
+                   "awayCompetitor": {"name": "Cuatro %d" % i, "id": 300 + i}})
+    return {"games": gs, "competitors": []}
+
+
+try:
+    server.fetch = _calendarioFalso
+    for _c in _copas:
+        _r = _sin_reventar_prueba(lambda k=_c: server.api_liga_games(
+            {"id": [k]}))
+        chequear("%s contesta sin reventar" % _c,
+                 isinstance(_r, dict) and "games" in _r,
+                 _r if not isinstance(_r, dict) else list(_r)[:6])
+        if isinstance(_r, dict) and _r.get("games"):
+            # Los 24 con fecha tienen que caer en la etapa de rango 1, no
+            # en la primera de la lista. Es el error que se vio en
+            # pantalla: 144 partidos de la fase de liga bajo "Preliminar".
+            _et = {g["etapa"] for g in _r["games"] if g.get("fecha")}
+            chequear("  y su fase de liga no cae en la primera etapa",
+                     all(server.rango_etapa(e) == 1 for e in _et), _et)
+            # Y que las fechas lleguen a la pantalla.
+            chequear("  con sus fechas para poder dividirla",
+                     bool(_r.get("fechasDeEtapa")), _r.get("fechasDeEtapa"))
+finally:
+    server.fetch = _fetchAntes
 
 print("\n── la fase de liga europea, que caía en la preliminar ──")
 # El síntoma: los 144 partidos de la fase de liga de la Champions
